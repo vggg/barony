@@ -26,8 +26,14 @@ from .schemas import (
     Node,
 )
 
-#: Discovery skips paths containing these markers (emit-time templates).
-TEMPLATE_SKIP_MARKERS: tuple[str, ...] = ("assets/collab-repo/", "legacy/")
+#: Discovery skips paths containing these markers (emit-time templates —
+#: the skill's assets, the deprecated legacy tree, and baron's own vendored
+#: copy of the templates, ADR-006).
+TEMPLATE_SKIP_MARKERS: tuple[str, ...] = (
+    "assets/collab-repo/",
+    "legacy/",
+    "baron/data/templates/",
+)
 #: The placeholder check is additionally waived for fixture paths.
 PLACEHOLDER_EXEMPT_MARKERS: tuple[str, ...] = TEMPLATE_SKIP_MARKERS + ("tests/examples/",)
 

@@ -21,6 +21,7 @@ from . import (
     ledger,
     lock as lock_mod,
     runtimes,
+    scaffold as scaffold_mod,
     status as status_mod,
     validate as validate_mod,
     waivers as waivers_mod,
@@ -47,6 +48,100 @@ _COLLAB_OPT = typer.Option(
 
 def _echo_json(payload: object) -> None:
     typer.echo(json.dumps(payload, indent=2, default=str))
+
+
+# --- init -----------------------------------------------------------------------------
+
+
+@app.command()
+def init(
+    project_name: str = typer.Argument(
+        ..., help="Project name (also the git identity domain: <slug>@<project>.local)."
+    ),
+    dir_: Optional[Path] = typer.Option(
+        None, "--dir", help="Target directory for the collab repo (default: ./<project-name>)."
+    ),
+    code_repo: Optional[str] = typer.Option(
+        None,
+        "--code-repo",
+        help="Existing code repo — a local path or a git URL — recorded in manifest.yaml.",
+    ),
+    personas: str = typer.Option(
+        "dev:dev,librarian:librarian",
+        "--personas",
+        help=(
+            "Comma-separated archetype:slug pairs (e.g. dev:carson,dev:terrence,"
+            "librarian:iris). Archetypes: "
+            + ", ".join(sorted(scaffold_mod.ARCHETYPE_TEMPLATES))
+            + ". A librarian is added automatically if missing."
+        ),
+    ),
+    runtime: str = typer.Option(
+        "claude",
+        "--runtime",
+        help="Runtime kit to emit per persona: " + " | ".join(scaffold_mod.RUNTIMES) + ".",
+    ),
+    no_git: bool = typer.Option(False, "--no-git", help="Skip git init + first commit."),
+) -> None:
+    """Scaffold a new collab repo — the deterministic subset of canon/ORCHESTRATE.md.
+
+    Emits the canonical layout (CONVENTIONS/COORDINATION, manifest.yaml, canon/ +
+    adapters/ from the packaged templates, hydrated agents/<slug>/persona.yaml,
+    genesis handoff, ledger index headers, wiki stub, lock-guard CI template) plus
+    a per-persona runtime kit, validates its own output, and git-commits.
+    Persona scope prose, AGENT.md manuals, and Tier-3 hydration stay on the
+    conversational path (canon/ORCHESTRATE.md).
+    """
+    try:
+        roster = scaffold_mod.parse_personas(personas)
+        if runtime not in scaffold_mod.RUNTIMES:
+            raise scaffold_mod.ScaffoldError(
+                f"unknown runtime {runtime!r} — pick from "
+                + ", ".join(scaffold_mod.RUNTIMES)
+            )
+    except scaffold_mod.ScaffoldError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    dest = dir_ if dir_ is not None else Path(project_name)
+    try:
+        report = scaffold_mod.scaffold(
+            project_name,
+            dest,
+            code_repo=code_repo,
+            personas=roster,
+            runtime=runtime,
+            do_git=not no_git,
+        )
+    except scaffold_mod.ScaffoldError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    root = report.root
+    typer.echo(f"scaffolded {project_name} at {root.as_posix()} ({len(report.created)} files)")
+    typer.echo(
+        "personas: " + ", ".join(f"{p.slug} ({p.archetype})" for p in report.personas)
+        + f" · runtime kit: {report.runtime}"
+    )
+    if report.git_committed:
+        typer.echo("git: initialized on branch main, first commit made")
+    elif report.git_initialized:
+        typer.echo("git: initialized (first commit NOT made — see notes)")
+    elif not no_git:
+        typer.echo("git: NOT initialized — see notes")
+    for note in report.notes:
+        typer.echo(f"note: {note}")
+    typer.echo(
+        "\nnext steps:\n"
+        f"  1. cd {dest.as_posix()}\n"
+        "  2. baron validate .        # canonical specs — expect 0 errors\n"
+        "  3. baron status            # divergence/staleness report (green when fresh)\n"
+        "  4. open your runtime at the collab root — canon/START.md routes you;\n"
+        "     each persona's kit is in agents/<slug>/runtime/ (see its README)\n"
+        "  5. every session: sync repos, read CONVENTIONS.md + COORDINATION.md,\n"
+        "     check _handoff/ (COORDINATION.md § Session-start checklist)\n"
+        "\nedit next: agents/<slug>/persona.yaml scope blocks (init fills a generic\n"
+        "placeholder scope), manifest.yaml description, and backlog.md."
+    )
 
 
 # --- M1: validate ---------------------------------------------------------------------

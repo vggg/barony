@@ -4,7 +4,7 @@
 
 **Barony** (repo `vggg/barony`; formerly `agent-project-bootstrap`, renamed per ADR-005) — git-native governance for teams of AI coding agents. The **canonical home** for the `barony` skill, the `baron` CLI, and the sister skill `multi-agent-audit` — the runtime-agnostic spec, adapters, references, tests, and meta-docs all live and evolve here.
 
-Current state: **v1.7.0** — one front door (`SKILL.md` routes everything to `skills/barony/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions; four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
+Current state: **v1.8.0** — one front door (`SKILL.md` routes everything to `skills/barony/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions — including the deterministic scaffold `baron init` (ADR-006, templates vendored as package data with a CI drift guard); four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
 
 ## Canonicality
 
@@ -63,9 +63,10 @@ skills/
         _failover-cron-sections/
       commands/           # slash command templates (e.g. vc.md)
   multi-agent-audit/      # sister skill — read-only project grading
-cli/                      # the baron CLI (ADR-003/004): validate/status/ledgers/guard/lock/
-                          # worktree/waivers + runtime hydrators (baron/runtimes/) and the
-                          # packaged capability-rules artifact (baron/data/); pytest suite
+cli/                      # the baron CLI (ADR-003/004/006): init/validate/status/ledgers/guard/
+                          # lock/worktree/waivers + runtime hydrators (baron/runtimes/), the
+                          # packaged capability-rules artifact + vendored templates (baron/data/,
+                          # synced by cli/scripts/sync_templates.py); pytest suite
 legacy/                   # DEPRECATED v0.3 emit path (vault/, workspaces/, SKILL-v0.3.md)
 docs/
   adr/                    # architecture decision records (ADR-001, ADR-002, ...)

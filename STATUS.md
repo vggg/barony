@@ -10,7 +10,7 @@ Per [ADR-003](docs/adr/ADR-003-baron-cli.md) / [ADR-004](docs/adr/ADR-004-baron-
 the coordination conventions ADR-002 promoted are being mechanized as the `baron` CLI
 (`cli/`, typer+pyyaml core; the pydantic-ai runtime adapter is a pinned optional extra).
 M1–M6-tooling + waivers shipped in **v1.5.0**; the rules artifact + pydantic-ai adapter
-in **v1.6.0**; remaining:
+in **v1.6.0**; `baron init` (the deterministic scaffold, ADR-006) in **v1.8.0**; remaining:
 
 - [x] **Live worktree migration of the pilot workspace** — executed 2026-07-23 on
   BaddieAnalyzer (per-worktree identities, symlink pattern, old clones parked;
@@ -31,7 +31,8 @@ in **v1.6.0**; remaining:
 
 | Version | Date | Summary (details in `CHANGELOG.md`) |
 |---|---|---|
-| **v1.7.0** | 2026-07-27 | The Barony release — the project renamed from `agent-project-bootstrap` to **Barony** (repo `vggg/barony`, plugin/skill `barony`, PyPI distribution `barony` at CLI 0.4.0; the CLI command stays `baron`). [ADR-005](docs/adr/ADR-005-naming.md). |
+| **v1.8.0** | 2026-07-27 | The stranger release — `baron init` (CLI 0.5.0, [ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md)): deterministic collab-repo scaffold + per-persona runtime kits from templates vendored as package data (drift-guarded), self-validated; quickstarts rewritten from a verified bare-venv run. |
+| v1.7.0 | 2026-07-27 | The Barony release — the project renamed from `agent-project-bootstrap` to **Barony** (repo `vggg/barony`, plugin/skill `barony`, PyPI distribution `barony` at CLI 0.4.0; the CLI command stays `baron`). [ADR-005](docs/adr/ADR-005-naming.md). |
 | v1.6.0 | 2026-07-23 | Capability-rules artifact (`capability-rules.v1.yaml`, single policy source for guard + adapters) + AGENTS.md emission (generic adapter) + the pydantic-ai runtime adapter (4th runtime; sub-tool denials natively enforced in-process) with working hydrator, `baron hydrate pydantic-ai`, and the `barony[pydantic-ai]` extra. See below. |
 | v1.5.0 | 2026-07-23 | baron CLI: M1–M3 (validate/status/ledgers-handoffs-index, first released here) + M4 `baron guard` PreToolUse enforcement (ADR-004) + M5 `baron lock` PR-as-lock + lock-guard CI template + M6 worktree tooling + status waivers. |
 | v1.4.0 | 2026-07-22 | One front door + legacy quarantine + July-2026 ways-of-working (ADR-002) + archetype parity + real CI. |
@@ -39,6 +40,27 @@ in **v1.6.0**; remaining:
 | v1.2.0 | 2026-06-12 | `multi-agent-audit` sister skill + `project-auditor` subagent. |
 | v1.1.x | 2026-06-04/08 | Claude Tier-3 subagent rendering; docs reconciled to the runtime-agnostic architecture. |
 | v1.0.x | 2026-06-03 | The runtime-agnostic milestone (ADR-001 §10 executed; all close-out items done). |
+
+## v1.8.0 — shipped 2026-07-27
+
+The stranger release (`baron init`, ADR-006): a stranger with a laptop reaches a
+working, validated project in minutes.
+
+- [x] **`baron init`** — deterministic scaffold: canonical layout, filled
+  CONVENTIONS/COORDINATION, schema-conformant manifest, canon/ + adapters/ verbatim,
+  hydrated persona.yaml per archetype:slug (librarian renameable), genesis handoff,
+  ledger index headers, wiki stub, lock-guard template; self-validated (0 errors)
+  then `git init -b main` + a first commit of exactly the files written; refuses a
+  non-empty dir; `--no-git`; injectable clock throughout.
+- [x] **Runtime kits** (`agents/<slug>/runtime/`) — claude: Tier-2 CLAUDE.md +
+  `baron guard` hook settings; generic/code-puppy: Tier-1 AGENTS.md; pydantic-ai:
+  agent_setup.py. Tier-3 + scope prose stay conversational (kits say so).
+- [x] **Template packaging** — skill tree stays canonical; byte-identical vendored
+  copy as package data (`cli/src/baron/data/templates/`, `cli/scripts/sync_templates.py`);
+  CI drift guard `cli/tests/test_template_sync.py`.
+- [x] **Verified quickstarts** — README + cli/README rewritten from a bare-venv
+  wheel-install run (init → validate → status → ledger/handoff/index → worktree →
+  guard smoke), all five suites green.
 
 ## v1.6.0 — shipped 2026-07-23
 

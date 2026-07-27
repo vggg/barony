@@ -26,6 +26,9 @@ TEMPLATE_DIRS = (
     "skills/multi-agent-audit/assets/",
     "legacy/",
     "tests/examples/",
+    # baron's vendored copy of the skill templates (ADR-006; kept byte-identical
+    # to skills/barony/assets/collab-repo/ by cli/tests/test_template_sync.py).
+    "cli/src/baron/data/templates/",
 )
 SKIP_DIRS = {".git", "__pycache__", ".claude", "node_modules", ".venv", ".pytest_cache"}
 

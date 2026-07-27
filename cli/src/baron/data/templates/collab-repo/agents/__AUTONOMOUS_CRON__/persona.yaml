@@ -1,0 +1,45 @@
+# Template — autonomous-cron archetype (canonical machine truth; AGENT.md is derived from this).
+# Fill every {{...}} token at scaffold time. Schema: references/persona.schema.md.
+# Capability verbs: references/capability-vocab.v1.md (frozen v1 — never invent verbs).
+#
+# Capability rationale: cron-triggered personas (PM+UAT, scheduled analyst, ...) run a
+# scoped job on a cadence, write their outputs to findings/ and _handoff/, and deliver any
+# code-repo change via PR (write_code + open_pr; branches `<slug>/<topic>`). Drop
+# `write_code`/`open_pr` for report-only personas — a narrower list means more of the
+# contract is whole-tool-enforceable at Tier 3.
+persona: {{PERSONA_NAME}}
+slug: {{PERSONA_SLUG}}
+archetype: autonomous-cron
+identity:
+  git_name: {{PERSONA_NAME}}
+  git_email: {{PERSONA_SLUG}}@{{IDENTITY_DOMAIN}}
+  commit_prefix: "{{PERSONA_SLUG}}:"
+  routing_label: agent-{{PERSONA_SLUG}}
+capabilities:
+  allow:
+    - read_code
+    - read_collab
+    - write_code
+    - write_path: [findings, _handoff]
+    - open_pr
+    - run_tests
+  deny:
+    - write_path: [wiki]
+    - merge_pr
+    - push_main
+    - force_push
+    - edit_other_personas
+scope:
+  summary: >-
+    {{PERSONA_PURPOSE_PARAGRAPH}}
+  focus:
+    - {{PERSONA_SCOPE_LINE_1}}
+    - {{PERSONA_SCOPE_LINE_2}}
+    - {{PERSONA_SCOPE_LINE_3}}
+session_ritual:
+  - sync_repos
+  - read_conventions
+  - check_handoffs
+  - check_backlog
+runtime:
+  trigger: cron

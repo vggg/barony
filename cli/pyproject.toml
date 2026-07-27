@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "barony"
-version = "0.4.0"
+version = "0.5.0"
 description = "Disciplined reader/writer over Barony collab repos — the markdown/git substrate is the database."
 readme = "README.md"
 requires-python = ">=3.10"

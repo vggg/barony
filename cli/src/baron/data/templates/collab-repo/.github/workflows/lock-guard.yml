@@ -1,0 +1,80 @@
+# Lock guard (ADR-002 §3, mechanized by baron M5) — the open PR is the lock.
+#
+# A lock is claimed with `baron lock claim <path>` (a draft PR labeled
+# `lock:<path>` from a `lock/<slug>` branch) and released with
+# `baron lock release <path>` (or by merging/closing the lock PR). This guard
+# fails any OTHER pull request that touches a locked path, closing the race
+# window ("two personas check, both see nothing, both claim") with no human in
+# the loop.
+#
+# Dependency-free by design: plain bash + the `gh` CLI GitHub Actions provides.
+#
+# HONEST LIMITATION (carry this with the file): without branch protection —
+# unavailable on free private repos — a red check does not physically block a
+# merge. This is enforcement by convention plus a visible alarm, still strictly
+# better than a silent manual check.
+
+name: lock-guard
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lock-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if this PR touches a path locked by another open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          # Files this PR touches.
+          mapfile -t changed < <(
+            gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate \
+              --jq '.[].filename'
+          )
+          echo "PR #$PR_NUMBER touches ${#changed[@]} file(s)."
+
+          # Every open PR carrying a lock:* label, as "<number><TAB><label>".
+          locks=$(
+            gh api "repos/$REPO/pulls?state=open&per_page=100" --paginate \
+              --jq '.[] | . as $pr | $pr.labels[].name
+                    | select(startswith("lock:"))
+                    | "\($pr.number)\t\(.)"'
+          )
+          if [ -z "$locks" ]; then
+            echo "No open locks."
+            exit 0
+          fi
+
+          fail=0
+          while IFS=$'\t' read -r num label; do
+            [ -z "${num:-}" ] && continue
+            # The lock PR itself may touch its own locked path — that is the point.
+            [ "$num" = "$PR_NUMBER" ] && continue
+            lock_path="${label#lock:}"
+            for f in "${changed[@]}"; do
+              # Unquoted case patterns: lock paths may be globs (src/schema/*).
+              case "$f" in
+                $lock_path|$lock_path/*)
+                  echo "::error::'$f' is locked by open PR #$num (label '$label')." \
+                       "Wait for release (merge/close of #$num or" \
+                       "\`baron lock release $lock_path\`), or coordinate via _handoff/."
+                  fail=1
+                  ;;
+              esac
+            done
+          done <<< "$locks"
+
+          if [ "$fail" -ne 0 ]; then
+            echo "Lock collision — see COORDINATION.md § Hot files (lock mechanics)."
+            exit 1
+          fi
+          echo "No lock collisions."

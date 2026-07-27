@@ -1,7 +1,7 @@
 ---
 name: barony
 description: Barony — scaffold or join a runtime-agnostic multi-agent software project. Use when the user wants to set up a new multi-agent project (personas, collab repo, conventions, coordination) or join an existing one — one runtime-neutral persona.yaml hydrates working personas on any AI coding agent (Claude Code, code-puppy, ...) via per-runtime adapters.
-version: 1.7.0
+version: 1.8.0
 created: 2026-05-22
 updated: 2026-07-27
 ---
@@ -33,6 +33,11 @@ worked project spec example is at `assets/collab-repo/manifest.example.yaml`.
 
 When invoked, read `assets/collab-repo/START.md` and follow it. Do not improvise an emit
 sequence from this file — this file only routes.
+
+> **Deterministic shortcut (v1.8):** when the `baron` CLI is installed, `baron init`
+> emits ORCHESTRATE's mechanical steps (skeleton, manifest, hydrated personas, runtime
+> kits) from the same templates, vendored as package data (ADR-006). ORCHESTRATE.md
+> marks where the conversational recipe resumes — don't hand-emit what init covers.
 
 ## Non-Claude runtimes
 

@@ -564,9 +564,10 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         log_override(cwd, tool, target, override)
         return 0, ""
     persona_name = persona.slug or persona_file.name
+    reason = decision.reason.replace("\n", "\n  ")  # indent continuation lines
     return 2, (
         f"baron guard: DENY {tool} for persona '{persona_name}' ({persona_file})\n"
         f"  target: {target}\n"
-        f"  {decision.reason}\n"
+        f"  {reason}\n"
         f"{_remedy()}"
     )

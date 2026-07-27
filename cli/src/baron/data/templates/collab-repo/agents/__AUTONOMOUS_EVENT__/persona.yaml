@@ -1,0 +1,43 @@
+# Template — autonomous-event archetype (canonical machine truth; AGENT.md is derived from this).
+# Fill every {{...}} token at scaffold time. Schema: references/persona.schema.md.
+# Capability verbs: references/capability-vocab.v1.md (frozen v1 — never invent verbs).
+#
+# Capability rationale: event-triggered personas (PR reviewer, backtest runner, ...) run in
+# an ephemeral runner on a webhook. They read both repos, may run the test/coverage suite
+# against the triggering ref, and report via _handoff/ (their verdict/report surface). They
+# never mutate code and never merge — output is comments/checks/handoffs, not commits.
+# Widen `write_path` (e.g. add findings) per persona only with observed need.
+persona: {{PERSONA_NAME}}
+slug: {{PERSONA_SLUG}}
+archetype: autonomous-event
+identity:
+  git_name: {{PERSONA_NAME}}
+  git_email: {{PERSONA_SLUG}}@{{IDENTITY_DOMAIN}}
+  commit_prefix: "{{PERSONA_SLUG}}:"
+  routing_label: agent-{{PERSONA_SLUG}}
+capabilities:
+  allow:
+    - read_code
+    - read_collab
+    - run_tests
+    - write_path: [_handoff]
+  deny:
+    - write_code
+    - write_path: [wiki]
+    - open_pr
+    - merge_pr
+    - push_main
+    - force_push
+    - edit_other_personas
+scope:
+  summary: >-
+    {{PERSONA_PURPOSE_PARAGRAPH}}
+  focus:
+    - {{PERSONA_SCOPE_LINE_1}}
+    - {{PERSONA_SCOPE_LINE_2}}
+    - {{PERSONA_SCOPE_LINE_3}}
+session_ritual:
+  - read_conventions
+  - check_handoffs
+runtime:
+  trigger: event

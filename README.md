@@ -39,6 +39,38 @@ new/empty directory → `ORCHESTRATE.md` (set up a project), existing collab rep
 - Projects where you don't need persistent memory across sessions
 - Team setups where human engineers handle coordination and you only need one agent at a time
 
+## Quickstart — a working project from a bare laptop
+
+Requires Python ≥ 3.10 and git. Every command below is verified as written.
+
+```bash
+pip install barony                     # PyPI; from a clone: uv tool install ./cli
+
+# Scaffold a collab repo next to your code repo — two devs + a librarian:
+baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
+  --personas dev:fern,dev:moss,librarian:iris
+cd gardenkit-collab
+
+baron validate .                       # canonical specs — expect 0 errors
+baron status                           # divergence/staleness — green when fresh
+
+# First coordination moves:
+baron finding new --title "First finding" --author fern --no-push
+HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
+baron handoff close "$HANDOFF" --note "Done, see F1."
+baron index                            # regenerates _handoff/README.md — commit it
+
+# Per-persona working copies (uses the manifest's worktrees_root):
+baron worktree add fern                # ../gardenkit-worktrees/fern, branch persona/fern
+```
+
+Drop `--code-repo` if the code repo doesn't exist yet; drop `--no-push` once the
+collab repo has an origin remote. `baron init` also emits each persona's runtime
+kit under `agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`
+— for Claude Code that's the persona `CLAUDE.md` plus the `baron guard` hook
+settings). Scope prose, `AGENT.md` manuals, and Tier-3 hydration stay on the
+conversational path below ([ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md)).
+
 ## What gets generated
 
 A dedicated **collab repo** (the coordination substrate, separable from your code repo):
@@ -116,8 +148,12 @@ Phase 2 of the roadmap converts the coordination *conventions* above into *mecha
 **[`baron`](cli/README.md)** (`cli/`, per [ADR-003](docs/adr/ADR-003-baron-cli.md) and
 [ADR-004](docs/adr/ADR-004-baron-guard-enforcement.md)) is a small typer CLI — a
 disciplined reader/writer over collab-repo files; the markdown/git substrate stays the
-only database. Shipped (v1.5.0):
+only database. Shipped:
 
+- `baron init` — the deterministic scaffold (v1.8.0, [ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md)):
+  the canonical collab-repo layout, hydrated `persona.yaml` per persona, and a per-persona
+  runtime kit, emitted from the packaged templates and self-validated before the first
+  commit. See the [Quickstart](#quickstart--a-working-project-from-a-bare-laptop).
 - `baron validate` — persona.yaml / manifest.yaml against the canonical schemas, with the
   frozen 10-verb vocabulary embedded and drift-guarded against the prose spec.
 - `baron status` — clone/branch/worktree divergence (the three stranding classes from the

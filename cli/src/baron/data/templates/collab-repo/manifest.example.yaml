@@ -1,0 +1,41 @@
+# manifest.example.yaml — a realistic, fully-filled example of the canonical project spec.
+# Schema: references/manifest.schema.md (v1.1). This is an EXAMPLE, not a {{...}} template:
+# copy to your collab repo root as manifest.yaml and replace the values with your project's.
+#
+# Shape shown: the standard two-repo pattern (code repo + collab repo as siblings), two
+# interactive dev personas plus the default Librarian.
+project:
+  name: gardenkit
+  description: Multi-agent team building the GardenKit planting-planner CLI.
+paths:
+  strategy: relative          # REQUIRED for portability (F7) — never absolute
+  root: .                     # resolved from the collab repo root
+repos:
+  - id: code
+    path: ../gardenkit        # sibling clone of the code repo — travels on re-clone
+    remote: git@github.com:example-org/gardenkit.git
+    role: code
+  - id: collab
+    path: .
+    remote: git@github.com:example-org/gardenkit-collab.git
+    role: collab
+backlog:
+  source: github_issues       # or `file` (a backlog.md in the collab repo) — both proven
+  location: example-org/gardenkit
+personas:
+  - slug: fern                # interactive dev — feature work
+    spec: agents/fern/persona.yaml
+  - slug: moss                # interactive dev — tests + tooling
+    spec: agents/moss/persona.yaml
+  - slug: librarian           # always present — wiki, indexes, drift checks
+    spec: agents/librarian/persona.yaml
+adapters:                     # optional; runtime-neutral envelope (v1.1)
+  claude:
+    tier: auto                # auto | 2 | 3 — project-default rendering tier
+# workspace:                  # optional (v1.2): local persona working copies, so
+#   clones:                   # `baron status` can sweep them for divergence
+#     - persona: fern
+#       path: ../gardenkit-fern
+#     - persona: moss
+#       path: ../gardenkit-moss
+#   worktrees_root: ../worktrees  # alternative: every git dir under here is swept

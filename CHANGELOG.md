@@ -4,6 +4,52 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] — 2026-07-27
+
+**The stranger release** — a stranger with a laptop gets a working project in
+minutes: `pip install barony`, `baron init`, done. The deterministic scaffold path
+lands as a CLI command ([ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md));
+the conversational path (`START.md` → `ORCHESTRATE.md`) keeps the judgment work.
+CLI version `0.4.0 → 0.5.0`.
+
+### Added
+
+- **`baron init <name> [--dir] [--code-repo] [--personas archetype:slug,...]
+  [--runtime claude|generic|pydantic-ai|code-puppy] [--no-git]`**
+  (`cli/src/baron/scaffold.py`) — emits the canonical collab-repo layout:
+  `CONVENTIONS.md`/`COORDINATION.md` filled, a schema-conformant `manifest.yaml`
+  (relative paths, `backlog: file`, `workspace.worktrees_root` when a code repo is
+  named), `canon/` + `adapters/` copied verbatim (ORCHESTRATE.md §2a), hydrated
+  `agents/<slug>/persona.yaml` per persona (identity `<slug>@<project>.local`;
+  librarian renameable, e.g. `librarian:iris`; generic edit-me scope — never fake
+  specificity), a genesis handoff, `findings/`+`decisions/` index headers the real
+  ledger allocator appends to, the wiki stub, and the lock-guard CI template.
+  Self-validates with the real schemas (zero errors) before `git init -b main` +
+  a first commit of exactly the files written. Refuses a non-empty directory.
+- **Per-persona runtime kits** (`agents/<slug>/runtime/`) — the deterministic
+  floor of each adapter: claude = Tier-2 persona `CLAUDE.md` + `.claude/settings.json`
+  wiring the `baron guard` PreToolUse hook (HYDRATE.md steps 3b/3c); generic and
+  code-puppy = Tier-1 `AGENTS.md`; pydantic-ai = the `agent_setup.py` bootstrap.
+  Tier-3 hydration and scope prose stay conversational — the kits' READMEs say so.
+- **Template packaging (ADR-006)** — the skill tree stays the single canonical
+  source; `baron init` reads a byte-identical vendored copy shipped as package
+  data (`cli/src/baron/data/templates/`, synced by `cli/scripts/sync_templates.py`).
+  Drift guard: `cli/tests/test_template_sync.py` fails CI on any divergence.
+- **Tests** — `cli/tests/test_scaffold.py` (layout, self-validation, hydration,
+  runtime kits, git init, re-init refusal, ledger-on-scaffold) + the sync guard;
+  cli suite 103 → 114 tests.
+
+### Changed
+
+- **README.md / cli/README.md** — new Quickstart sections with the exact
+  command sequence verified end-to-end on a bare venv (wheel install, no repo
+  checkout): init → validate → status → finding → handoff create/close → index →
+  worktree add, plus a `baron guard` deny/allow smoke.
+- **`baron validate`** — the template-skip rule also covers baron's own vendored
+  templates (`baron/data/templates/`), mirroring the repo lint.
+- **ORCHESTRATE.md** — notes the `baron init` shortcut for its mechanical steps
+  (1–2a) and where the conversational recipe resumes.
+
 ## [1.7.0] — 2026-07-27
 
 **The Barony release** — the project is renamed from `agent-project-bootstrap` to

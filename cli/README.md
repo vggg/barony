@@ -2,10 +2,10 @@
 
 `baron` is **Barony**'s CLI — install `barony`, run `baron`, import `baron`. It
 turns the multi-agent coordination *conventions* that
-Barony emits into *mechanisms*: a small CLI that validates the
-canonical specs, reports clone/branch/ledger divergence, and performs the
-race-prone record-keeping operations (finding/decision numbering, handoff
-lifecycle) safely.
+Barony emits into *mechanisms*: a small CLI that scaffolds new projects
+(`baron init`), validates the canonical specs, reports clone/branch/ledger
+divergence, and performs the race-prone record-keeping operations
+(finding/decision numbering, handoff lifecycle) safely.
 
 **Design principle (ADR-003, `../docs/adr/ADR-003-baron-cli.md`): the
 markdown/git substrate IS the database.** baron is a disciplined reader/writer
@@ -41,7 +41,63 @@ uv run --project cli baron --help
 pip install ./cli
 ```
 
+## Quickstart
+
+Verified end-to-end on a bare venv (`pip install` the wheel, no repo checkout):
+
+```bash
+baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
+  --personas dev:fern,dev:moss,librarian:iris
+cd gardenkit-collab
+baron validate .          # 0 errors
+baron status              # green when fresh
+baron finding new --title "First finding" --author fern --no-push
+HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
+baron handoff close "$HANDOFF" --note "Done, see F1."
+baron index               # regenerates _handoff/README.md — commit it
+baron worktree add fern   # ../gardenkit-worktrees/fern, branch persona/fern
+```
+
 ## Commands
+
+### `baron init <project-name>` (ADR-006)
+
+The deterministic, non-conversational scaffold — the mechanical subset of the
+skill's `ORCHESTRATE.md` recipe.
+
+```bash
+baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
+  --personas dev:fern,dev:moss,librarian:iris --runtime claude
+```
+
+Flags: `--dir` (default `./<project-name>`), `--code-repo` (local path or git
+URL, recorded in `manifest.yaml` with a relative path + `workspace.worktrees_root`),
+`--personas archetype:slug,...` (archetypes: `dev`, `librarian`,
+`autonomous-event`, `autonomous-cron`, `reviewer`, `merger`; a librarian is
+appended when missing), `--runtime claude|generic|pydantic-ai|code-puppy`,
+`--no-git`. Refuses a non-empty target directory.
+
+Emits the canonical layout — `CONVENTIONS.md`/`COORDINATION.md` (filled),
+`manifest.yaml`, `canon/` + `adapters/` copied verbatim from the **packaged
+templates** (vendored from `skills/barony/assets/collab-repo/` per ADR-006;
+drift-guarded byte-for-byte by `tests/test_template_sync.py`), hydrated
+`agents/<slug>/persona.yaml` (identity `<slug>@<project>.local`, commit prefix,
+routing label; generic edit-me scope), a genesis handoff, `findings/index.md` +
+`decisions/index.md` ledger headers, the wiki stub, the lock-guard CI template,
+and a per-persona **runtime kit** under `agents/<slug>/runtime/`:
+
+| `--runtime` | Kit contents |
+|---|---|
+| `claude` (default) | Tier-2 persona `CLAUDE.md` + `.claude/settings.json` wiring the `baron guard` PreToolUse hook |
+| `generic`, `code-puppy` | Tier-1 `AGENTS.md` (instruction-only; code-puppy's documented fallback) |
+| `pydantic-ai` | `agent_setup.py` bootstrap (running it needs `barony[pydantic-ai]`) |
+
+The scaffold must pass `baron validate` with zero errors before init reports
+success; then `git init -b main` + a first commit of exactly the files written
+(never `git add -A`), unless `--no-git`. Dates come from the injectable clock.
+Persona scope prose, `AGENT.md` manuals, and Tier-3 hydration (Claude
+subagents, code-puppy JSON agents) stay on the conversational path — init
+prints the pointers instead of pretending.
 
 ### `baron validate [PATH]` (M1)
 
@@ -297,5 +353,9 @@ capability-rules artifact tests (packaged + versioned, verb set ≡ the frozen
 vocabulary, guard-consumes-the-data mutation test), and the pydantic-ai
 adapter tests (offline TestModel/FunctionModel: capability omission, write
 scoping, a scripted-and-vetoed `git push origin main`, the clean import-error
-path). The dev dependency group repeats the pydantic-ai extra's pins so those
-tests run for real.
+path), the `baron init` acceptance tests (layout + self-validation via the real
+schemas + runtime kits + the non-empty-dir refusal), and the template drift
+guard (`test_template_sync.py`: the vendored `src/baron/data/templates/` must
+stay byte-identical to `skills/barony/assets/collab-repo/` — re-vendor with
+`python cli/scripts/sync_templates.py`). The dev dependency group repeats the
+pydantic-ai extra's pins so those tests run for real.
