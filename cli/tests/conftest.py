@@ -16,6 +16,27 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXED_NOW = datetime(2026, 7, 22, 12, 0, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_git_identity(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Give every git process in the tests a deterministic identity.
+
+    CI runners have no user.name/email (v1.8.0's scaffold tests failed there
+    with "Author identity unknown" while passing locally off the developer's
+    gitconfig); pointing GIT_CONFIG_GLOBAL at a temp config makes the suite
+    hermetic in both directions — subprocesses spawned by `baron init`
+    included.
+    """
+    cfg = tmp_path_factory.mktemp("gitcfg") / "gitconfig"
+    cfg.write_text(
+        "[user]\n\tname = Test Runner\n\temail = test@barony.invalid\n"
+        "[init]\n\tdefaultBranch = main\n[commit]\n\tgpgsign = false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
+
+
 @pytest.fixture
 def fixed_clock() -> object:
     """Pin baron's clock to 2026-07-22 for deterministic dates/ages."""
