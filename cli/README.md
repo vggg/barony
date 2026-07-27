@@ -25,24 +25,21 @@ below works without `gh` installed. The pydantic-ai runtime adapter is an
 
 ## Install
 
-Once published to PyPI (distribution name `barony`):
+Live on PyPI (distribution name `barony`, console script `baron`):
 
 ```bash
-uv tool install barony           # installs the `baron` console script
+uv tool install barony                  # installs the `baron` console script
+uv tool install 'barony[pydantic-ai]'   # + the pydantic-ai runtime adapter
 # or:
 pip install barony
+baron --version
 ```
 
-Until then, install from a local clone:
+From a clone (development):
 
 ```bash
-# from the repo root, with uv:
-uv tool install ./cli            # installs the `baron` console script
-uv tool install './cli[pydantic-ai]'   # + the pydantic-ai runtime adapter
-# or for development:
-uv run --project cli baron --help
-# or with plain pip (>= 3.10):
-pip install ./cli
+uv run --project cli baron --help       # run without installing
+uv tool install ./cli                   # install the local copy
 ```
 
 ## Quickstart

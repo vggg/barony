@@ -50,6 +50,28 @@ def _echo_json(payload: object) -> None:
     typer.echo(json.dumps(payload, indent=2, default=str))
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        from . import __version__
+
+        typer.echo(f"barony {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(  # noqa: ARG001 - consumed by the eager callback
+        False,
+        "--version",
+        "-V",
+        help="Show the installed Barony version and exit.",
+        is_eager=True,
+        callback=_version_callback,
+    ),
+) -> None:
+    """Barony's CLI. Run `baron <command> --help` for any command."""
+
+
 # --- init -----------------------------------------------------------------------------
 
 

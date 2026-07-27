@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — `barony` 0.5.2 (first-publish shakeout)
+
+- **`baron --version` / `-V`** now exists — it errored ("No such option") the
+  minute 0.5.1 hit PyPI and someone ran the obvious first command.
+- **`__version__` no longer drifts** — it derives from installed package
+  metadata (it had silently sat at `0.4.0` while the package shipped `0.5.1`).
+  New `test_version_flag_matches_pyproject` guards `--version` ≡ pyproject.
+- README + `cli/README.md` install sections flipped to the live PyPI path
+  (`uv tool install barony`) now that the package is published.
+
 ### Packaging — `barony` 0.5.1 (pre-publish polish)
 
 - **`[project.urls]`** added to `cli/pyproject.toml` (Homepage/Repository/

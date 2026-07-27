@@ -66,3 +66,21 @@ def test_github_forge_unavailable_without_gh(monkeypatch: pytest.MonkeyPatch, tm
     assert forge.available() is False
     with pytest.raises(ForgeUnavailable, match="gh"):
         forge.list_open_prs(tmp_path)
+
+
+def test_version_flag_matches_pyproject():
+    """`baron --version` prints the packaged version, and it matches
+    pyproject.toml. Regression: __version__ silently sat at 0.4.0 while the
+    package shipped 0.5.1, and there was no --version flag at all (found the
+    minute barony 0.5.1 hit PyPI)."""
+    import re
+    from pathlib import Path
+
+    result = runner.invoke(app, ["--version"])
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("barony ")
+    printed = result.output.split()[1].strip()
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = re.search(r'^version = "([^"]+)"', pyproject.read_text(), re.M).group(1)
+    assert printed == declared, f"--version {printed} != pyproject {declared}"

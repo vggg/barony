@@ -54,7 +54,7 @@ persistent memory needed — Barony is overkill, and a plain session is simpler.
 Requires Python ≥ 3.10 and git. Every command below is verified as written.
 
 ```bash
-pip install barony                     # PyPI; from a clone: uv tool install ./cli
+uv tool install barony                 # or: pip install barony  (live on PyPI)
 
 # Scaffold a collab repo next to your code repo — two devs + a librarian:
 baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
