@@ -1,4 +1,5 @@
-# baron-cli — Phase 2 of agent-project-bootstrap: conventions -> mechanisms (ADR-003).
+# barony — Phase 2 of Barony: conventions -> mechanisms (ADR-003; renamed from
+# baron-cli in ADR-005 — install barony, run baron, import baron).
 #
 # Dependency policy (ADR-003): typer + pyyaml ONLY. No rich (typer may pull it
 # transitively; baron never imports it), no gitpython (git via subprocess), no
@@ -9,9 +10,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "baron-cli"
-version = "0.3.0"
-description = "Disciplined reader/writer over agent-project-bootstrap collab repos — the markdown/git substrate is the database."
+name = "barony"
+version = "0.4.0"
+description = "Disciplined reader/writer over Barony collab repos — the markdown/git substrate is the database."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -8,7 +8,7 @@ It ships as baron package data (``importlib.resources``) so every consumer —
 under :mod:`baron.runtimes` — reads the same rules instead of restating them.
 
 The prose contract for consumers lives in the skill:
-``skills/agent-project-bootstrap/references/capability-rules.md``.
+``skills/barony/references/capability-rules.md``.
 """
 
 from __future__ import annotations

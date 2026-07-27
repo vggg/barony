@@ -1,6 +1,6 @@
 # Metric taxonomy + 1–5 scoring rubric
 
-Universal definitions for the Step 1 metrics and how to score each axis in Step 3. **Framework-neutral** — these definitions apply whether the audited project is agent-project-bootstrap, CrewAI, LangGraph, AutoGen, or a custom loop. *Where* the data lives varies; *what* the metric means does not.
+Universal definitions for the Step 1 metrics and how to score each axis in Step 3. **Framework-neutral** — these definitions apply whether the audited project is Barony, CrewAI, LangGraph, AutoGen, or a custom loop. *Where* the data lives varies; *what* the metric means does not.
 
 ## Confidence labels (apply per metric)
 

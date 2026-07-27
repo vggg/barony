@@ -1,6 +1,6 @@
 # Using with code-puppy
 
-This repo is packaged as a **Claude Code** plugin/skill (`skills/agent-project-bootstrap/SKILL.md`,
+This repo is packaged as a **Claude Code** plugin/skill (`skills/barony/SKILL.md`,
 `.claude-plugin/`). **code-puppy does not auto-discover that skill format** — if you point
 code-puppy at this repo and ask it to "use the skill", it will look for its own skill registry
 and report that it can't find a `SKILL.md` it understands.
@@ -15,7 +15,7 @@ code-puppy path (Tier 3 — capabilities are *enforced* via a tool allow-list).
 ## TL;DR
 
 ```bash
-git clone https://github.com/vggg/agent-project-bootstrap
+git clone https://github.com/vggg/barony
 cd <your-collab-repo>          # start code-puppy FROM the project root (see Why below)
 ```
 
@@ -23,11 +23,11 @@ Then tell code-puppy:
 
 > Read these files from the cloned repo, in order, then follow them to bootstrap a new
 > collab project:
-> 1. `agent-project-bootstrap/skills/agent-project-bootstrap/assets/collab-repo/START.md`
-> 2. `agent-project-bootstrap/skills/agent-project-bootstrap/assets/collab-repo/ORCHESTRATE.md`
-> 3. `agent-project-bootstrap/skills/agent-project-bootstrap/assets/collab-repo/adapters/code-puppy/HYDRATE.md`
+> 1. `barony/skills/barony/assets/collab-repo/START.md`
+> 2. `barony/skills/barony/assets/collab-repo/ORCHESTRATE.md`
+> 3. `barony/skills/barony/assets/collab-repo/adapters/code-puppy/HYDRATE.md`
 >
-> Use the schemas in `agent-project-bootstrap/skills/agent-project-bootstrap/references/`
+> Use the schemas in `barony/skills/barony/references/`
 > (`capability-vocab.v1.md`, `persona.schema.md`, `manifest.schema.md`) as the canonical contract.
 
 code-puppy reads those, identifies its runtime as `code-puppy`, routes (new dir → `ORCHESTRATE`),
@@ -37,13 +37,13 @@ and hydrates each persona via the adapter — no skill discovery needed.
 
 | Purpose | Path (under repo root) |
 |---|---|
-| Front door / router | `skills/agent-project-bootstrap/assets/collab-repo/START.md` |
-| Role 1 — bootstrap a new project | `skills/agent-project-bootstrap/assets/collab-repo/ORCHESTRATE.md` |
-| Role 2 — join an existing project | `skills/agent-project-bootstrap/assets/collab-repo/PARTICIPATE.md` |
-| code-puppy adapter (Tier 3) | `skills/agent-project-bootstrap/assets/collab-repo/adapters/code-puppy/HYDRATE.md` |
-| Capability vocabulary (frozen v1) | `skills/agent-project-bootstrap/references/capability-vocab.v1.md` |
-| Persona schema | `skills/agent-project-bootstrap/references/persona.schema.md` |
-| Manifest schema | `skills/agent-project-bootstrap/references/manifest.schema.md` |
+| Front door / router | `skills/barony/assets/collab-repo/START.md` |
+| Role 1 — bootstrap a new project | `skills/barony/assets/collab-repo/ORCHESTRATE.md` |
+| Role 2 — join an existing project | `skills/barony/assets/collab-repo/PARTICIPATE.md` |
+| code-puppy adapter (Tier 3) | `skills/barony/assets/collab-repo/adapters/code-puppy/HYDRATE.md` |
+| Capability vocabulary (frozen v1) | `skills/barony/references/capability-vocab.v1.md` |
+| Persona schema | `skills/barony/references/persona.schema.md` |
+| Manifest schema | `skills/barony/references/manifest.schema.md` |
 
 ## Why start the session from the project root
 

@@ -31,7 +31,7 @@ from .forge import ForgeError, ForgeUnavailable
 app = typer.Typer(
     name="baron",
     help=(
-        "Disciplined reader/writer over an agent-project-bootstrap collab repo. "
+        "Disciplined reader/writer over a Barony collab repo. "
         "The markdown/git substrate is the database — baron never adds another store."
     ),
     no_args_is_help=True,
@@ -387,7 +387,7 @@ def hydrate_pydantic_ai(
     The script imports baron.runtimes.pydantic_ai.build_agent and carries a
     model placeholder ("test" — offline — until you pick a real model).
     Emission needs only baron; RUNNING the script needs the optional extra
-    (pip install 'baron-cli[pydantic-ai]', pinned to the verified
+    (pip install 'barony[pydantic-ai]', pinned to the verified
     pydantic-ai-harness range).
     """
     if not persona_file.is_file():
@@ -398,7 +398,7 @@ def hydrate_pydantic_ai(
     out.write_text(script, encoding="utf-8")
     typer.echo(out.as_posix())
     typer.echo(
-        "note: running it requires the extra — pip install 'baron-cli[pydantic-ai]'"
+        "note: running it requires the extra — pip install 'barony[pydantic-ai]'"
     )
 
 

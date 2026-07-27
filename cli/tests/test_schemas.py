@@ -10,7 +10,7 @@ from conftest import REPO_ROOT
 
 VOCAB_MD = (
     REPO_ROOT
-    / "skills/agent-project-bootstrap/references/capability-vocab.v1.md"
+    / "skills/barony/references/capability-vocab.v1.md"
 )
 
 # Verb table rows look like: | `read_code` | Read the code repo | whole-tool | - |

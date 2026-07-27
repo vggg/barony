@@ -8,7 +8,7 @@
   (c) fixture-name leaks — the acceptance fixtures' display names ("Tess"/"Rex")
       appearing in shipped templates under skills/*/assets/.
   (d) version mismatch between .claude-plugin/plugin.json and the
-      skills/agent-project-bootstrap/SKILL.md frontmatter.
+      skills/barony/SKILL.md frontmatter.
 
 Run: python tests/lint_repo.py
 """
@@ -22,7 +22,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Directories (repo-relative, with trailing slash) whose files are templates/fixtures and
 # may carry unfilled {{...}} tokens and fixture names.
 TEMPLATE_DIRS = (
-    "skills/agent-project-bootstrap/assets/",
+    "skills/barony/assets/",
     "skills/multi-agent-audit/assets/",
     "legacy/",
     "tests/examples/",
@@ -126,7 +126,7 @@ def check_versions():
     print("(d) plugin.json vs SKILL.md version")
     with open(os.path.join(ROOT, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
         plugin_version = json.load(f)["version"]
-    skill_path = os.path.join(ROOT, "skills", "agent-project-bootstrap", "SKILL.md")
+    skill_path = os.path.join(ROOT, "skills", "barony", "SKILL.md")
     skill_version = None
     with open(skill_path, encoding="utf-8") as f:
         text = f.read()

@@ -89,7 +89,7 @@ gh -R <owner>/<repo> issue list --state open --label "agent-<name>" \
   --json number,assignees,labels
 ```
 
-For agent-project-bootstrap layouts, the `agent-<name>` labels are the claim mechanism — count claimed vs unclaimed.
+For Barony layouts, the `agent-<name>` labels are the claim mechanism — count claimed vs unclaimed.
 
 ## CI / Actions queries
 

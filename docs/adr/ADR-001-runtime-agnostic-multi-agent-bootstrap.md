@@ -4,7 +4,7 @@ accepted: 2026-05-30
 type: decision
 status: accepted
 decided_by: Vikram
-canonical: https://github.com/vggg/agent-project-bootstrap/blob/main/docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md
+canonical: https://github.com/vggg/barony/blob/main/docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md
 project: multi-agent-setup
 adr: 001
 co_authors: [Vikram, code-puppy]
@@ -224,9 +224,9 @@ folder, touch nothing else (**Open/Closed Principle** for runtimes).
 ### 4.6 Resulting repo shape
 
 > **This diagram is the shape of an EMITTED PROJECT** (a collab repo this skill scaffolds) — it is
-> NOT the layout of the `agent-project-bootstrap` skill repo itself. In the skill repo these files
-> are emit-time templates under `skills/agent-project-bootstrap/assets/collab-repo/` (entrypoints +
-> `adapters/`) and `skills/agent-project-bootstrap/references/` (the canon spec); at scaffold time
+> NOT the layout of the Barony skill repo itself (formerly `agent-project-bootstrap`). In the skill repo these files
+> are emit-time templates under `skills/barony/assets/collab-repo/` (entrypoints +
+> `adapters/`) and `skills/barony/references/` (the canon spec); at scaffold time
 > they are copied into the target project at the root paths shown below (`canon/` + `adapters/` —
 > see `ORCHESTRATE.md` step 2a). The two structures are consistent; only the root differs.
 

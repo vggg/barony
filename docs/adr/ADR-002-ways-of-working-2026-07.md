@@ -5,7 +5,7 @@ type: decision
 status: accepted
 decided_by: Vikram
 adr: 002
-project: agent-project-bootstrap
+project: barony
 related:
   - "[[docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap]]"
 ---

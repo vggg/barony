@@ -138,7 +138,7 @@ Compute betweenness centrality per node. (Quick library: Python `networkx`; or b
 - **No node above the threshold** → distributed coordination; healthy.
 - **Multiple high-centrality nodes** → either healthy redundancy or a too-many-cooks coordination overhead. Look at total edge volume to disambiguate.
 
-For the agent-project-bootstrap layout, Iris (the librarian) is *expected* to have moderately high centrality on handoff edges, since all agents emit handoffs to her. That's by design. Flag as drift only if her centrality on *review* or *merge* edges is also high — the librarian shouldn't be the merger.
+For the Barony layout, Iris (the librarian) is *expected* to have moderately high centrality on handoff edges, since all agents emit handoffs to her. That's by design. Flag as drift only if her centrality on *review* or *merge* edges is also high — the librarian shouldn't be the merger.
 
 ### Single point of failure threshold
 

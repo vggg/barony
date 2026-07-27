@@ -5,7 +5,7 @@ type: decision
 status: accepted
 decided_by: Vikram
 adr: 004
-project: agent-project-bootstrap
+project: barony
 related:
   - "[[docs/adr/ADR-002-ways-of-working-2026-07]]"
   - "[[docs/adr/ADR-003-baron-cli]]"
@@ -125,7 +125,7 @@ prose contract for consumers lives in the skill
 ### §4.2 — pydantic-ai: the first adapter with natively-`enforced` sub-tool denials
 
 The new pydantic-ai runtime adapter (`adapters/pydantic-ai/HYDRATE.md`; hydrator
-`baron.runtimes.pydantic_ai.build_agent`, extra `baron-cli[pydantic-ai]` pinned to the
+`baron.runtimes.pydantic_ai.build_agent`, extra `barony[pydantic-ai]` pinned to the
 verified `pydantic-ai-harness>=0.10,<0.11` + `pydantic-ai-slim>=2.14.1,<3`) enforces the
 same five sub-tool denials through the runtime's documented in-process interception seam:
 a capability's `before_tool_execute` hook, where raising `ModelRetry` skips execution and

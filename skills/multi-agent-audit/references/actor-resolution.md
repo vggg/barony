@@ -51,7 +51,7 @@ gh -R <owner>/<repo> issue list --state all --limit 1000 \
   --json number,author,assignees,labels
 ```
 
-Pay attention to `assignees` (who was working on it) and `labels` (especially `agent-<name>` labels in agent-project-bootstrap layouts — these reveal claimed work).
+Pay attention to `assignees` (who was working on it) and `labels` (especially `agent-<name>` labels in Barony layouts — these reveal claimed work).
 
 ### 1e. CI / bot / App accounts
 
@@ -63,7 +63,7 @@ From Step 0's project profile. Each declared actor gets a row.
 
 ### 1g. The coordination substrate
 
-For agent-project-bootstrap layouts:
+For Barony layouts:
 
 ```bash
 # Handoff senders and recipients
@@ -98,7 +98,7 @@ If `actors.yaml` is provided, use its declared classes as the authoritative INTE
 If not, classify heuristically:
 
 - **Bot login (`*[bot]`)** → autonomous (App-based).
-- **Persona-prefixed commits** (e.g., `iris:`, `dave:`, `kris:`) → hybrid (the prefix is convention from agent-project-bootstrap).
+- **Persona-prefixed commits** (e.g., `iris:`, `dave:`, `kris:`) → hybrid (the prefix is convention from Barony).
 - **Real-name commits** with no automation signal → human.
 - **Cron-shaped commit patterns** (same time of day, regular cadence, machine-generated messages) → autonomous.
 
@@ -106,8 +106,8 @@ If not, classify heuristically:
 
 The same persona often has multiple identities. Examples:
 
-- A persona that commits under both `dave@trellisiq.online` and `vikram.godbole@shalkiengineers.com` (real case from the GardenTwin project — when Vikram commits *as* Dave through a Claude Code session).
-- A persona named "Iris" in COORDINATION.md but committing as `Vikram Godbole <vikram.godbole@...>` from the vault.
+- A persona that commits under both `dave@trellisiq.online` and `vikram@example.com` (real case from the GardenTwin project — when Vikram commits *as* Dave through a Claude Code session).
+- A persona named "Iris" in COORDINATION.md but committing as `Vikram <vikram@example...>` from the vault.
 - An autonomous persona with both a GitHub App identity and a fallback email.
 
 Map *N identities → 1 canonical actor*. Output a resolution table:
@@ -115,9 +115,9 @@ Map *N identities → 1 canonical actor*. Output a resolution table:
 ```markdown
 | Canonical actor | Class | Observed identities |
 |---|---|---|
-| Iris | hybrid | `iris@vault.local`, `Vikram Godbole <vikram.godbole@shalkiengineers.com>` (when prefix is `iris:`) |
+| Iris | hybrid | `iris@vault.local`, `Vikram <vikram@example.com>` (when prefix is `iris:`) |
 | Dave | hybrid | `Dave <dave@trellisiq.online>`, persona prefix `dave:` |
-| Vikram | human | `Vikram Godbole <vikram.godbole@shalkiengineers.com>` (default), `vggg` (GitHub) |
+| Vikram | human | `Vikram <vikram@example.com>` (default), `vggg` (GitHub) |
 | dependabot | autonomous | `dependabot[bot]` |
 ```
 
@@ -137,13 +137,13 @@ Produce a table for the report:
 
 | Actor | Class | Declared? | Observed? | Identities | Commits | PRs opened | PRs reviewed | Handoffs sent | Confidence |
 |---|---|---|---|---|---|---|---|---|---|
-| Iris | hybrid | yes | yes | iris@vault.local, vikram.godbole@... (prefix:iris) | 47 | 0 | 0 | 12 | measured |
+| Iris | hybrid | yes | yes | iris@vault.local, vikram@example... (prefix:iris) | 47 | 0 | 0 | 12 | measured |
 | Dave | hybrid | yes | yes | dave@trellisiq.online | 38 | 14 | 6 | 8 | measured |
 | Kris | hybrid | yes | yes | kris@trellisiq.online | 22 | 9 | 11 | 5 | measured |
 | Vera | hybrid | yes | yes | analyst@trellisiq.online | 19 | 0 | 18 | 14 | measured |
 | Ivy | hybrid | yes | yes | designer@trellisiq.online | 11 | 0 | 0 | 6 | measured |
 | dependabot | autonomous | no | yes | dependabot[bot] | 0 | 4 | 0 | 0 | measured |
-| Vikram | human | yes | yes | vggg, vikram.godbole@... | 28 | 8 | 23 | 31 | measured |
+| Vikram | human | yes | yes | vggg, vikram@example... | 28 | 8 | 23 | 31 | measured |
 ```
 
 Add a `Notes` column for callouts: *"Declared as autonomous but observed pattern is hybrid"*, *"Non-committing — review-only"*, *"Identity resolved from 3 emails"*, etc.

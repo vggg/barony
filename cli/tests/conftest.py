@@ -10,7 +10,7 @@ import pytest
 
 from baron import clock
 
-#: The agent-project-bootstrap repo root (cli/tests/ -> cli/ -> repo root).
+#: The Barony repo root (cli/tests/ -> cli/ -> repo root).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 FIXED_NOW = datetime(2026, 7, 22, 12, 0, 0, tzinfo=timezone.utc)

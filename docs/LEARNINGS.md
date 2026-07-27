@@ -1,11 +1,11 @@
-# LEARNINGS — agent-project-bootstrap
+# LEARNINGS — Barony
 
 Lessons from the ADR-001 §10 dogfood (the v0→v1 story itself lives in ADR-001 + `CHANGELOG.md`).
 
 > **Scope note:** this is the minimum-viable lessons index — enough to anchor the references
 > that cite it. The comprehensive self-hosting outcome notes (which verbs surfaced from
 > observed need, where the spec bent, what was discarded) are at
-> [`references/v1-self-hosting-notes.md`](../skills/agent-project-bootstrap/references/v1-self-hosting-notes.md).
+> [`references/v1-self-hosting-notes.md`](../skills/barony/references/v1-self-hosting-notes.md).
 
 ## Lessons (`Lx`)
 
@@ -31,4 +31,4 @@ Lessons from the ADR-001 §10 dogfood (the v0→v1 story itself lives in ADR-001
   added speculatively. Each one entered the vocabulary only because a real persona on a real
   adapter task needed it — which is why the frozen v1 list is short. Backs the "additions
   require observed need" design rule in
-  [`references/capability-vocab.v1.md`](../skills/agent-project-bootstrap/references/capability-vocab.v1.md).
+  [`references/capability-vocab.v1.md`](../skills/barony/references/capability-vocab.v1.md).

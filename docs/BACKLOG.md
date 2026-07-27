@@ -72,7 +72,7 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 - `RepoContext()` layering (auto-load an emitted `AGENTS.md`) is documented but not
   wired into `build_agent` — add it once field use shows it earns its prompt-cache cost.
 - Pin bumps: the harness is 0.x with breaking minors allowed; on each bump of the
-  `baron-cli[pydantic-ai]` range, re-verify the `before_tool_execute`/`ModelRetry` veto
+  `barony[pydantic-ai]` range, re-verify the `before_tool_execute`/`ModelRetry` veto
   seam and the `FileSystem.protected_patterns` read-only behavior (both are contract
   assumptions recorded in the ADR-004 addendum §4.2).
 

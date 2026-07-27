@@ -271,7 +271,7 @@ def test_import_error_without_extra_is_clean() -> None:
     )
     assert proc.returncode == 3, proc.stderr
     assert "CLEAN:" in proc.stdout
-    assert "baron-cli[pydantic-ai]" in proc.stdout
+    assert "barony[pydantic-ai]" in proc.stdout
 
 
 def test_hydrate_cli_emits_bootstrap_script(tmp_path: Path) -> None:
@@ -296,7 +296,7 @@ def test_hydrate_cli_emits_bootstrap_script(tmp_path: Path) -> None:
     assert "from baron.runtimes.pydantic_ai import build_agent" in text
     assert 'MODEL = "test"' in text  # the model placeholder
     assert "TODO" in text
-    assert "baron-cli[pydantic-ai]" in text
+    assert "barony[pydantic-ai]" in text
 
 
 def test_hydrate_cli_missing_persona_file_fails(tmp_path: Path) -> None:

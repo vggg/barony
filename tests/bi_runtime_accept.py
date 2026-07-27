@@ -33,7 +33,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SKILL = os.path.join(ROOT, "skills", "agent-project-bootstrap")
+SKILL = os.path.join(ROOT, "skills", "barony")
 ADAPTERS_DIR = os.path.join(SKILL, "assets", "collab-repo", "adapters")
 VOCAB = os.path.join(SKILL, "references", "capability-vocab.v1.md")
 ADAPTERS = ["claude", "code-puppy", "generic", "pydantic-ai"]

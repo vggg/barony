@@ -1,12 +1,12 @@
 ---
-name: agent-project-bootstrap
-description: Scaffold or join a runtime-agnostic multi-agent software project. Use when the user wants to set up a new multi-agent project (personas, collab repo, conventions, coordination) or join an existing one — one runtime-neutral persona.yaml hydrates working personas on any AI coding agent (Claude Code, code-puppy, ...) via per-runtime adapters.
-version: 1.6.0
+name: barony
+description: Barony — scaffold or join a runtime-agnostic multi-agent software project. Use when the user wants to set up a new multi-agent project (personas, collab repo, conventions, coordination) or join an existing one — one runtime-neutral persona.yaml hydrates working personas on any AI coding agent (Claude Code, code-puppy, ...) via per-runtime adapters.
+version: 1.7.0
 created: 2026-05-22
-updated: 2026-07-23
+updated: 2026-07-27
 ---
 
-# Skill: Agent-Project Bootstrap
+# Skill: Barony (project bootstrap)
 
 Bootstraps a runtime-agnostic multi-agent project: a machine-readable `manifest.yaml` +
 one `persona.yaml` per persona, hydrated onto **any** runtime at the highest fidelity it

@@ -70,7 +70,7 @@ Important events in the audit window, in chronological order:
 | 2026-05-22 | CONVENTIONS.md → vault commits via /vc workflow | convention | git log _meta/CONVENTIONS.md |
 | 2026-05-26 | trellisiq.online domain outage (registrar lock) | incident | findings/2026-05-26-domain-outage |
 | 2026-05-28 | iOS scoping greenlit; Pranav joins as iOS dev (separate repo) | roster | wiki/log.md entry |
-| 2026-05-30 | ADR-001 accepted (runtime-agnostic bootstrap, agent-project-bootstrap repo) | decision | tag v1.0.0 |
+| 2026-05-30 | ADR-001 accepted (runtime-agnostic bootstrap, Barony repo) | decision | tag v1.0.0 |
 | **2026-06-10** | **Team restructure — Dave + Ivy on long break; Kris sole dev; Vera analyst+designer** | **roster** | **handoff + user_agent_dave/designer memories** |
 | 2026-06-12 | First audit (this snapshot) | audit | this snapshot |
 | 2026-06-12 | Audit window end | — | — |
@@ -126,8 +126,8 @@ Invocation:
 
 ```bash
 python3 scripts/extract_timeline.py \
-  --repo /Users/vikram/Workspace/Claude/GardenTwinSiteDev-2/GardenTwin \
-  --coordination /Users/vikram/Obsidian/Brain \
+  --repo path/to/code-repo \
+  --coordination path/to/collab-repo \
   --window-start 2026-03-14 --window-end 2026-06-12 \
   --format json > timeline.json
 ```

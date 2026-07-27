@@ -11,9 +11,9 @@ The output of Step 0 is a **project profile** that Steps 0.5 and 1 build on. If 
 Where to look (in priority order; stop at the first that yields data):
 
 1. **`actors.yaml`** (or `actors.yml`) at the repo root or in `audit/` — if the user declared a roster for this audit.
-2. **`manifest.yaml`** (agent-project-bootstrap v1.x) — `agents:` section.
-3. **`agents/<name>/persona.yaml`** (agent-project-bootstrap v1.x) — one file per persona, declares identity + capabilities + scope.
-4. **`agents/<name>/AGENT.md`** (agent-project-bootstrap v0.x or v1.x dev personas) — markdown persona descriptions.
+2. **`manifest.yaml`** (Barony v1.x) — `agents:` section.
+3. **`agents/<name>/persona.yaml`** (Barony v1.x) — one file per persona, declares identity + capabilities + scope.
+4. **`agents/<name>/AGENT.md`** (Barony v0.x or v1.x dev personas) — markdown persona descriptions.
 5. **`CONVENTIONS.md` or `COORDINATION.md`** — Roles section, write-ownership table.
 6. **`_meta/PERSONAS/`** (vault-project layout).
 7. **`.crew/` / `.langgraph/` / `.autogen/`** — framework-specific conventions for other stacks.
@@ -35,7 +35,7 @@ Identify the **backlog source**. One of:
 
 - **GitHub issues** — the most common. `gh issue list --repo <owner>/<repo>` will work.
 - **Linear / Jira / Notion** — out of scope for v1.x of this skill; record as "external backlog (not minable from this audit's tools)."
-- **Vault-tracked** — issues in markdown files under `findings/` or `questions/` (agent-project-bootstrap pattern).
+- **Vault-tracked** — issues in markdown files under `findings/` or `questions/` (Barony pattern).
 - **Branch labels** — work tracked by branch prefix only.
 - **None** — the project has no formal backlog. Record as a finding.
 
@@ -45,13 +45,13 @@ For each, capture how a task moves from "open" → "in progress" → "done." If 
 
 Look for the coordination substrate:
 
-- **`_handoff/` directory** (agent-project-bootstrap) — file-based async messages with `for:` / `from:` / `status:` frontmatter. Count the files; sample a few to confirm the protocol is active (not just declared).
+- **`_handoff/` directory** (Barony) — file-based async messages with `for:` / `from:` / `status:` frontmatter. Count the files; sample a few to confirm the protocol is active (not just declared).
 - **`COORDINATION.md`** — describes the cross-agent protocol.
 - **PR comments** — `gh api repos/<owner>/<repo>/pulls/<n>/comments` for review/discussion comments.
 - **Issue comments** — discussion threads on tickets.
 - **Slack / Discord / Teams** — not minable without explicit auth; record as "external channel (not measurable from this audit)."
 
-For agent-project-bootstrap layouts, the canonical coordination surface is `_handoff/` + the issue tracker. For other layouts, you may need to discover heuristically.
+For Barony layouts, the canonical coordination surface is `_handoff/` + the issue tracker. For other layouts, you may need to discover heuristically.
 
 ### 4. How autonomy is driven and gated
 
@@ -65,7 +65,7 @@ For each autonomous actor identified in step 1, find out:
 Sources to check:
 
 - **GitHub Actions** — `.github/workflows/*.yml` for cron and event triggers.
-- **`agents/<name>/FAILOVER.md`** (agent-project-bootstrap) — failover runbook, includes runtime/cron details.
+- **`agents/<name>/FAILOVER.md`** (Barony) — failover runbook, includes runtime/cron details.
 - **`agents/<name>/persona.yaml`** — `runtime:` field declares the runtime; `trigger:` field declares interactive/event/cron.
 - **`manifest.yaml`** — `runtime:` taxonomy.
 
@@ -94,7 +94,7 @@ A **project profile** with the following structure (you'll feed this forward int
 - **Project name:** <name>
 - **Code repo:** <url or path>
 - **Coordination/collab repo:** <url or path, or "single-repo">
-- **Layout family:** agent-project-bootstrap v1.x | agent-project-bootstrap v0.x | vault-project | CrewAI | LangGraph | AutoGen | Copilot agents | custom | unclassified
+- **Layout family:** Barony v1.x | Barony v0.x | vault-project | CrewAI | LangGraph | AutoGen | Copilot agents | custom | unclassified
 - **Declared roster:**
   - <actor 1> (<class>, <runtime>, <scope>)
   - <actor 2> (...)
@@ -126,16 +126,16 @@ Quick checks to classify the project's layout family:
 
 | If you find | Layout is likely |
 |---|---|
-| `manifest.yaml` with `agents:` + `adapters/` directory | agent-project-bootstrap v1.x |
-| `agents/<name>/AGENT.md` files + no `manifest.yaml` | agent-project-bootstrap v0.x |
-| `_meta/PERSONAS/*.md` + Obsidian vault structure | vault-project (early agent-project-bootstrap) |
+| `manifest.yaml` with `agents:` + `adapters/` directory | Barony v1.x |
+| `agents/<name>/AGENT.md` files + no `manifest.yaml` | Barony v0.x |
+| `_meta/PERSONAS/*.md` + Obsidian vault structure | vault-project (early Barony) |
 | `crew.py` or `crew.yaml` | CrewAI |
 | `graph.py` + LangChain/LangGraph imports | LangGraph |
 | `groupchat.py` + AutoGen imports | AutoGen |
 | `.github/copilot-agent.yml` or `copilot.yml` | Copilot agents |
 | None of the above | custom or unclassified — proceed heuristically |
 
-If you detect agent-project-bootstrap v1.x or v0.x, load `references/bootstrap-adapter.md` next — it gives you the exact mining commands for that layout.
+If you detect Barony v1.x or v0.x, load `references/bootstrap-adapter.md` next — it gives you the exact mining commands for that layout.
 
 ## Time window
 

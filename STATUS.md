@@ -1,4 +1,4 @@
-# STATUS — agent-project-bootstrap
+# STATUS — Barony
 
 Tracks current progress and deferred candidates. Update on every PR that ships a step (per
 `CONTRIBUTING.md`). Full release history lives in `CHANGELOG.md`; the v0→v1 migration story
@@ -31,7 +31,8 @@ in **v1.6.0**; remaining:
 
 | Version | Date | Summary (details in `CHANGELOG.md`) |
 |---|---|---|
-| **v1.6.0** | 2026-07-23 | Capability-rules artifact (`capability-rules.v1.yaml`, single policy source for guard + adapters) + AGENTS.md emission (generic adapter) + the pydantic-ai runtime adapter (4th runtime; sub-tool denials natively enforced in-process) with working hydrator, `baron hydrate pydantic-ai`, and the `baron-cli[pydantic-ai]` extra. See below. |
+| **v1.7.0** | 2026-07-27 | The Barony release — the project renamed from `agent-project-bootstrap` to **Barony** (repo `vggg/barony`, plugin/skill `barony`, PyPI distribution `barony` at CLI 0.4.0; the CLI command stays `baron`). [ADR-005](docs/adr/ADR-005-naming.md). |
+| v1.6.0 | 2026-07-23 | Capability-rules artifact (`capability-rules.v1.yaml`, single policy source for guard + adapters) + AGENTS.md emission (generic adapter) + the pydantic-ai runtime adapter (4th runtime; sub-tool denials natively enforced in-process) with working hydrator, `baron hydrate pydantic-ai`, and the `barony[pydantic-ai]` extra. See below. |
 | v1.5.0 | 2026-07-23 | baron CLI: M1–M3 (validate/status/ledgers-handoffs-index, first released here) + M4 `baron guard` PreToolUse enforcement (ADR-004) + M5 `baron lock` PR-as-lock + lock-guard CI template + M6 worktree tooling + status waivers. |
 | v1.4.0 | 2026-07-22 | One front door + legacy quarantine + July-2026 ways-of-working (ADR-002) + archetype parity + real CI. |
 | v1.3.0 | 2026-06-12 | `multi-agent-audit` v1.3 — closed all 13 first-real-audit findings + timeline feature. |
@@ -57,7 +58,7 @@ ADR-004 §4 addendum).
   all 10 verbs; five guard-covered sub-tool rows natively `enforced` via in-process
   interception; whole-tool via capability omission); working hydrator
   `baron.runtimes.pydantic_ai.build_agent`; `baron hydrate pydantic-ai`;
-  `baron-cli[pydantic-ai]` extra pinned to the verified versions (harness 0.10.0 /
+  `barony[pydantic-ai]` extra pinned to the verified versions (harness 0.10.0 /
   slim 2.16.0); offline tests (TestModel/FunctionModel, no keys);
   `tests/bi_runtime_accept.py` sweeps 4 adapters with tightened tier rules.
 
@@ -113,7 +114,7 @@ The credibility-debt release: one front door, honest artifacts, real tests.
 
 ## Deferred candidates
 
-### agent-project-bootstrap
+### barony (bootstrap skill + baron CLI)
 
 - **Native code-puppy skill packaging.** code-puppy doesn't auto-discover the Claude
   `SKILL.md` format, so it's invoked by file path today (`USING-WITH-CODE-PUPPY.md`).

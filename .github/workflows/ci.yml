@@ -18,8 +18,9 @@ jobs:
       - name: Repo lint (placeholders, dead links, fixture leaks, version sync)
         run: python tests/lint_repo.py
 
-  # baron CLI (Phase 2, ADR-003) — the one packaged component; tested via uv.
-  baron-cli:
+  # baron CLI (Phase 2, ADR-003; distribution `barony`) — the one packaged
+  # component; tested via uv.
+  baron:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,7 +1,8 @@
 # baron — the collab-repo CLI (Phase 2: conventions → mechanisms)
 
-`baron` turns the multi-agent coordination *conventions* that
-`agent-project-bootstrap` emits into *mechanisms*: a small CLI that validates the
+`baron` is **Barony**'s CLI — install `barony`, run `baron`, import `baron`. It
+turns the multi-agent coordination *conventions* that
+Barony emits into *mechanisms*: a small CLI that validates the
 canonical specs, reports clone/branch/ledger divergence, and performs the
 race-prone record-keeping operations (finding/decision numbering, handoff
 lifecycle) safely.
@@ -16,9 +17,19 @@ file it writes remains fully human/agent-legible.
 Dependencies: **typer + pyyaml only**. `git` is driven via subprocess. `gh` is an
 accepted prerequisite for forge features only (`baron lock`) — everything else
 below works without `gh` installed. The pydantic-ai runtime adapter is an
-**optional extra** (`baron-cli[pydantic-ai]`, pinned) — see `baron hydrate` below.
+**optional extra** (`barony[pydantic-ai]`, pinned) — see `baron hydrate` below.
 
 ## Install
+
+Once published to PyPI (distribution name `barony`):
+
+```bash
+uv tool install barony           # installs the `baron` console script
+# or:
+pip install barony
+```
+
+Until then, install from a local clone:
 
 ```bash
 # from the repo root, with uv:
@@ -37,7 +48,7 @@ pip install ./cli
 Validate `persona.yaml` / `manifest.yaml` — a single file, or every one
 discovered under `PATH`. Schemas are declarative Python data
 (`src/baron/schemas.py`) formalized from the prose specs in
-`../skills/agent-project-bootstrap/references/`; the FROZEN 10-verb capability
+`../skills/barony/references/`; the FROZEN 10-verb capability
 vocabulary is embedded and drift-guarded by a test that re-parses
 `capability-vocab.v1.md`.
 
@@ -62,7 +73,7 @@ baron validate . --json
 
 Run from a collab repo (or `--collab PATH`). Reads `manifest.yaml` — including
 the optional `workspace.clones` / `workspace.worktrees_root` fields (see
-`../skills/agent-project-bootstrap/references/manifest.schema.md`) — and
+`../skills/barony/references/manifest.schema.md`) — and
 reports, with severity:
 
 | Check | Severity | Meaning |
@@ -145,7 +156,7 @@ What it decides:
   persona's declared `write_path` scopes remain.
 - **Unknown tools** — pass (a capability gate, not an allowlist).
 
-**Policy source (v0.3.0):** guard's rule table — the command patterns and
+**Policy source (since v0.3.0):** guard's rule table — the command patterns and
 file-op scoping semantics above, plus the conservative-deny ambiguity policy —
 is NOT hardcoded: it lives in the versioned artifact
 `src/baron/data/capability-rules.v1.yaml` (package data, loaded by
@@ -153,7 +164,7 @@ is NOT hardcoded: it lives in the versioned artifact
 enforcement rules; the pydantic-ai adapter below consumes the same table, so
 decisions are identical across runtimes. A missing/unsupported artifact fails
 CLOSED. Prose contract:
-`../skills/agent-project-bootstrap/references/capability-rules.md`.
+`../skills/barony/references/capability-rules.md`.
 
 **Fail-closed but not brick:** unreadable persona file / malformed stdin →
 DENY with actionable stderr. Escape hatch: `BARON_GUARD_OVERRIDE=<reason>`
@@ -234,7 +245,7 @@ waiver stops matching (the red resurfaces) and is itself reported as an
 
 Emit a ready-to-edit bootstrap script hydrating one persona onto
 **pydantic-ai** (the fourth runtime adapter,
-`../skills/agent-project-bootstrap/assets/collab-repo/adapters/pydantic-ai/HYDRATE.md`).
+`../skills/barony/assets/collab-repo/adapters/pydantic-ai/HYDRATE.md`).
 
 ```bash
 baron hydrate pydantic-ai --persona-file agents/fern/persona.yaml --out agent_setup.py
@@ -246,7 +257,7 @@ until you pick a real model). Emission needs only baron; **running** it needs
 the optional extra:
 
 ```bash
-pip install 'baron-cli[pydantic-ai]'   # pins pydantic-ai-harness>=0.10,<0.11
+pip install 'barony[pydantic-ai]'   # pins pydantic-ai-harness>=0.10,<0.11
                                        #      + pydantic-ai-slim>=2.14.1,<3
 ```
 

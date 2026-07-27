@@ -1,10 +1,10 @@
-# agent-project-bootstrap — Repo Guide
+# Barony — Repo Guide
 
 ## What this repo is
 
-The **canonical home** for the `agent-project-bootstrap` skill and its sister skill `multi-agent-audit` — the runtime-agnostic spec, adapters, references, tests, and meta-docs all live and evolve here.
+**Barony** (repo `vggg/barony`; formerly `agent-project-bootstrap`, renamed per ADR-005) — git-native governance for teams of AI coding agents. The **canonical home** for the `barony` skill, the `baron` CLI, and the sister skill `multi-agent-audit` — the runtime-agnostic spec, adapters, references, tests, and meta-docs all live and evolve here.
 
-Current state: **v1.6.0** — one front door (`SKILL.md` routes everything to `skills/agent-project-bootstrap/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions; four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
+Current state: **v1.7.0** — one front door (`SKILL.md` routes everything to `skills/barony/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions; four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
 
 ## Canonicality
 
@@ -13,20 +13,20 @@ This repo is canonical for everything. (For the v0→v1 migration story — how 
 | Surface | Canonical home |
 |---|---|
 | ADRs (`docs/adr/`) | this repo |
-| Runtime adapters (`skills/agent-project-bootstrap/assets/collab-repo/adapters/{claude,code-puppy,pydantic-ai,generic}/`) | this repo |
-| Canonical spec (`skills/agent-project-bootstrap/references/`) | this repo |
+| Runtime adapters (`skills/barony/assets/collab-repo/adapters/{claude,code-puppy,pydantic-ai,generic}/`) | this repo |
+| Canonical spec (`skills/barony/references/`) | this repo |
 | Acceptance tests (`tests/`) | this repo |
-| Emit-time templates (everything else under `skills/agent-project-bootstrap/assets/`) | this repo |
+| Emit-time templates (everything else under `skills/barony/assets/`) | this repo |
 | Meta-docs (`README.md`, `CLAUDE.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `STATUS.md`) | this repo |
 | `.claude-plugin/plugin.json` | this repo (bumped at release) |
 
-The vault retains a historical copy under `_meta/skills/agent-project-bootstrap/`; treat it as archival reference, not a source of truth.
+The vault retains a historical copy under `_meta/skills/agent-project-bootstrap/` (the pre-rename skill name); treat it as archival reference, not a source of truth.
 
 ## Persona / role for a fresh agent
 
-A fresh Claude Code (or code-puppy, or any other) session landing in this repo operates as a **generic dev archetype**. This repo does not yet dogfood its own multi-persona pattern — there is no `CONVENTIONS.md` / `COORDINATION.md` / `agents/` at the *repo root*. Vikram works directly with the agent as a single dev. Persona-routing labels (`agent-<name>`) are not defined for this repo.
+A fresh Claude Code (or code-puppy, or any other) session landing in this repo operates as a **generic dev archetype**. This repo does not yet dogfood its own multi-persona pattern — there is no `CONVENTIONS.md` / `COORDINATION.md` / `agents/` at the *repo root*. The repo owner works directly with the agent as a single dev. Persona-routing labels (`agent-<name>`) are not defined for this repo.
 
-The `CONVENTIONS.md` and `COORDINATION.md` files you'll see under `skills/agent-project-bootstrap/assets/collab-repo/` are **emit-time templates** that get copied into projects scaffolded BY this skill — they are not this repo's own convention files.
+The `CONVENTIONS.md` and `COORDINATION.md` files you'll see under `skills/barony/assets/collab-repo/` are **emit-time templates** that get copied into projects scaffolded BY this skill — they are not this repo's own convention files.
 
 ## Repo layout
 
@@ -35,7 +35,7 @@ The `CONVENTIONS.md` and `COORDINATION.md` files you'll see under `skills/agent-
   plugin.json             # plugin manifest — version number lives here (synced with SKILL.md)
 .github/workflows/ci.yml  # runs tests/ with plain python on push + PR
 skills/
-  agent-project-bootstrap/
+  barony/
     SKILL.md              # thin front door — routes to assets/collab-repo/START.md
     references/           # canonical spec
       capability-vocab.v1.md
@@ -95,7 +95,7 @@ python3 tests/bi_runtime_accept.py
 python3 tests/lint_repo.py
 uv run --project cli pytest cli/tests
 
-# 2. Bump version in .claude-plugin/plugin.json AND skills/agent-project-bootstrap/SKILL.md
+# 2. Bump version in .claude-plugin/plugin.json AND skills/barony/SKILL.md
 # 3. Move [Unreleased] content in CHANGELOG.md to a new version section
 
 git add .
@@ -110,10 +110,10 @@ gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes "<notes>"
 
 Install from a local clone:
 ```bash
-/plugin install /path/to/agent-project-bootstrap
+/plugin install /path/to/barony
 ```
 
-Invoke in a throwaway directory and verify the emitted files match the templates in `skills/agent-project-bootstrap/assets/`.
+Invoke in a throwaway directory and verify the emitted files match the templates in `skills/barony/assets/`.
 
 **Bi-runtime acceptance test** — the gate for adapter / spec / canonical-contract changes:
 ```bash

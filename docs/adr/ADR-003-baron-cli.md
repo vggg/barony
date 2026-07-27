@@ -5,7 +5,7 @@ type: decision
 status: accepted
 decided_by: Vikram
 adr: 003
-project: agent-project-bootstrap
+project: barony
 related:
   - "[[docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap]]"
   - "[[docs/adr/ADR-002-ways-of-working-2026-07]]"
@@ -56,7 +56,7 @@ ledgers/handoffs/index) land now; the worktree topology work is M6 (planned; poi
 
 Short, typeable, unclaimed on the relevant PATHs, and apt: the baron keeps the estate's
 books — land registry, ledgers, disputes — without owning the work done on the land.
-The console script is `baron`; the distribution is `baron-cli`.
+The console script is `baron`; the distribution is `baron-cli`. *(Distribution renamed to `barony` at v0.4.0 — see [ADR-005](ADR-005-naming.md); the console script and import package stay `baron`.)*
 
 ### §2.2 — The markdown/git substrate IS the database
 

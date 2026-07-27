@@ -5,7 +5,7 @@ Owner-only operations for managing the {{PROJECT_NAME}} collab repo. Not visible
 ## Adding a persona
 
 1. Decide the persona's archetype: **dev**, **autonomous-event** (GitHub Actions on PR webhook), **autonomous-cron** (scheduled), or **librarian** (only one per project; already emitted by default).
-2. Copy the matching template from the `agent-project-bootstrap` skill at `assets/collab-repo/agents/<archetype>/AGENT.md` into `agents/<persona-slug>/AGENT.md` in this repo.
+2. Copy the matching template from the `barony` skill at `assets/collab-repo/agents/<archetype>/AGENT.md` into `agents/<persona-slug>/AGENT.md` in this repo.
 3. Fill the placeholders for the new persona (slug, name, git identity, etc.).
 4. Update the **Personas at a glance** table in `COORDINATION.md` and the **Identity, labels, and routing** table in `CONVENTIONS.md`.
 5. Create the GitHub label for the persona on both repos:

@@ -17,7 +17,7 @@ runner = CliRunner()
 TESS = REPO_ROOT / "tests/examples/tess/persona.yaml"
 REX = REPO_ROOT / "tests/examples/rex/persona.yaml"
 MANIFEST_EXAMPLE = (
-    REPO_ROOT / "skills/agent-project-bootstrap/assets/collab-repo/manifest.example.yaml"
+    REPO_ROOT / "skills/barony/assets/collab-repo/manifest.example.yaml"
 )
 
 
@@ -93,7 +93,7 @@ def test_discovery_skips_templates_but_validates_fixtures() -> None:
     assert TESS in files and REX in files
     assert errors(findings) == []
     findings2, files2, skipped2 = validate_path(
-        REPO_ROOT / "skills/agent-project-bootstrap/assets"
+        REPO_ROOT / "skills/barony/assets"
     )
     assert files2 == []  # everything under assets/collab-repo/ is a template
     assert skipped2, "template persona.yaml files should be reported as skipped"

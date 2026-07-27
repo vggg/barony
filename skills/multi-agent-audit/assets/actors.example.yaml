@@ -25,12 +25,12 @@ actors:
   # Human actors
   # -----------------------------------------------------------------------
   - slug: vikram                   # required — canonical actor key
-    name: Vikram Godbole           # optional — display name
+    name: Vikram                   # optional — display name
     class: human                   # required — human | autonomous | hybrid
     role: project-owner            # optional — free-text role label
     identities:                    # optional but recommended
-      - email: vikram.godbole@shalkiengineers.com
-      - email: vikram@example.com  # if the same person has multiple emails
+      - email: vikram@example.com
+      - email: vikram@example.invalid  # if the same person has multiple emails
       - github_login: vggg
       - persona_prefix: ""         # no prefix; commits as themselves
     write_areas:                   # optional — declared scope
@@ -40,14 +40,14 @@ actors:
       under personal identity for project-meta files.
 
   - slug: pranav
-    name: Pranav (last name TBD)
+    name: Pranav (example collaborator)
     class: human
     role: ios-dev
     identities:
-      - github_login: vadpranav30
-      - email: vadpranav30@users.noreply.github.com
+      - github_login: pranav-example
+      - email: pranav-example@users.noreply.github.com
     write_areas:
-      - ArkShark11/GardenTwinIOS/**
+      - example-org/GardenTwinIOS/**
     notes: |
       Remote collaborator. No vault access; routed via agent-pranav GitHub
       label on issues. Read+comment only on web repo.
@@ -133,7 +133,7 @@ actors:
     runtime: claude-code
     trigger: interactive           # actual; declared trigger may be cron
     identities:
-      - email: vikram.godbole@shalkiengineers.com
+      - email: vikram@example.com
       - persona_prefix: "iris:"
     write_areas:
       - wiki/**

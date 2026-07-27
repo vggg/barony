@@ -1,7 +1,7 @@
 # capability-rules v1 — the runtime-agnostic verb→enforcement rule table.
 #
 # THE single source for how the frozen 10-verb capability vocabulary
-# (skills/agent-project-bootstrap/references/capability-vocab.v1.md) maps onto
+# (skills/barony/references/capability-vocab.v1.md) maps onto
 # concrete, deterministically-checkable operations. Consumers (baron guard's
 # Claude Code PreToolUse hook, the pydantic-ai runtime adapter's in-process
 # interceptor, future runtime adapters) MUST load this artifact rather than

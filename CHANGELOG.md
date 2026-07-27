@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.0] — 2026-07-27
+
+**The Barony release** — the project is renamed from `agent-project-bootstrap` to
+**Barony**: git-native governance for teams of AI coding agents. The rename is recorded
+in [ADR-005](docs/adr/ADR-005-naming.md); the naming system is **Barony** = the
+product/framework (spec + adapters + baron CLI + audit), **baron** = the CLI
+(install `barony`, run `baron`, import `baron`).
+
+### Changed
+
+- **Repo** — `vggg/agent-project-bootstrap` → `vggg/barony` (GitHub redirects the old
+  URLs). All live GitHub links updated.
+- **Skill directory** — `skills/agent-project-bootstrap/` → `skills/barony/` (git mv);
+  skill frontmatter `name: barony`; plugin manifest `name: barony`. The sister skill
+  keeps its name (`multi-agent-audit`). All path references (docs, tests, templates,
+  legacy pointers) updated.
+- **CLI distribution** — `baron-cli` → **`barony`**, version `0.3.0 → 0.4.0`. Console
+  script and import package stay `baron`; the optional extra is now
+  `barony[pydantic-ai]`.
+- **Positioning copy** — README/CLAUDE/STATUS identity statements rewritten around the
+  current positioning ("git-native governance for teams of AI coding agents"); stale
+  v0.3-era scaffolding/vault copy removed from CONTRIBUTING. The "signet" name is
+  introduced for SHA-sealed review verdicts (reserved sub-brand, ADR-005 §2).
+- **Leak scrub** — absolute local paths and non-fiction personal identities removed
+  from audit-skill examples (`references/timeline.md`, `references/actor-resolution.md`,
+  `assets/actors.example.yaml`, `references/confidence-and-trends.md`); replaced with
+  generic placeholders.
+
+### Added
+
+- **`docs/adr/ADR-005-naming.md`** — the naming decision, research summary (PyPI/npm
+  availability, rejected alternatives), and rename mechanics.
+
+Historical entries below this line keep the old name where they describe the past —
+history is not rewritten.
+
 ## [1.6.0] — 2026-07-23
 
 The fourth-runtime release: the guard's rule table becomes a versioned, machine-readable

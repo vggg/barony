@@ -33,7 +33,7 @@ Every audit run persists a machine-readable snapshot to `<output>/snapshots/<YYY
     "timestamp": "2026-06-12T14:30:00Z",
     "project_name": "GardenTwin",
     "audited_repos": [
-      { "role": "code", "url": "https://github.com/ArkShark11/GardenTwin" }
+      { "role": "code", "url": "https://github.com/example-org/GardenTwin" }
     ],
     "time_window": { "start": "2026-03-14", "end": "2026-06-12", "days": 90 },
     "auditor": {

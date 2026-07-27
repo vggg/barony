@@ -52,7 +52,7 @@ try:
 except ImportError as exc:  # pragma: no cover - exercised via subprocess test
     raise ImportError(
         "baron's pydantic-ai runtime adapter requires the optional extra. "
-        "Install it with:  pip install 'baron-cli[pydantic-ai]'  "
+        "Install it with:  pip install 'barony[pydantic-ai]'  "
         "(or: uv tool install './cli[pydantic-ai]' from the bootstrap repo). "
         f"Missing dependency: {exc.name or exc}"
     ) from exc

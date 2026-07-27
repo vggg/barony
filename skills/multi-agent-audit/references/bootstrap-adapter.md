@@ -1,6 +1,6 @@
-# Adapter — agent-project-bootstrap v1.x layout
+# Adapter — Barony v1.x layout
 
-Load this reference when Step 0 detects the agent-project-bootstrap collab-repo-project layout (presence of `manifest.yaml` + `agents/<name>/persona.yaml` + `adapters/<runtime>/`).
+Load this reference when Step 0 detects the Barony collab-repo-project layout (presence of `manifest.yaml` + `agents/<name>/persona.yaml` + `adapters/<runtime>/`). Barony was formerly named `agent-project-bootstrap` — projects scaffolded before the rename carry the same layout.
 
 This adapter tells the audit **exactly where to mine each metric** in a project that follows the bootstrap convention, so Step 1 doesn't need heuristics.
 
@@ -36,7 +36,7 @@ Detect:
 test -f <collab-repo>/manifest.yaml && \
 test -d <collab-repo>/agents && \
 test -d <collab-repo>/_handoff && \
-echo "agent-project-bootstrap v1.x detected"
+echo "Barony v1.x detected"
 ```
 
 If `adapters/` is also present, it's confirmed v1.x. If `agents/<name>/persona.yaml` files exist, definitely v1.x. v0.x is the same layout without `adapters/` or `persona.yaml` (only `AGENT.md`).
@@ -70,7 +70,7 @@ Per-persona detail: `agents/<slug>/persona.yaml` — has `capabilities.allow:` /
 
 Standard `git log` + `gh pr/issue/review` queries from `references/platform-integrations.md`, **plus four other substrates that matter more for this layout than git log does** (per the v1.2.0 GardenTwin-audit lesson: see `audit/2026-06-12-addendum-01-agent-labels-correction.md` in any vggg-style vault for the worked example).
 
-> ⚠️ **For agent-project-bootstrap projects, persona attribution is MULTI-SUBSTRATE by design.** Git-log identity collision is the rule, not the exception — multiple personas drive their sessions through the same human's local git config and GitHub auth. Do NOT score the Agents drift row on `git log` alone. Use the substrates below.
+> ⚠️ **For Barony projects, persona attribution is MULTI-SUBSTRATE by design.** Git-log identity collision is the rule, not the exception — multiple personas drive their sessions through the same human's local git config and GitHub auth. Do NOT score the Agents drift row on `git log` alone. Use the substrates below.
 
 The five identity substrates to mine, in priority order:
 
@@ -117,7 +117,7 @@ git -C <code-repo> log --since="<W>" --format='%H|%s|%an|%ae' \
     }'
 ```
 
-> **Important:** many agent-project-bootstrap-shipped projects use **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `perf:`, `build:`, `revert:`) instead of persona prefixes. The `collect_git_metrics.sh` script's `--filter-conv-commits` mode handles this — see v1.3.0 docs. **If you see `feat`, `fix`, etc. as the top "personas" in the script output, persona-prefix isn't the attribution mechanism for this repo. Fall through to substrates 1–3 above.**
+> **Important:** many Barony-shipped projects use **Conventional Commits** (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `style:`, `perf:`, `build:`, `revert:`) instead of persona prefixes. The `collect_git_metrics.sh` script's `--filter-conv-commits` mode handles this — see v1.3.0 docs. **If you see `feat`, `fix`, etc. as the top "personas" in the script output, persona-prefix isn't the attribution mechanism for this repo. Fall through to substrates 1–3 above.**
 
 #### 5. Git author identity (last-resort fallback)
 
@@ -254,7 +254,7 @@ The bootstrap pattern explicitly supports non-committing agents:
 - **Librarian (cron)** — writes to vault `wiki/` directory. May commit (if vault is git-tracked) or may not (if vault is fully external). If `wiki/` is in the collab repo, the librarian's writes appear in `git log`. If the wiki is in a separate vault, the librarian's work is invisible to `git log` of the audited repos — surface as non-committing in the inventory.
 - **PR reviewer (gh-actions-event)** — runs in CI; bot account; appears in `gh api .../pulls/<n>/reviews` but never commits to feature branches.
 
-For agent-project-bootstrap audits: **always** check for non-committing review bots and cron librarians in the inventory (Step 0.5). Missing them inflates the autonomy split.
+For Barony audits: **always** check for non-committing review bots and cron librarians in the inventory (Step 0.5). Missing them inflates the autonomy split.
 
 ## Headline metric mapping
 

@@ -1,8 +1,8 @@
 # Legacy v0.3.x emit modes (DEPRECATED)
 
-> Moved here from `skills/agent-project-bootstrap/SKILL.md` in v1.4.0. Deprecated and
+> Moved here from `skills/barony/SKILL.md` in v1.4.0. Deprecated and
 > unmaintained — see `legacy/README.md`. New projects use the runtime-agnostic path:
-> `skills/agent-project-bootstrap/assets/collab-repo/START.md`.
+> `skills/barony/assets/collab-repo/START.md`.
 
 ## Legacy emit modes (v0.3.x)
 
@@ -67,10 +67,10 @@ Dev 1 and Dev 2 use the same template. If the project uses a shared GitHub repo 
 **3a. Copy slash commands (recommended).**
 
 ```
-../skills/agent-project-bootstrap/assets/commands/vc.md → ~/.claude/commands/vc.md
+../skills/barony/assets/commands/vc.md → ~/.claude/commands/vc.md
 ```
 
-Installs the `/vc` slash command globally for the user. Once placed, any Claude Code session (any agent, any project) can run `/vc` to commit and push vault changes following the canonical agent-prefix convention. See `../skills/agent-project-bootstrap/assets/commands/vc.md` for the workflow.
+Installs the `/vc` slash command globally for the user. Once placed, any Claude Code session (any agent, any project) can run `/vc` to commit and push vault changes following the canonical agent-prefix convention. See `../skills/barony/assets/commands/vc.md` for the workflow.
 
 **4. Fill placeholders.**
 
@@ -152,13 +152,13 @@ cd {{LOCAL_COLLAB_PATH}}
 **2. Copy the root scaffold.**
 
 ```
-../skills/agent-project-bootstrap/assets/collab-repo/CONVENTIONS.md      → {{LOCAL_COLLAB_PATH}}/CONVENTIONS.md
-../skills/agent-project-bootstrap/assets/collab-repo/COORDINATION.md     → {{LOCAL_COLLAB_PATH}}/COORDINATION.md
-../skills/agent-project-bootstrap/assets/collab-repo/CLAUDE.md           → {{LOCAL_COLLAB_PATH}}/CLAUDE.md
-../skills/agent-project-bootstrap/assets/collab-repo/QUICKSTART.md       → {{LOCAL_COLLAB_PATH}}/QUICKSTART.md     # NEW v0.3.1
-../skills/agent-project-bootstrap/assets/collab-repo/BOOTSTRAP.md        → {{LOCAL_COLLAB_PATH}}/BOOTSTRAP.md
-../skills/agent-project-bootstrap/assets/collab-repo/BOOTSTRAP-ADMIN.md  → {{LOCAL_COLLAB_PATH}}/BOOTSTRAP-ADMIN.md
-../skills/agent-project-bootstrap/assets/collab-repo/README.md           → {{LOCAL_COLLAB_PATH}}/README.md
+../skills/barony/assets/collab-repo/CONVENTIONS.md      → {{LOCAL_COLLAB_PATH}}/CONVENTIONS.md
+../skills/barony/assets/collab-repo/COORDINATION.md     → {{LOCAL_COLLAB_PATH}}/COORDINATION.md
+../skills/barony/assets/collab-repo/CLAUDE.md           → {{LOCAL_COLLAB_PATH}}/CLAUDE.md
+../skills/barony/assets/collab-repo/QUICKSTART.md       → {{LOCAL_COLLAB_PATH}}/QUICKSTART.md     # NEW v0.3.1
+../skills/barony/assets/collab-repo/BOOTSTRAP.md        → {{LOCAL_COLLAB_PATH}}/BOOTSTRAP.md
+../skills/barony/assets/collab-repo/BOOTSTRAP-ADMIN.md  → {{LOCAL_COLLAB_PATH}}/BOOTSTRAP-ADMIN.md
+../skills/barony/assets/collab-repo/README.md           → {{LOCAL_COLLAB_PATH}}/README.md
 ```
 
 **3. Create subfolders with READMEs and genesis content.**
@@ -166,21 +166,21 @@ cd {{LOCAL_COLLAB_PATH}}
 Most subfolder READMEs are pure scaffolding. v0.3.1 adds three "genesis" files (wiki/log.md, wiki/index.md, and a one-time Librarian handoff) so the Librarian's first cron run has a real `find -newer wiki/log.md` baseline instead of silently no-op'ing.
 
 ```
-../skills/agent-project-bootstrap/assets/collab-repo/_handoff/README.md                                  → {{LOCAL_COLLAB_PATH}}/_handoff/README.md
-../skills/agent-project-bootstrap/assets/collab-repo/_handoff/{{DATE}}-bootstrap-to-librarian-genesis.md → {{LOCAL_COLLAB_PATH}}/_handoff/{{TODAY_YYYY-MM-DD-HHMM}}-bootstrap-to-librarian-genesis.md     # NEW v0.3.1
-../skills/agent-project-bootstrap/assets/collab-repo/decisions/README.md → {{LOCAL_COLLAB_PATH}}/decisions/README.md
-../skills/agent-project-bootstrap/assets/collab-repo/findings/README.md  → {{LOCAL_COLLAB_PATH}}/findings/README.md
-../skills/agent-project-bootstrap/assets/collab-repo/wiki/README.md      → {{LOCAL_COLLAB_PATH}}/wiki/README.md
-../skills/agent-project-bootstrap/assets/collab-repo/wiki/log.md         → {{LOCAL_COLLAB_PATH}}/wiki/log.md       # NEW v0.3.1
-../skills/agent-project-bootstrap/assets/collab-repo/wiki/index.md       → {{LOCAL_COLLAB_PATH}}/wiki/index.md     # NEW v0.3.1
+../skills/barony/assets/collab-repo/_handoff/README.md                                  → {{LOCAL_COLLAB_PATH}}/_handoff/README.md
+../skills/barony/assets/collab-repo/_handoff/{{DATE}}-bootstrap-to-librarian-genesis.md → {{LOCAL_COLLAB_PATH}}/_handoff/{{TODAY_YYYY-MM-DD-HHMM}}-bootstrap-to-librarian-genesis.md     # NEW v0.3.1
+../skills/barony/assets/collab-repo/decisions/README.md → {{LOCAL_COLLAB_PATH}}/decisions/README.md
+../skills/barony/assets/collab-repo/findings/README.md  → {{LOCAL_COLLAB_PATH}}/findings/README.md
+../skills/barony/assets/collab-repo/wiki/README.md      → {{LOCAL_COLLAB_PATH}}/wiki/README.md
+../skills/barony/assets/collab-repo/wiki/log.md         → {{LOCAL_COLLAB_PATH}}/wiki/log.md       # NEW v0.3.1
+../skills/barony/assets/collab-repo/wiki/index.md       → {{LOCAL_COLLAB_PATH}}/wiki/index.md     # NEW v0.3.1
 ```
 
 **3a. Copy the workspace-template folder.**
 
 ```
-../skills/agent-project-bootstrap/assets/collab-repo/workspace-template/CLAUDE.md   → {{LOCAL_COLLAB_PATH}}/workspace-template/CLAUDE.md   # NEW v0.3.1
-../skills/agent-project-bootstrap/assets/collab-repo/workspace-template/AGENTS.md   → {{LOCAL_COLLAB_PATH}}/workspace-template/AGENTS.md   # NEW v0.3.1
-../skills/agent-project-bootstrap/assets/collab-repo/workspace-template/setup.sh    → {{LOCAL_COLLAB_PATH}}/workspace-template/setup.sh    # NEW v0.3.1
+../skills/barony/assets/collab-repo/workspace-template/CLAUDE.md   → {{LOCAL_COLLAB_PATH}}/workspace-template/CLAUDE.md   # NEW v0.3.1
+../skills/barony/assets/collab-repo/workspace-template/AGENTS.md   → {{LOCAL_COLLAB_PATH}}/workspace-template/AGENTS.md   # NEW v0.3.1
+../skills/barony/assets/collab-repo/workspace-template/setup.sh    → {{LOCAL_COLLAB_PATH}}/workspace-template/setup.sh    # NEW v0.3.1
 chmod +x {{LOCAL_COLLAB_PATH}}/workspace-template/setup.sh
 ```
 
@@ -194,10 +194,10 @@ For each declared persona, pick the right archetype template and copy it to `age
 
 | Persona type | Template | Notes |
 |---|---|---|
-| Human dev | `../skills/agent-project-bootstrap/assets/collab-repo/agents/__DEV__/AGENT.md` | One per human collaborator |
-| Autonomous (event-triggered) | `../skills/agent-project-bootstrap/assets/collab-repo/agents/__AUTONOMOUS_EVENT__/AGENT.md` | E.g. PR Reviewer, Backtest Runner |
-| Autonomous (cron-triggered) | `../skills/agent-project-bootstrap/assets/collab-repo/agents/__AUTONOMOUS_CRON__/AGENT.md` | E.g. PM+UAT |
-| Librarian | `../skills/agent-project-bootstrap/assets/collab-repo/agents/librarian/AGENT.md` + `FAILOVER.md` | Emitted by default; one per project |
+| Human dev | `../skills/barony/assets/collab-repo/agents/__DEV__/AGENT.md` | One per human collaborator |
+| Autonomous (event-triggered) | `../skills/barony/assets/collab-repo/agents/__AUTONOMOUS_EVENT__/AGENT.md` | E.g. PR Reviewer, Backtest Runner |
+| Autonomous (cron-triggered) | `../skills/barony/assets/collab-repo/agents/__AUTONOMOUS_CRON__/AGENT.md` | E.g. PM+UAT |
+| Librarian | `../skills/barony/assets/collab-repo/agents/librarian/AGENT.md` + `FAILOVER.md` | Emitted by default; one per project |
 
 Rename each `__DEV__` / `__AUTONOMOUS_EVENT__` / `__AUTONOMOUS_CRON__` folder to the persona's slug as you copy.
 
@@ -216,7 +216,7 @@ Rename each `__DEV__` / `__AUTONOMOUS_EVENT__` / `__AUTONOMOUS_CRON__` folder to
 For each persona that has a FAILOVER.md (Librarian; any other cadence-driven persona where failover is meaningful):
 
 1. Read the `runtime:` field from the persona's `AGENT.md` frontmatter.
-2. Copy `../skills/agent-project-bootstrap/assets/collab-repo/_failover-cron-sections/{{runtime}}.md` into the persona's `FAILOVER.md`, substituting the `{{FAILOVER_CRON_SECTION}}` placeholder.
+2. Copy `../skills/barony/assets/collab-repo/_failover-cron-sections/{{runtime}}.md` into the persona's `FAILOVER.md`, substituting the `{{FAILOVER_CRON_SECTION}}` placeholder.
 3. Fill any remaining placeholders ({{PROJECT_NAME}}, {{PROJECT_NAME_LOWER}}, {{CADENCE}}, etc.).
 
 **5. Fill placeholders.**

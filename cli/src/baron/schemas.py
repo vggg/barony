@@ -1,6 +1,6 @@
 """Declarative schemas for persona.yaml and manifest.yaml.
 
-Formalized from the prose specs in ``skills/agent-project-bootstrap/references/``:
+Formalized from the prose specs in ``skills/barony/references/``:
 
 - ``capability-vocab.v1.md`` — the FROZEN v1 10-verb vocabulary. Embedded here as
   :data:`CAPABILITY_VERBS`; ``tests/test_schemas.py`` parses the prose spec's verb

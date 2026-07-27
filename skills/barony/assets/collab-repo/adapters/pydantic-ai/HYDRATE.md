@@ -18,7 +18,7 @@
 > **Verified against:** `pydantic-ai-harness 0.10.0` + `pydantic-ai-slim 2.16.0`
 > (2026-07-23; harness is 0.x — minor releases may break, hence the pinned extra).
 > **Source of truth:** the working hydrator `cli/src/baron/runtimes/pydantic_ai.py` in the
-> bootstrap repo — install with `pip install 'baron-cli[pydantic-ai]'`.
+> bootstrap repo — install with `pip install 'barony[pydantic-ai]'`.
 >
 > **Read first:** `canon/PARTICIPATE.md` (capability ladder) and
 > `canon/capability-vocab.v1.md` (verb contract + enforceability classes).
@@ -30,7 +30,7 @@
 ## Prerequisites
 
 1. Both repos cloned (code + collab) at the paths in the project manifest.
-2. Python ≥ 3.10 with the extra installed: `pip install 'baron-cli[pydantic-ai]'`
+2. Python ≥ 3.10 with the extra installed: `pip install 'barony[pydantic-ai]'`
    (pins `pydantic-ai-harness>=0.10,<0.11` + `pydantic-ai-slim>=2.14.1,<3`).
 3. A model key for the model you pass to `build_agent` — or none: the built-in `'test'`
    model (`TestModel`) runs fully offline for smoke checks.
@@ -103,7 +103,7 @@ this runtime via `build_agent`.
 ### 1. Install the extra + read the persona spec
 
 ```bash
-pip install 'baron-cli[pydantic-ai]'
+pip install 'barony[pydantic-ai]'
 ```
 
 Read `agents/<slug>/persona.yaml`. Everything below is derived from it — the hydrator does

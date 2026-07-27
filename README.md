@@ -1,15 +1,22 @@
-# agent-project-bootstrap
+# Barony
 
-Scaffolds a multi-agent project setup from templates. The pattern is **runtime-agnostic**
-(per [ADR-001](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md)):
+**Git-native governance for teams of AI coding agents.** Barony is a spec, a set of
+runtime adapters, and a CLI (`baron`) for running multiple AI coding agents on one
+long-lived project with real rules — capability grants and denials, coordination
+protocol, handoffs, locks — enforced through the git substrate itself. The pattern is
+**runtime-agnostic** (per
+[ADR-001](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md)):
 a single runtime-neutral `persona.yaml` hydrates working personas on whatever AI coding agent
-you run — Claude Code, code-puppy, or anything else — at the highest fidelity that runtime
-supports. It started as a Claude Code plugin and remains fully compatible with it.
+you run — Claude Code, code-puppy, pydantic-ai, or anything else — at the highest fidelity
+that runtime supports. It started as a Claude Code plugin and remains fully compatible with it.
+
+> Formerly published as `agent-project-bootstrap`; renamed at v1.7.0
+> ([ADR-005](docs/adr/ADR-005-naming.md)). Old GitHub URLs redirect.
 
 **This repo also ships a sister skill, [`multi-agent-audit`](skills/multi-agent-audit/),** for **grading** multi-agent projects with evidence — INTERVENTION TAX, dual-lens drift, operational fidelity — instead of vibes. Read-only by construction. See [Sister skill](#sister-skill-multi-agent-audit).
 
 **One front door:** every new project (and every joiner) routes through
-`skills/agent-project-bootstrap/assets/collab-repo/START.md`, which routes by directory state —
+`skills/barony/assets/collab-repo/START.md`, which routes by directory state —
 new/empty directory → `ORCHESTRATE.md` (set up a project), existing collab repo →
 `PARTICIPATE.md` (join it). No modes to pick.
 
@@ -60,7 +67,7 @@ Persona archetype templates shipped (each `persona.yaml` + `AGENT.md`):
 - **librarian** — wiki + indexes + drift checks; always present
 - **autonomous-event** — webhook-triggered (e.g. PR checks, backtest runner)
 - **autonomous-cron** — scheduled (e.g. PM+UAT)
-- **reviewer / merger** *(optional, [ADR-002](docs/adr/ADR-002-ways-of-working-2026-07.md))* — adversarial SHA-bound PR review + a merge gate that isn't the human owner
+- **reviewer / merger** *(optional, [ADR-002](docs/adr/ADR-002-ways-of-working-2026-07.md))* — adversarial SHA-bound PR review (the **signet** pattern: a verdict sealed to the exact commit it judged) + a merge gate that isn't the human owner
 
 Plus the `/vc` slash-command template (`assets/commands/vc.md`) for the canonical
 `<persona>: <op> | <description>` commit workflow.
@@ -131,7 +138,7 @@ only database. Shipped (v1.5.0):
   object store; migration runbook in [`docs/worktree-migration.md`](docs/worktree-migration.md)).
 - `baron hydrate pydantic-ai` — emit a ready-to-edit bootstrap script for a persona on
   pydantic-ai; the working hydrator (`baron.runtimes.pydantic_ai.build_agent`) lives behind
-  the pinned optional extra `baron-cli[pydantic-ai]`.
+  the pinned optional extra `barony[pydantic-ai]`.
 
 ```bash
 uv tool install ./cli && baron --help
@@ -146,7 +153,7 @@ The other half of the kit: a **read-only audit skill** that grades multi-agent p
 | **Location** | [`skills/multi-agent-audit/`](skills/multi-agent-audit/) |
 | **Headline metric** | INTERVENTION TAX = human touches per autonomous task. High autonomy split + high tax = false win. |
 | **Read-only** | Never modifies the audited project. Tool allow-list omits `Edit`; `Write` only for the report, outside the audited repos. |
-| **Framework-neutral** | Works on `agent-project-bootstrap`, CrewAI, LangGraph, AutoGen, Copilot agents, custom loops. |
+| **Framework-neutral** | Works on Barony, CrewAI, LangGraph, AutoGen, Copilot agents, custom loops. |
 | **Two-layer** | Universal WHAT-to-measure + per-layout WHERE-it-lives discovery (Step 0). |
 | **Outputs** | Markdown report + self-contained HTML dashboard (Chart.js + horizontal SVG timeline) + 1 KB short-form executive summary (md or html) + machine-readable snapshot JSON for trend analysis. |
 | **v1.3 enhancements** | Multi-substrate Agents lens (claim labels + handoffs + frontmatter, not just git log); snapshot `addenda:` field for revising shipped point-in-time records; weighted operational-fidelity option; 5 stdlib Python helpers (trend reader, timeline extractor, Brandes' betweenness centrality, coverage parsers, per-persona PR attribution); HTML renderer + short-form renderer; subagent-isolation smoke test + automated contract checker. |
@@ -158,8 +165,8 @@ Full workflow: Discovery → Agent Inventory + DUAL-LENS drift pass → Metrics 
 ## Installation
 
 ```
-/plugin install https://github.com/vggg/agent-project-bootstrap   # from GitHub
-/plugin install /path/to/agent-project-bootstrap                  # from a local clone (e.g. for development)
+/plugin install https://github.com/vggg/barony   # from GitHub
+/plugin install /path/to/barony                  # from a local clone (e.g. for development)
 ```
 
 > The `/plugin install` command syntax may evolve as Claude Code matures. If the above fails, check the [Claude Code docs](https://docs.anthropic.com/claude-code) for the current install command format.
@@ -171,7 +178,7 @@ Full workflow: Discovery → Agent Inventory + DUAL-LENS drift pass → Metrics 
 
 After installation, tell your agent something like:
 
-> "Use the agent-project-bootstrap skill to set up a new multi-agent project."
+> "Use the barony skill to set up a new multi-agent project."
 
 The skill routes through `START.md`: in a new/empty directory it follows `ORCHESTRATE.md`
 (interviews you for project name, repos, backlog source, persona roster; authors

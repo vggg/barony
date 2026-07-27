@@ -7,7 +7,7 @@ description: Use when the user asks to audit, assess, review, evaluate, or measu
 
 A **read-only** workflow for grading whether a project that mixes HUMAN and AUTONOMOUS agents is actually working — with evidence and numbers, not vibes. Output: a scored efficacy report (markdown + optional HTML) and a machine-readable snapshot for trend analysis.
 
-Sister skill to `agent-project-bootstrap`: bootstrap **builds** multi-agent projects; this skill **grades** them.
+Sister skill to Barony: bootstrap **builds** multi-agent projects; this skill **grades** them.
 
 ## Non-negotiable principle — read-only
 
@@ -22,11 +22,11 @@ When used via the `project-auditor` subagent (`agents/project-auditor.md`), the 
 
 ## Two-layer + framework-neutral
 
-This skill must work on different multi-agent stacks: `agent-project-bootstrap` collab-repo layouts, CrewAI, LangGraph, AutoGen, Copilot agents, custom loops. The skill is structured in **two layers**:
+This skill must work on different multi-agent stacks: Barony collab-repo layouts, CrewAI, LangGraph, AutoGen, Copilot agents, custom loops. The skill is structured in **two layers**:
 
 - **Universal (what to measure)** — the metric taxonomy, scoring rubric, dual-lens drift model, and report template are the same across frameworks. See `references/metric-taxonomy.md` and `references/drift-analysis.md`.
 - **Per-layout (where to find data)** — file paths, manifest formats, and platform queries vary. **Discover the layout first** (Step 0), then map the universal metrics onto the data sources you find. For known layouts, load the matching adapter reference:
-  - `references/bootstrap-adapter.md` — `agent-project-bootstrap` v1.x collab-repo layout (`manifest.yaml`, `persona.yaml`, `_handoff/`, `adapters/<runtime>/`, `agents/<persona>/`, `decisions/`, `findings/`, `wiki/`).
+  - `references/bootstrap-adapter.md` — Barony v1.x collab-repo layout (`manifest.yaml`, `persona.yaml`, `_handoff/`, `adapters/<runtime>/`, `agents/<persona>/`, `decisions/`, `findings/`, `wiki/`).
   - For other frameworks (CrewAI, LangGraph, AutoGen): discover heuristically. Future versions will add dedicated adapter references.
 
 ## Inputs to confirm before starting
@@ -40,7 +40,7 @@ Before any data gathering, confirm with the human:
 5. **Time window** — last 30 days, last 90 days, custom range, or all-time. Default: last 90 days. **If the audit purpose is to measure the impact of a specific event (workforce change, process change), surface this trade-off and consider tuning the window to bracket the event.**
 6. **Output format** — markdown only, markdown + HTML dashboard, or short-form. Default: markdown + HTML (v1.3+).
 7. **Per-persona scorecards** — yes/no. Default: yes if ≥3 personas are detected.
-8. **Snapshot output location** — where to write the report and snapshot JSON. **Must be outside the audited repos.** Default: the audited project's *coordination/collab repo* if one exists (e.g., for `agent-project-bootstrap` layouts the collab repo's `audit/` folder), or `~/Workspace/audit-reports/<project>/` otherwise.
+8. **Snapshot output location** — where to write the report and snapshot JSON. **Must be outside the audited repos.** Default: the audited project's *coordination/collab repo* if one exists (e.g., for Barony layouts the collab repo's `audit/` folder), or `~/Workspace/audit-reports/<project>/` otherwise.
 9. **Auditor independence** — is the invoking auditor (Claude Code session OR the `project-auditor` subagent) itself a participant in the audited project (e.g., one of the declared personas)? If yes, capture the participant_personas list and surface the conflict-of-interest in §11 Methodology. **Honesty rule** (v1.3+): a participant auditor's findings on Agents / Coordination / Knowledge-capture dimensions may be skewed; flag, do not suppress.
 10. **Operational fidelity weighting** — default (equal weight across dimensions) or weighted (caller supplies per-dimension weights, OR uses the v1.3 default weights — see `references/metric-taxonomy.md § Operational fidelity weighting`).
 11. **Timeline events** — include a §9.5 Timeline section? Default: yes. See `references/timeline.md` for the event taxonomy.
@@ -332,7 +332,7 @@ skills/multi-agent-audit/
     platform-integrations.md          # gh / CI / coverage queries (read-only)
     advanced-metrics.md               # DORA + network analysis
     confidence-and-trends.md          # confidence labels + snapshot v1.1 schema + trend mode + addenda
-    bootstrap-adapter.md              # agent-project-bootstrap v1.x layout mining (v1.3: 5-substrate persona attribution)
+    bootstrap-adapter.md              # Barony v1.x layout mining (v1.3: 5-substrate persona attribution)
     timeline.md                       # v1.3 — important-events taxonomy + extraction rules
     report-template.md                # markdown report skeleton (v1.3: §9.5 timeline + §11b addenda + independence)
     coverage-parsers.md               # v1.3 — Istanbul / vitest / lcov / cobertura / Python coverage formats
@@ -374,13 +374,13 @@ Read this SKILL.md and follow the workflow. The read-only rule is your responsib
 
 ### From code-puppy or other runtimes
 
-The references and scripts in this skill are pure markdown and pure bash — runtime-neutral. Invoke by reading `skills/multi-agent-audit/SKILL.md` from the cloned `agent-project-bootstrap` repo and following the workflow. The subagent file (`agents/project-auditor.md`) is Claude-Code-specific; for other runtimes, restrict tool access through the runtime's native mechanism (code-puppy: declare the agent with a read-only tool allow-list per its convention).
+The references and scripts in this skill are pure markdown and pure bash — runtime-neutral. Invoke by reading `skills/multi-agent-audit/SKILL.md` from the cloned Barony repo and following the workflow. The subagent file (`agents/project-auditor.md`) is Claude-Code-specific; for other runtimes, restrict tool access through the runtime's native mechanism (code-puppy: declare the agent with a read-only tool allow-list per its convention).
 
 ## Output location convention
 
 This skill writes outputs to a location **outside** the audited project. Default rules:
 
-1. **If the audited project has a coordination/collab repo** (e.g., `agent-project-bootstrap` collab-repo-project layout, VANAR's `vanar-collab`) — write to `<collab-repo>/audit/<project>-audit-<YYYY-MM-DD>.{md,html}` and `<collab-repo>/audit/snapshots/<timestamp>.json`. The audit directory is a normal part of the collab substrate; commit and push via the collab repo's standard workflow (a human commits the audit output — the skill does not).
+1. **If the audited project has a coordination/collab repo** (e.g., Barony collab-repo-project layout, VANAR's `vanar-collab`) — write to `<collab-repo>/audit/<project>-audit-<YYYY-MM-DD>.{md,html}` and `<collab-repo>/audit/snapshots/<timestamp>.json`. The audit directory is a normal part of the collab substrate; commit and push via the collab repo's standard workflow (a human commits the audit output — the skill does not).
 2. **If the audited project is single-repo** (no separate collab repo, e.g., GardenTwin) — write to `~/Workspace/audit-reports/<project>/<project>-audit-<YYYY-MM-DD>.{md,html}` and `~/Workspace/audit-reports/<project>/snapshots/<timestamp>.json`. The human optionally commits these to a personal reports repo.
 
 The skill never commits or pushes the report itself. It only writes the files; the human reviews and chooses where to publish.

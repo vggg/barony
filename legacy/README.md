@@ -3,7 +3,7 @@
 This directory holds the **legacy v0.3.x template-emit path**: the original Claude-Code-only
 flows (`vault-project`, `collab-repo-project`, `join-collab-project`) and the template trees
 only they consume. Quarantined here in v1.4.0 so the repo has **one front door** — the
-runtime-agnostic path at `skills/agent-project-bootstrap/assets/collab-repo/START.md`.
+runtime-agnostic path at `skills/barony/assets/collab-repo/START.md`.
 
 **Status: deprecated, unmaintained.** Kept only so existing projects scaffolded by v0.x can
 still consult the instructions that built them. No new features land here; do not use this
@@ -19,8 +19,8 @@ path for new projects.
 
 Path note: `SKILL-v0.3.md` references `vault/` and `workspaces/` relative to this directory.
 The `collab-repo-project` and `join-collab-project` modes shared their templates with the
-runtime-agnostic path; those still live at `skills/agent-project-bootstrap/assets/collab-repo/`
-(referenced from here as `../skills/agent-project-bootstrap/assets/collab-repo/`) and continue
+runtime-agnostic path; those still live at `skills/barony/assets/collab-repo/`
+(referenced from here as `../skills/barony/assets/collab-repo/`) and continue
 to evolve with the v1 path — the emit *instructions* here are what is frozen.
 
 For why the runtime-agnostic path replaced this one, see

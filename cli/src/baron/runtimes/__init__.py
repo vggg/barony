@@ -4,7 +4,7 @@ Each adapter lives in its own module and carries its own (optional) runtime
 dependencies — importing :mod:`baron.runtimes` itself needs nothing beyond
 baron's core deps, so the CLI can emit bootstrap scripts without any extra
 installed. First adapter: :mod:`baron.runtimes.pydantic_ai`
-(``pip install 'baron-cli[pydantic-ai]'``).
+(``pip install 'barony[pydantic-ai]'``).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ _PYDANTIC_AI_TEMPLATE = '''\
 
 Running this script needs the optional extra:
 
-    pip install 'baron-cli[pydantic-ai]'
+    pip install 'barony[pydantic-ai]'
 """
 
 from pathlib import Path

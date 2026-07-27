@@ -28,10 +28,10 @@ For each, drive both lenses with a concrete query or document source. If a dimen
 Identity substrates to enumerate per project (use whichever exist):
 
 1. **Git author identity** (`git log %an %ae`) — one substrate; expect collision when personas share a driving human
-2. **GitHub `agent-*` labels** on issues/PRs — primary attribution substrate for agent-project-bootstrap projects
+2. **GitHub `agent-*` labels** on issues/PRs — primary attribution substrate for Barony projects
 3. **Vault `_handoff/` `from:` / `for:` frontmatter** — cross-persona coordination substrate
 4. **Per-session output frontmatter** — dev-log `agent:`, EOD `agent:`, session-log `agent:` declarations
-5. **Persona-prefix commits** (`iris:`, `dave:`, `kris:`, etc.) — when used; agent-project-bootstrap v1.x repos may or may not use these (the canonical repo uses Conventional Commits instead)
+5. **Persona-prefix commits** (`iris:`, `dave:`, `kris:`, etc.) — when used; Barony v1.x repos may or may not use these (the canonical repo uses Conventional Commits instead)
 
 A persona is **operationally identified** if it appears consistently in ≥2 of these substrates with frequency proportional to its declared role.
 
@@ -45,7 +45,7 @@ GAP examples (revised):
 
 | Lens | Source |
 |---|---|
-| INTENDED | Each persona's declared `trigger:` / `runtime:` (per agent-project-bootstrap v1.x), or equivalent "autonomous vs interactive" flag |
+| INTENDED | Each persona's declared `trigger:` / `runtime:` (per Barony v1.x), or equivalent "autonomous vs interactive" flag |
 | ACTUAL | Observed runtime pattern — does the cron persona actually run on cron? does the webhook persona actually fire on webhooks? |
 
 How to verify ACTUAL autonomy:
@@ -99,7 +99,7 @@ These rely on the agent following the instruction:
 - *"Never `git add -A`"* in a CLAUDE.md, when the runtime has full file access.
 - *"Don't run schema migrations while another agent's PR is open"* — pure protocol; tool-level enforcement is impossible.
 
-Instructed-only guardrails can still add value (the L3 honesty boundary from agent-project-bootstrap's LEARNINGS.md), but the audit must classify them honestly. Report the percentage of declared deny-lists that map to enforced blocks.
+Instructed-only guardrails can still add value (the L3 honesty boundary from Barony's LEARNINGS.md), but the audit must classify them honestly. Report the percentage of declared deny-lists that map to enforced blocks.
 
 GAP examples:
 
@@ -113,7 +113,7 @@ GAP examples:
 | INTENDED | Write-ownership tables (CONVENTIONS.md), per-persona declared scope (`persona.yaml > capabilities > write_*`), folder ownership maps |
 | ACTUAL | Observed git history: which actor writes to which file paths |
 
-Concrete query (for the agent-project-bootstrap layout):
+Concrete query (for the Barony layout):
 
 ```bash
 git -C <repo> log --since="<window>" --format='%an|%H' --name-only \

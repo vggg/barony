@@ -35,8 +35,8 @@ wheels = [
 ]
 
 [[package]]
-name = "baron-cli"
-version = "0.3.0"
+name = "barony"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "pyyaml" },
