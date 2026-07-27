@@ -1,6 +1,10 @@
-# baron — the collab-repo CLI (Phase 2: conventions → mechanisms)
+# barony — git-native governance for teams of AI coding agents
 
-`baron` is **Barony**'s CLI — install `barony`, run `baron`, import `baron`. It
+> Install `barony`, run `baron`, import `baron`. Part of **Barony** —
+> [github.com/vggg/barony](https://github.com/vggg/barony) — where the full
+> framework, concepts, and adapters live. This page is the CLI reference.
+
+`baron` is **Barony**'s CLI. It
 turns the multi-agent coordination *conventions* that
 Barony emits into *mechanisms*: a small CLI that scaffolds new projects
 (`baron init`), validates the canonical specs, reports clone/branch/ledger

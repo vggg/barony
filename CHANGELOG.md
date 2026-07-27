@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Packaging — `barony` 0.5.1 (pre-publish polish)
+
+- **`[project.urls]`** added to `cli/pyproject.toml` (Homepage/Repository/
+  Documentation/Changelog/Issues → `github.com/vggg/barony`) so the PyPI page
+  links home instead of rendering as an orphan. `description` sharpened to the
+  product one-liner. `cli/README.md` opens as a proper package landing page.
+- `.gitignore` covers build artifacts (`dist/`, `build/`, `*.egg-info/`).
+- Homepage points at the repo until `barony.dev` is registered.
+
 ### Changed — docs only (no version bump)
 
 - **README.md rewritten as the outsider's front door** (inverted pyramid): the

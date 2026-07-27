@@ -11,14 +11,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "barony"
-version = "0.5.0"
-description = "Disciplined reader/writer over Barony collab repos — the markdown/git substrate is the database."
+version = "0.5.1"
+description = "Git-native governance for teams of AI coding agents — the baron CLI over Barony's markdown/git collab substrate."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "typer>=0.12",
   "pyyaml>=6.0",
 ]
+
+# Homepage points at the repo until barony.dev is registered (then swap it).
+[project.urls]
+Homepage = "https://github.com/vggg/barony"
+Repository = "https://github.com/vggg/barony"
+Documentation = "https://github.com/vggg/barony/blob/main/docs/concepts.md"
+Changelog = "https://github.com/vggg/barony/blob/main/CHANGELOG.md"
+Issues = "https://github.com/vggg/barony/issues"
 
 # The pydantic-ai runtime adapter (baron.runtimes.pydantic_ai) is an OPTIONAL
 # extra: the harness is 0.x ("minor releases may include breaking changes"),
