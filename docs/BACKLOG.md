@@ -91,3 +91,20 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 > The **`baron status` waivers** entry that lived here (surfaced by the first pilot
 > triage, 2026-07-23) shipped in v1.5.0 as `.baron-waivers.yaml` + `baron waiver add|list`
 > — see `cli/README.md`.
+
+## From the demo-seeding stranger test (2026-07-27, barony-demo)
+
+- **Clock override surface:** `baron.clock.set_clock` exists but has no CLI/env
+  surface; seeding dated history needed a `sitecustomize` shim. Candidate:
+  `BARON_NOW` env var (demos, backfills), documented as a testing seam.
+- **`baron handoff create --body-file`** — findings/decisions have it; handoffs
+  force a `--no-commit` + manual-append dance for any non-stub body.
+- **`handoff close` commit prefix** is `baron:` rather than the closing
+  persona's `commit_prefix` — off the discipline the templates preach; persona
+  identity survives only via git author env. Decide and align.
+- **Guard inference wording on remote-less repos:** every fresh local project
+  sees "origin default branch undeterminable; `main` conservatively treated..."
+  — correct, but consider a quieter first-run phrasing.
+- **Document the `finding new --author X` vs git-author duality** (allocator vs
+  proposer; e.g. librarian allocating for a write_path-restricted reviewer) —
+  works as designed, currently undocumented.

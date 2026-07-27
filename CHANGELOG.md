@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed — docs only (no version bump)
+
+- **README.md rewritten as the outsider's front door** (inverted pyramid): the
+  one-liner + three-sentence identity, the four-walls 60-second pitch with one
+  first-party receipt each (stranding incident, operational fidelity 0.53,
+  handoff/ledger rot, single-account accountability), the verified v1.8.0
+  quickstart (commands unchanged), ~3-sentence core concepts, the per-adapter
+  runtime/enforcement matrix sourced from the HYDRATE capability maps, an
+  explicit "what Barony is NOT" section, and status/links.
+- **Deep material moved out of the README**: new `docs/concepts.md` (longer-form
+  concept explanations, emitted layout, capability ladder, guard/lock/worktree/
+  audit detail) and `docs/history.md` (the v0.3 → v1.8 evolution narrative,
+  linking ADR-001/002/005/006). `CLAUDE.md` gains a one-line pointer to the
+  README as the public story and lists the two new docs files.
+
 ## [1.8.0] — 2026-07-27
 
 **The stranger release** — a stranger with a laptop gets a working project in
@@ -37,7 +54,8 @@ CLI version `0.4.0 → 0.5.0`.
   Drift guard: `cli/tests/test_template_sync.py` fails CI on any divergence.
 - **Tests** — `cli/tests/test_scaffold.py` (layout, self-validation, hydration,
   runtime kits, git init, re-init refusal, ledger-on-scaffold) + the sync guard;
-  cli suite 103 → 114 tests.
+  cli suite 92 → 103 tests. *(Corrected post-release: this entry originally
+  claimed 114.)*
 
 ### Changed
 

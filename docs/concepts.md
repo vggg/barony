@@ -1,0 +1,210 @@
+# Barony concepts — the longer form
+
+The [README](../README.md) gives each concept three sentences; this page gives
+each one the paragraphs it deserves. The canonical spec itself lives in
+`skills/barony/references/` — this page explains, the references define.
+
+## The front door
+
+Every new project and every joiner routes through one file:
+`skills/barony/assets/collab-repo/START.md`. It routes by **directory state**,
+not by a human choosing a mode: a new/empty directory goes to `ORCHESTRATE.md`
+(set up a project — interview the owner, author `manifest.yaml`, hydrate the
+roster); an existing collab repo goes to `PARTICIPATE.md` (claim a persona,
+hydrate yourself, run the session ritual). Since v1.8,
+`baron init` performs ORCHESTRATE's mechanical steps deterministically
+([ADR-006](adr/ADR-006-baron-init-template-packaging.md)); the conversational
+path keeps the judgment work — real scope prose, roster design, Tier-3
+hydration.
+
+The pre-v1.0 Claude-Code-only emit modes are deprecated and quarantined in
+[`legacy/`](../legacy/) (existing v0.x projects only). See
+[history.md](history.md) for how the repo got here.
+
+## What gets generated
+
+A dedicated **collab repo** — the coordination substrate, separable from your
+code repo:
+
+```
+README.md                 # project overview
+CONVENTIONS.md            # repo-wide rules (single-account constraint, identity, labels,
+                          #   routing, handoff lifecycle, machine-local state)
+COORDINATION.md           # multi-persona protocol (hot files + lock mechanics, review/merge,
+                          #   ADR rules, ticket lifecycle)
+manifest.yaml             # machine-readable project spec (repos, backlog, roster)
+canon/                    # the runtime-neutral spec, copied in so joiners can resolve it
+adapters/                 # per-runtime HYDRATE.md (claude / code-puppy / pydantic-ai / generic)
+agents/
+  <persona-slug>/
+    persona.yaml          # CANONICAL machine truth: identity, capabilities, scope, ritual
+    AGENT.md              # human-readable manual, derived from the yaml
+    runtime/              # per-runtime kit emitted by baron init (v1.8)
+_handoff/                 # cross-persona async messages (append-only; archive/ on close)
+decisions/  findings/     # project decisions + investigation outputs (numbered ledgers)
+wiki/                     # synthesised by the Librarian
+```
+
+Persona archetype templates shipped (each `persona.yaml` + `AGENT.md`):
+
+- **dev** — interactive persona, one per human collaborator
+- **librarian** — wiki + indexes + drift checks; always present
+- **autonomous-event** — webhook-triggered (e.g. PR checks, backtest runner)
+- **autonomous-cron** — scheduled (e.g. PM+UAT)
+- **reviewer / merger** *(optional,
+  [ADR-002](adr/ADR-002-ways-of-working-2026-07.md))* — adversarial SHA-bound PR
+  review (the **signet** pattern: a verdict sealed to the exact commit it
+  judged) + a merge gate that isn't the human owner
+
+Plus the `/vc` slash-command template
+(`skills/barony/assets/commands/vc.md`) for the canonical
+`<persona>: <op> | <description>` commit workflow, and a realistic worked
+example of the project spec at
+`skills/barony/assets/collab-repo/manifest.example.yaml`.
+
+## Personas and the capability vocabulary
+
+A persona is defined once, runtime-neutrally, in `persona.yaml`: identity (name,
+email, commit prefix, routing label), scope prose, session ritual, and
+capabilities drawn from the **frozen 10-verb vocabulary**
+(`skills/barony/references/capability-vocab.v1.md`): `read_code`,
+`read_collab`, `write_code`, `write_path: [<scope>...]`, `open_pr`, `run_tests`,
+`merge_pr`, `push_main`, `force_push`, `edit_other_personas`. The verbs are
+intent-level (`open_pr`, never `gh_pr_create`); the path-scoped write verb takes
+scopes as data (`write_path: [findings, _handoff]`). Additions require observed
+need — every v1 verb was coined during adapter work and exercised in a real
+dogfood project before freezing.
+
+## The capability ladder and the honesty ladder
+
+Each runtime maps the abstract verbs onto its real tools via an **adapter** —
+the only runtime-specific surface (`adapters/<runtime>/HYDRATE.md`, under
+`skills/barony/assets/collab-repo/`). Adding a runtime means adding an adapter
+folder and touching nothing else. A persona always runs at the highest tier its
+runtime supports and degrades gracefully:
+
+| Tier | Runtime | Mechanism | Enforcement |
+|---|---|---|---|
+| 3 | Claude Code or code-puppy | native sub-agents (Claude `.claude/agents/<slug>.md`; code-puppy JSON agents) | capabilities enforced via a tool allow-list — whole-tool denials are real (a read-only persona genuinely cannot write/run shell); sub-tool denials instructed (Claude: enforced-with-baron via the guard hook) |
+| 3 | pydantic-ai (+ pydantic-ai-harness) | in-process hydration: `baron.runtimes.pydantic_ai.build_agent` assembles a guarded `Agent` | whole-tool denials via capability omission; the five guard-covered sub-tool denials natively ENFORCED (in-process interception consuming `capability-rules.v1.yaml`) |
+| 2 | Claude Code | persistent `CLAUDE.md` | persistent session context; capabilities instructed |
+| 1 | anything | in-prompt + emitted `AGENTS.md` | persona re-read each turn; self-enforced |
+
+The Claude adapter renders either Tier 2 or Tier 3, selected by a
+runtime-neutral `adapters.claude.tier` config (`auto` | `2` | `3`, default
+`auto`).
+
+Alongside the capability ladder runs the **honesty ladder**: every denial claim
+in an adapter's capability map is classed `enforced`, `enforced-with-baron
+(instructed otherwise)`, or `instructed`, and `tests/bi_runtime_accept.py` fails
+CI if an adapter claims enforcement it cannot deliver (e.g. a guard claim on an
+`open_pr` row). "Emitting a file does not upgrade the tier" is a rule the
+templates themselves carry.
+
+The enforcement rule table itself — which git commands map to which verbs, the
+write-path scoping semantics, the conservative-deny ambiguity policy — is a
+single versioned artifact, `capability-rules.v1.yaml`, shipped as baron package
+data and loaded by every enforcing consumer
+(`skills/barony/references/capability-rules.md`). Consumers never restate the
+patterns, so a `git push origin main` is judged identically on Claude Code and
+on pydantic-ai.
+
+## Ledgers, handoffs, and the index
+
+**Findings** (investigation outputs) and **decisions** are numbered entries
+(`F<N>` / `D<N>`) in plain markdown indexes. `baron finding new` /
+`baron decision new` allocate race-safely: parse the index for the max ID,
+append, commit, push — and on push rejection, roll back, `pull --rebase`,
+renumber, retry. Git's push atomicity is the lock; there is no counter file or
+allocation service. Duplicate numbers are errors; historical gaps are reported
+but never renumbered — rewriting history to be tidy would forge the record.
+
+**Handoffs** are the cross-persona message surface: everything material —
+findings, decisions, and especially **corrections** — gets a `_handoff/` file
+with standard frontmatter (`created`, `status: open|done`, `for`, `from`,
+`priority`). A number in a PR body is not a claim; only a handoff is. Closing a
+handoff flips the status, records a `closed:` date and optional note, and
+`git mv`s it to `_handoff/archive/YYYY/` — archive, never delete. `baron index`
+regenerates a marker-delimited summary block in `_handoff/README.md`
+(open/done/archived counts + the open table) without touching prose.
+
+## The divergence radar and waivers
+
+`baron status` is the estate inspection: for every clone and worktree named in
+the manifest it reports ahead/behind origin (stranded or stale work), dirt,
+unmerged branches with age, open handoffs past the SLA (default 14 days), and
+ledger/wiki staleness (a labeled heuristic). Exit 0 green / 1 any red, so CI can
+run it. The three red divergence classes are exactly the three stranding modes
+of the 2026-07-22 field incident ([ADR-003](adr/ADR-003-baron-cli.md) §1).
+
+Deliberately-parked reds get **waivers** (`baron waiver add`,
+`.baron-waivers.yaml`): subject pattern, reason, linked handoff, and a
+**mandatory expiry**. A matching waiver downgrades the red to a warn with the
+reason appended — visible, not alarm-red. An expired waiver stops matching (the
+red resurfaces) and is itself reported, so waivers cannot rot into permanent
+silence.
+
+## Guard: enforcement before the tool runs
+
+`baron guard` ([ADR-004](adr/ADR-004-baron-guard-enforcement.md)) is a Claude
+Code **PreToolUse hook**: it reads the pending tool call, maps it to the frozen
+verbs (`git push` to the default branch → `push_main`; force flags →
+`force_push`; `gh pr merge` → `merge_pr`; file writes → `write_path` scoping /
+`edit_other_personas`), and blocks denials with exit 2 + the reason on stderr
+before the tool executes. Parsing is conservative — an ambiguous push target is
+denied for personas lacking the verb, with the inference named. It fails closed
+(malformed input → deny) but is never a brick: `BARON_GUARD_OVERRIDE=<reason>`
+allows the call and appends to a **tracked** override log, so every override is
+visible in diffs and expected to become a handoff. On pydantic-ai the same
+rules artifact is enforced in-process, where the hook cannot be absent.
+
+## PR-locks
+
+For contested hot files, **the open PR is the lock** (ADR-002 §3): `baron lock
+claim <path>` creates a `lock/<slug>` branch with one empty commit and opens a
+draft PR labeled `lock:<path>`; claim refuses when an open lock PR for the path
+exists; release closes the PR and deletes the branch. The forge's PR list is the
+only lock state — no lock files, no markdown lock commits (which raced in the
+field). A dependency-free CI template (`lock-guard.yml`) fails any *other* PR
+touching a locked path. Honest limitation, carried in the template: without
+branch protection a red check is an alarm, not a wall.
+
+## Worktree topology
+
+Instead of clone-per-persona (which drifts), each persona gets a **git
+worktree** on branch `persona/<slug>` over one shared object store —
+`baron worktree add|list|remove`, rooted at the manifest's
+`workspace.worktrees_root`. `remove` refuses on dirt or unmerged commits unless
+forced and never deletes the persona branch. `baron status` sweeps worktrees
+like clones. Migrating an existing workspace:
+[worktree-migration.md](worktree-migration.md).
+
+## Audit, intervention tax, and signets
+
+The sister skill [`multi-agent-audit`](../skills/multi-agent-audit/) is the
+other half of the kit: Barony **builds** governed projects; the audit **grades**
+them — read-only by construction, framework-neutral (Barony, CrewAI, LangGraph,
+AutoGen, custom loops), with evidence instead of vibes. The headline metric is
+the **INTERVENTION TAX**: human touches per autonomous task — a high autonomy
+split with a high tax is a false win. The dual-lens drift pass compares what a
+project *declares* against what it *does* and scores **operational fidelity**
+0.00–1.00; the enforced-vs-instructed distinction is load-bearing there too.
+Outputs: a markdown report, a self-contained HTML dashboard, a short-form
+executive summary, and a machine-readable snapshot for trend analysis.
+
+**Signets** are the accountability primitive for review: a reviewer persona
+publishes its verdict as a PR comment bound to the exact head SHA it judged
+(never the platform's approve button, which a single-account setup cannot use).
+A merger persona — holder of the project's only `merge_pr` — verifies
+preconditions mechanically: CI green on the current head SHA, a signet naming
+that same SHA, record obligations met. A new push makes the old verdict visibly
+stale.
+
+## Customisation
+
+The archetype templates use `{{PLACEHOLDER}}` tokens for names, scopes, and
+identity — name your personas whatever fits your working style. The structural
+patterns (three-tier write ownership, capability allow/deny per persona, handoff
+protocol, `COORDINATION.md` as the single source for cross-agent rules) carry
+the value, not the names. The reviewer/merger module and the CI lock guard are
+opt-in — small teams without contested seams may not need them.

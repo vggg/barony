@@ -1,5 +1,9 @@
 # Barony — Repo Guide
 
+> This file is contributor/agent-facing. The public story — what Barony is and why —
+> is `README.md` (outsider front door), with the long form in `docs/concepts.md` and
+> `docs/history.md`.
+
 ## What this repo is
 
 **Barony** (repo `vggg/barony`; formerly `agent-project-bootstrap`, renamed per ADR-005) — git-native governance for teams of AI coding agents. The **canonical home** for the `barony` skill, the `baron` CLI, and the sister skill `multi-agent-audit` — the runtime-agnostic spec, adapters, references, tests, and meta-docs all live and evolve here.
@@ -71,6 +75,8 @@ legacy/                   # DEPRECATED v0.3 emit path (vault/, workspaces/, SKIL
 docs/
   adr/                    # architecture decision records (ADR-001, ADR-002, ...)
   notes/                  # supporting notes cited by the spec
+  concepts.md             # longer-form concept explanations (public docs, linked from README)
+  history.md              # the v0.3 → v1.x evolution narrative (public docs)
   LEARNINGS.md
 tests/
   bi_runtime_accept.py    # acceptance harness — parses the adapters' capability maps
