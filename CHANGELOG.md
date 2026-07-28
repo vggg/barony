@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — `barony` 0.5.3 (install-UX shakeout)
+
+- **`barony` now works as a command too**, aliased to `baron`. A fresh
+  `pip install barony` followed by the natural `barony --version` was dead-ending
+  in `command not found` (the package is `barony`, the command was only `baron`).
+  Both now resolve to the same CLI; `baron` stays the primary/documented name.
+
 ### Fixed — `barony` 0.5.2 (first-publish shakeout)
 
 - **`baron --version` / `-V`** now exists — it errored ("No such option") the

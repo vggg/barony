@@ -1,6 +1,7 @@
 # barony — git-native governance for teams of AI coding agents
 
-> Install `barony`, run `baron`, import `baron`. Part of **Barony** —
+> Install `barony`, run `baron` (or `barony` — both work), import `baron`.
+> Part of **Barony** —
 > [github.com/vggg/barony](https://github.com/vggg/barony) — where the full
 > framework, concepts, and adapters live. This page is the CLI reference.
 

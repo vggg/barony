@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "barony"
-version = "0.5.2"
+version = "0.5.3"
 description = "Git-native governance for teams of AI coding agents — the baron CLI over Barony's markdown/git collab substrate."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,8 +39,12 @@ pydantic-ai = [
   "pydantic-ai-slim>=2.14.1,<3",
 ]
 
+# `baron` is the primary command; `barony` is an alias so that the natural
+# `pip install barony && barony ...` reflex doesn't dead-end in command-not-found
+# (found the minute a fresh install typed `barony --version`).
 [project.scripts]
 baron = "baron.cli:app"
+barony = "baron.cli:app"
 
 # Forge implementations are discoverable plugins. GitHub ships built-in; a
 # GitLab forge is backlog (docs/BACKLOG.md) and would register here from its
