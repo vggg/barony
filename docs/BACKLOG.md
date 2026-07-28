@@ -69,12 +69,18 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 
 - Run a real persona on a real project via `build_agent` (the ADR-001 §10 step-2 analog);
   fold observed needs back into `capability-rules.v1.yaml` / the HYDRATE.md.
-- `RepoContext()` layering (auto-load an emitted `AGENTS.md`) is documented but not
-  wired into `build_agent` — add it once field use shows it earns its prompt-cache cost.
+- ~~`RepoContext()` layering (auto-load an emitted `AGENTS.md`)~~ — **wired into
+  `build_agent` in 0.5.4** (added when a `collab_root` is passed, clean fallback if the
+  installed harness lacks it).
 - Pin bumps: the harness is 0.x with breaking minors allowed; on each bump of the
   `barony[pydantic-ai]` range, re-verify the `before_tool_execute`/`ModelRetry` veto
   seam and the `FileSystem.protected_patterns` read-only behavior (both are contract
   assumptions recorded in the ADR-004 addendum §4.2).
+- **Session-ritual driver — decision pending: driver vs runtime-owns-orchestration.**
+  Whether baron should ship a `baron run` that drives the session-start ritual, or leave
+  orchestration to the runtime, is a design fork for the owner; the reverse-direction
+  seams stay documented as-is until that call is made. (0.5.4 deliberately did NOT build
+  a driver.)
 
 ## Consciously deferred inside M1–M3
 
@@ -94,20 +100,19 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 
 ## From the demo-seeding stranger test (2026-07-27, [`barony-demo`](https://github.com/vggg/barony-demo))
 
-- **Clock override surface:** `baron.clock.set_clock` exists but has no CLI/env
-  surface; seeding dated history needed a `sitecustomize` shim. Candidate:
-  `BARON_NOW` env var (demos, backfills), documented as a testing seam.
-- **`baron handoff create --body-file`** — findings/decisions have it; handoffs
-  force a `--no-commit` + manual-append dance for any non-stub body.
-- **`handoff close` commit prefix** is `baron:` rather than the closing
-  persona's `commit_prefix` — off the discipline the templates preach; persona
-  identity survives only via git author env. Decide and align.
-- **Guard inference wording on remote-less repos:** every fresh local project
-  sees "origin default branch undeterminable; `main` conservatively treated..."
-  — correct, but consider a quieter first-run phrasing.
-- **Document the `finding new --author X` vs git-author duality** (allocator vs
-  proposer; e.g. librarian allocating for a write_path-restricted reviewer) —
-  works as designed, currently undocumented.
+> **All five items below shipped in `barony` 0.5.4** (2026-07-28 interop
+> hardening + backlog burndown — see `CHANGELOG.md`):
+>
+> - ~~**Clock override surface**~~ → `BARON_NOW` env var honored by the default
+>   clock (ISO date/datetime), documented as a testing/backfill seam.
+> - ~~**`baron handoff create --body-file`**~~ → added; body-file content lands
+>   under the frontmatter (parity with findings/decisions).
+> - ~~**`handoff close` commit prefix**~~ → `baron handoff close --as <slug>`
+>   attributes the close commit as `<slug>:` (default stays `baron:`).
+> - ~~**Guard inference wording on remote-less repos**~~ → reworded to a calmer,
+>   still-honest first-run phrasing.
+> - ~~**`finding new --author X` vs git-author duality**~~ → documented in
+>   `cli/README.md` + the `--author` command help (allocator vs proposer).
 
 ## Considered directions — from launch Q&A (2026-07-28, LinkedIn thread w/ a staff/SRE reviewer)
 

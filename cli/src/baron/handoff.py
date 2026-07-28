@@ -58,6 +58,7 @@ def create(
     from_: str,
     title: str,
     priority: str = "medium",
+    body: str | None = None,
     commit: bool = True,
 ) -> Path:
     handoff_dir = collab / "_handoff"
@@ -77,6 +78,10 @@ def create(
         "\n"
         f"# {title}\n"
     )
+    # A --body-file body becomes the handoff body under the frontmatter/title,
+    # so a non-stub handoff no longer needs the --no-commit + manual-append dance.
+    if body is not None and body.strip():
+        content += "\n" + body.rstrip("\n") + "\n"
     path.write_text(content, encoding="utf-8")
     if commit and is_git_repo(collab):
         rel = path.relative_to(collab).as_posix()
@@ -89,9 +94,19 @@ _STATUS_OPEN_RE = re.compile(r"^status:\s*open\s*$", re.MULTILINE)
 
 
 def close(
-    collab: Path, file: Path, *, note: str | None = None, commit: bool = True
+    collab: Path,
+    file: Path,
+    *,
+    note: str | None = None,
+    prefix: str = "baron:",
+    commit: bool = True,
 ) -> Path:
-    """Flip an open handoff to done and git-mv it to _handoff/archive/YYYY/."""
+    """Flip an open handoff to done and git-mv it to _handoff/archive/YYYY/.
+
+    ``prefix`` is the commit-message prefix (default ``baron:``); pass the
+    closing persona's commit prefix so the close is attributed to whoever closed
+    it, matching the discipline the templates preach for other commits.
+    """
     path = file if file.is_absolute() else (Path.cwd() / file)
     if not path.is_file():
         candidate = collab / "_handoff" / file.name
@@ -128,7 +143,7 @@ def close(
         rel_dst = dest.relative_to(collab).as_posix()
         git(collab, "add", "--", rel_src)  # ensure tracked (covers never-committed files)
         git(collab, "mv", rel_src, rel_dst)  # preserve history
-        git(collab, "commit", "-m", f"baron: handoff | close {path.name}")
+        git(collab, "commit", "-m", f"{prefix} handoff | close {path.name}")
     else:
         path.rename(dest)
     return dest

@@ -167,19 +167,33 @@ re-parse, renumber, retry — bounded (`--retries`, default 3). git's push
 atomicity is the lock; there is no other store. `--no-push` for offline work.
 Dates come from a single injectable clock (`src/baron/clock.py`).
 
+**`--author` vs git author (allocator vs proposer).** `--author` sets only the
+**ledger attribution** — the name written into the entry heading (`### F<N> —
+<title> (<date>, <author>)`). It is independent of the **git author identity**
+that signs the commit (set per-repo via `git config user.name/user.email`, per
+each persona's `identity` block). They can legitimately differ: a librarian may
+*allocate* a finding **for** a write_path-restricted reviewer — `--author rex`
+records rex as the proposer while the commit is authored by the librarian who
+holds the write scope. Attribution (who reasoned it) and authorship (who
+committed it) are separate on purpose.
+
 ### `baron handoff create|close|list` (M3)
 
 ```bash
 baron handoff create --for tess --from rex --title "Review the seam" --priority high
-baron handoff close _handoff/2026-07-22-review-the-seam.md --note "Done, see F9."
+baron handoff create --for tess --from rex --title "Big review" --body-file review.md
+baron handoff close _handoff/2026-07-22-review-the-seam.md --note "Done, see F9." --as tess
 baron handoff list --open
 ```
 
 `create` writes `_handoff/YYYY-MM-DD-<slug>.md` with the standard frontmatter
-(`created` / `status: open` / `for` / `from` / `priority`). `close` flips
-`status` to `done`, adds a `closed:` date and an optional blockquote note, then
-`git mv`s the file to `_handoff/archive/YYYY/` — **archive, never delete**, with
-history preserved. Status edits are textual so prose is never reflowed.
+(`created` / `status: open` / `for` / `from` / `priority`); `--body-file` drops a
+prepared body under the frontmatter (parity with `finding`/`decision`, no
+`--no-commit` + manual-append dance). `close` flips `status` to `done`, adds a
+`closed:` date and an optional blockquote note, then `git mv`s the file to
+`_handoff/archive/YYYY/` — **archive, never delete**, with history preserved.
+`--as <slug>` attributes the close commit as `<slug>:` (default `baron:`).
+Status edits are textual so prose is never reflowed.
 
 ### `baron index` (M3)
 

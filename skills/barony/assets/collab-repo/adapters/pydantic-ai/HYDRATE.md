@@ -15,8 +15,8 @@
 > documented interception seam) *whenever the agent is built with `build_agent`*. No
 > external hook wiring, no separate install step to degrade without.
 >
-> **Verified against:** `pydantic-ai-harness 0.10.0` + `pydantic-ai-slim 2.16.0`
-> (2026-07-23; harness is 0.x — minor releases may break, hence the pinned extra).
+> **Verified against:** `pydantic-ai-harness 0.10.0` / `pydantic-ai-slim 2.14.1–2.19.x`
+> (the pinned extra range; harness is 0.x — minor releases may break, hence the pin).
 > **Source of truth:** the working hydrator `cli/src/baron/runtimes/pydantic_ai.py` in the
 > bootstrap repo — install with `pip install 'barony[pydantic-ai]'`.
 >
@@ -55,6 +55,15 @@ denials stay **instructed** (the rules artifact deliberately defines no detectio
 ADR-004 §2.2) — though a denied `run_tests` additionally seeds the Shell capability's
 `denied_commands` with common test runners. And the guard only guards agents built through
 `build_agent`: hand-rolling an `Agent` without the guard capability is Tier-1 territory.
+
+**Known bypass — command-string wrappers.** The guard's static parser inspects each
+top-level subcommand's tokens; it does NOT recurse into an interpreter invoked with an
+inline program string, so `bash -c '...'`, `sh -c "..."`, and `python3 -c '...'` run their
+payload uninspected — a `git push origin main` hidden inside `bash -c` is not caught. This
+in-process Shell narrows (not closes) that class: it denies redirect/pipe operators
+(`>`, `>>`, `|`) so a payload can't redirect out of root, and a test-only persona's shell is
+allowlisted to test runners. Where the boundary must hold against a wrapper, use OS-level
+isolation.
 
 ---
 
@@ -132,8 +141,19 @@ What `build_agent` assembles:
 - **`FileSystem(root_dir=<collab_root>)`** — omitted read scoping is not needed (reads are
   always granted in practice); personas with NO write verbs get
   `protected_patterns=['*', '**/*']` (natively read-only).
-- **`Shell(cwd=<collab_root>)`** — ONLY when at least one shell-granting verb is allowed;
-  a denied `run_tests` seeds `denied_commands` with common test runners.
+- **`Shell(cwd=<collab_root>, denied_operators=['>', '>>', '|'])`** — ONLY when at least
+  one shell-granting verb is allowed. A persona whose ONLY shell need is `run_tests` (a
+  reviewer shape: allows `run_tests`, no dev write verbs) gets an **allowlisted** shell
+  restricted to test runners (`pytest`/`py.test`/`tox`/`nox`/`unittest`/`coverage`) so it
+  cannot `curl`/`rm`/arbitrary `git push`; a broader (dev) shell stays general but blocks
+  redirect/pipe operators so a `>` can't write out of root behind the guard's back. A denied
+  `run_tests` seeds `denied_commands` with common test runners. (`python -m pytest` /
+  `make test` are intentionally NOT allowlisted — the harness matches the executable name,
+  so allowing `python`/`make` would re-open a general-purpose runner; invoke the runner
+  directly.)
+- **`RepoContext(workspace_dir=<collab_root>)`** — added when a `collab_root` is passed, to
+  auto-load `CLAUDE.md`/`AGENTS.md` from the working copy (additive; falls back cleanly if
+  the installed harness lacks the capability).
 - **The baron guard capability** — `before_tool_execute` maps `run_command` commands and
   `write_file`/`edit_file`/`create_directory` paths to capability verbs via
   `capability-rules.v1.yaml` and vetoes denials with `ModelRetry` (reason fed to the model,
@@ -165,11 +185,11 @@ emission itself needs only baron; *running* the script needs the extra.
 
 - **In-process only.** The guarantees hold for agents built via `build_agent`. This adapter
   does not (cannot) constrain a developer who constructs `Agent` by hand.
-- **`RepoContext()` synergy:** the harness auto-loads `CLAUDE.md`/`AGENTS.md` from the
-  working directory. If Tier-1 hydration emitted an `AGENTS.md`
-  (`adapters/generic/HYDRATE.md` step 3), adding `RepoContext(workspace_dir=...)` layers it
-  in for free — additive, not required, since `build_agent` already injects the persona as
-  instructions.
+- **`RepoContext()` layering:** `build_agent` wires `RepoContext(workspace_dir=<collab_root>)`
+  when a `collab_root` is passed, auto-loading `CLAUDE.md`/`AGENTS.md` from the working copy
+  (e.g. a Tier-1-emitted `AGENTS.md`, `adapters/generic/HYDRATE.md` step 3). It stays
+  additive — the persona is already injected as instructions — and degrades cleanly if the
+  installed harness lacks the capability.
 - **Version pin honesty:** the harness is 0.x and states that minor releases may break; the
   extra pins `<0.11`. Re-verify the capability hook seam on any pin bump.
 - `runtime.model_hint` from `persona.yaml` is honored as the default model when the caller

@@ -19,8 +19,9 @@ user-facing contract):
   ``capability-rules.v1.yaml`` artifact (:mod:`baron.rules`) — the SAME rule
   table the Claude Code PreToolUse hook uses, hence identical decisions.
 
-API facts verified 2026-07-23 against **pydantic-ai-slim 2.16.0** +
-**pydantic-ai-harness 0.10.0** (https://pydantic.dev/docs/ai/harness/,
+API facts verified against the tested pins — **harness 0.10.0 / pydantic-ai-slim
+2.14.1–2.19.x** (the ``barony[pydantic-ai]`` extra pins harness ``>=0.10,<0.11``
++ slim ``>=2.14.1,<3``; https://pydantic.dev/docs/ai/harness/,
 https://pydantic.dev/docs/ai/overview/):
 
 - ``Agent(model, instructions=..., capabilities=[...])``.
@@ -30,9 +31,17 @@ https://pydantic.dev/docs/ai/overview/):
 - harness ``FileSystem(root_dir, protected_patterns=...)`` — protected paths
   are read-only (writes rejected); tools: read_file, write_file, edit_file,
   list_directory, search_files, find_files, create_directory, file_info.
-- harness ``Shell(cwd, denied_commands=...)`` — tools: run_command (signature
-  ``(command: str, *, timeout_seconds: float | None)``), start_command,
-  check_command, stop_command.
+- harness ``Shell(cwd, allowed_commands=..., denied_commands=...,
+  denied_operators=...)`` — ``allowed_commands`` is an executable-name allowlist
+  and is mutually exclusive with ``denied_commands`` (the harness raises if both
+  are non-empty; its ``denied_commands`` DEFAULTS to a destructive-command list,
+  so an allowlist must pass ``denied_commands=[]``). ``denied_operators`` blocks
+  shell operators by substring (``>`` also matches ``>>``). Tools: run_command
+  (signature ``(command: str, *, timeout_seconds: float | None)``),
+  start_command, check_command, stop_command.
+- harness ``pydantic_ai_harness.context.RepoContext(workspace_dir=...,
+  filenames=..., autoload_instructions=...)`` — auto-loads CLAUDE.md/AGENTS.md
+  from the working dir (additive; wired only when a ``collab_root`` is given).
 - ``pydantic_ai.models.test.TestModel`` / the ``"test"`` model string run
   fully offline (used by the test suite; no API keys).
 """
@@ -57,6 +66,14 @@ except ImportError as exc:  # pragma: no cover - exercised via subprocess test
         f"Missing dependency: {exc.name or exc}"
     ) from exc
 
+# RepoContext is an additive read-context capability (auto-loads CLAUDE.md /
+# AGENTS.md). It is optional per HYDRATE.md's "additive, not required" framing:
+# a harness without it simply omits the layer, so import failure is not fatal.
+try:
+    from pydantic_ai_harness.context import RepoContext
+except ImportError:  # pragma: no cover - older/newer harness without context
+    RepoContext = None  # type: ignore[assignment,misc]
+
 from .. import guard
 from ..guard import GuardPersona
 
@@ -76,6 +93,27 @@ READONLY_PROTECTED_PATTERNS: tuple[str, ...] = ("*", "**/*")
 #: DENIED (adapter policy on top of the instructed-only baseline — the rules
 #: artifact deliberately defines no run_tests detection).
 TEST_RUNNER_COMMANDS: tuple[str, ...] = ("pytest", "tox", "nox", "unittest")
+#: Least-privilege Shell allowlist for a persona whose ONLY shell-implying grant
+#: is `run_tests` (e.g. a reviewer): the shell is restricted to test-runner
+#: executables. The harness matches the executable name (``tokens[0]``) exactly,
+#: so `python -m pytest` / `make test` are DELIBERATELY EXCLUDED — allowing
+#: `python`/`make` would re-open a general-purpose interpreter/runner and defeat
+#: least privilege. A run_tests-only persona invokes the runner directly
+#: (`pytest ...`). Superset of TEST_RUNNER_COMMANDS.
+TEST_RUNNER_ALLOWLIST: tuple[str, ...] = (
+    "pytest",
+    "py.test",
+    "tox",
+    "nox",
+    "unittest",
+    "coverage",
+)
+#: Shell operators blocked on EVERY hydrated Shell. Redirects and pipes are the
+#: out-of-root write / exfil vector the static guard cannot inspect (it splits
+#: on these operators and checks segments, but a `>` redirect writes a file the
+#: guard never sees as a write tool). The harness denies operators by substring,
+#: so `>` also catches `>>`, `2>`, `&>`.
+SHELL_DENIED_OPERATORS: tuple[str, ...] = (">", ">>", "|")
 
 #: FileSystem tools that write; their path argument is checked by the guard.
 _WRITE_TOOLS: frozenset[str] = frozenset({"write_file", "edit_file", "create_directory"})
@@ -268,12 +306,15 @@ class HydrationPlan:
     shell: Shell | None
     guard_capability: BaronGuardCapability
     model: str | Any
+    repo_context: AbstractCapability | None = None
 
     @property
     def capabilities(self) -> list[AbstractCapability]:
         caps: list[AbstractCapability] = [self.filesystem]
         if self.shell is not None:
             caps.append(self.shell)
+        if self.repo_context is not None:
+            caps.append(self.repo_context)
         caps.append(self.guard_capability)
         return caps
 
@@ -300,6 +341,12 @@ def plan(
         or gp.grants("edit_other_personas")
         or "write_path" in gp.allow
     )
+    # Broad "dev" write signals a persona that plausibly needs a general shell
+    # (build tools, linters, git staging) — distinct from the narrow write_path
+    # ledger scopes a reviewer holds, which use FileSystem, not Shell. Only the
+    # former should keep a broad shell; a run_tests-only reviewer gets a
+    # test-runner allowlist even when it may also write findings/_handoff.
+    has_dev_write = gp.grants("write_code") or gp.grants("edit_other_personas")
     shell_verbs = {v for v in SHELL_VERBS if gp.grants(v)}
 
     # FileSystem: always present (reads); natively read-only when the persona
@@ -311,14 +358,51 @@ def plan(
             root_dir=root, protected_patterns=list(READONLY_PROTECTED_PATTERNS)
         )
 
-    # Shell: whole-tool omission when no shell verb is granted. A denied
-    # run_tests additionally seeds denied_commands with common test runners.
+    # Shell: whole-tool omission when no shell verb is granted. Otherwise least
+    # privilege, driven by the persona's actual verbs:
+    #   * ONLY shell need is run_tests (a reviewer shape, no dev write verbs) ->
+    #     an allowlisted shell restricted to test runners. Without this, such a
+    #     persona got a FULL shell (curl/rm/arbitrary git push all passed, since
+    #     the guard only vetoes 3 git sub-verbs). allowed_commands is mutually
+    #     exclusive with denied_commands, so we pass denied_commands=[].
+    #   * broader shell verbs (dev with write_code/open_pr) -> keep the broad
+    #     shell (its work needs it) but block redirect/pipe operators so a `>`
+    #     redirect can't write out of root behind the guard's back. A denied
+    #     run_tests still seeds denied_commands with common test runners.
     shell: Shell | None = None
     if shell_verbs:
-        denied_commands: list[str] = []
-        if "run_tests" in gp.deny:
-            denied_commands = list(TEST_RUNNER_COMMANDS)
-        shell = Shell(cwd=root, denied_commands=denied_commands)
+        if shell_verbs == {"run_tests"} and not has_dev_write:
+            shell = Shell(
+                cwd=root,
+                allowed_commands=list(TEST_RUNNER_ALLOWLIST),
+                denied_commands=[],  # allow/deny lists are mutually exclusive
+                denied_operators=list(SHELL_DENIED_OPERATORS),
+            )
+        else:
+            denied_commands: list[str] = []
+            if "run_tests" in gp.deny:
+                denied_commands = list(TEST_RUNNER_COMMANDS)
+            shell = Shell(
+                cwd=root,
+                denied_commands=denied_commands,
+                denied_operators=list(SHELL_DENIED_OPERATORS),
+            )
+
+    # RepoContext: additive read-context layer that auto-loads CLAUDE.md /
+    # AGENTS.md from the working copy. Wired ONLY when a collab_root is given
+    # (per HYDRATE.md's "additive, not required"); guarded against harness API
+    # drift with a clean fallback (the persona is already injected as
+    # instructions, so its absence never changes governance behavior).
+    repo_context: AbstractCapability | None = None
+    if collab_root is not None and RepoContext is not None:
+        try:
+            repo_context = RepoContext(
+                workspace_dir=root,
+                filenames=("CLAUDE.md", "AGENTS.md"),
+                autoload_instructions=True,
+            )
+        except Exception:  # pragma: no cover - API-drift guard, non-fatal
+            repo_context = None
 
     resolved_model: str | Any | None = model
     if resolved_model is None:
@@ -333,6 +417,7 @@ def plan(
         shell=shell,
         guard_capability=BaronGuardCapability(persona=gp, root=root),
         model=resolved_model,
+        repo_context=repo_context,
     )
 
 

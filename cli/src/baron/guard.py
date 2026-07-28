@@ -32,6 +32,19 @@ parsing. Parsing is CONSERVATIVE: when the target of a git operation cannot be
 determined, guard assumes the enforcement-relevant verb and denies personas
 that lack it, with stderr naming the inference.
 
+KNOWN BYPASS — command-string wrappers. The static parser inspects the tokens
+of each top-level subcommand; it does NOT recurse into a shell/interpreter
+invoked with an inline program string. So ``bash -c '...'``, ``sh -c "..."``,
+and ``python3 -c '...'`` (and ``env``/``xargs``-style indirection) run their
+payload UNINSPECTED — a ``git push origin main`` hidden inside ``bash -c`` is
+NOT caught. ``bash -c`` / ``sh -c`` are common enough to hit by honest accident,
+not just adversarially. This is an accepted limitation of static enforcement of
+the honest-mistake class, not a guarantee. Where the boundary must actually hold
+against a wrapper, use OS-level isolation (a container/sandbox) — the guard is a
+nudge against forgetting, not a wall. (The pydantic-ai adapter's in-process
+Shell additionally denies redirect/pipe operators and, for test-only personas,
+allowlists the shell — narrowing but not closing this class.)
+
 Escape hatch (fail-closed but not brick): ``BARON_GUARD_OVERRIDE=<reason>``
 allows the call BUT appends a line to ``.baron/guard-override.log`` — a
 TRACKED file, deliberately not gitignored, so overrides surface in diffs and
@@ -291,8 +304,9 @@ def _analyze_push(
         elif dst in rules.push_default_branch_fallbacks:
             verbs.add(rules.push_default_branch_verb)
             notes.append(
-                f"origin default branch undeterminable; `{dst}` conservatively "
-                "treated as the default branch"
+                f"no origin remote is configured yet, so the default branch "
+                f"can't be confirmed — treating `{dst}` as the default branch "
+                "to stay on the safe side"
             )
     return verbs, notes
 
@@ -404,7 +418,28 @@ def evaluate_write(
     path = Path(str(raw))
     if not path.is_absolute():
         path = cwd / path
-    parts = Path(os.path.normpath(path)).parts
+    normalized = Path(os.path.normpath(path))
+
+    # 0. Defense-in-depth: a target that normalizes to OUTSIDE the collab/persona
+    #    root (a `../outside.md` escaping above cwd) is denied here — the harness
+    #    FS jail catches direct writes, but a Shell `>` redirect escapes both, so
+    #    the guard refuses the escape itself rather than relying on the jail.
+    #    Only checkable when the root is absolute (the normalized target then is
+    #    too); a relative cwd can't anchor the comparison, so skip rather than
+    #    risk a false positive.
+    root = Path(os.path.normpath(cwd))
+    if root.is_absolute() and normalized.is_absolute():
+        try:
+            normalized.relative_to(root)
+        except ValueError:
+            return Decision(
+                False,
+                ("write_path",),
+                f"target path escapes the collab/persona root {root} "
+                f"(resolves to {normalized} via `..`) — refused",
+            )
+
+    parts = normalized.parts
 
     # 1. Universally writable zones (rules artifact): _handoff/ is how
     #    personas report and coordinate — gating it would brick the substrate.

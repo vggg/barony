@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "barony"
-version = "0.5.3"
+version = "0.5.4"
 description = "Git-native governance for teams of AI coding agents — the baron CLI over Barony's markdown/git collab substrate."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,8 +30,8 @@ Issues = "https://github.com/vggg/barony/issues"
 
 # The pydantic-ai runtime adapter (baron.runtimes.pydantic_ai) is an OPTIONAL
 # extra: the harness is 0.x ("minor releases may include breaking changes"),
-# hence the tight upper bound. Verified against pydantic-ai-harness 0.10.0 +
-# pydantic-ai-slim 2.16.0 (2026-07-23). Without the extra, importing the
+# hence the tight upper bound. Verified against harness 0.10.0 / pydantic-ai-slim
+# 2.14.1–2.19.x (the pinned range below). Without the extra, importing the
 # module raises a clean ImportError with install instructions.
 [project.optional-dependencies]
 pydantic-ai = [

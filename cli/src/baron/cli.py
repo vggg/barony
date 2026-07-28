@@ -297,7 +297,13 @@ def _ledger_new(
 @finding_app.command("new")
 def finding_new(
     title: str = typer.Option(..., "--title", help="Finding title (goes in the heading)."),
-    author: str = typer.Option(..., "--author", help="Persona/author name for the entry."),
+    author: str = typer.Option(
+        ...,
+        "--author",
+        help="Ledger attribution (the proposer named in the entry heading). "
+        "Separate from the git author that signs the commit — a librarian can "
+        "allocate --author <reviewer> while committing under its own identity.",
+    ),
     body_file: Optional[Path] = typer.Option(
         None, "--body-file", help="File whose content becomes the entry body (default: a stub)."
     ),
@@ -318,7 +324,13 @@ def finding_new(
 @decision_app.command("new")
 def decision_new(
     title: str = typer.Option(..., "--title", help="Decision title (goes in the heading)."),
-    author: str = typer.Option(..., "--author", help="Persona/author name for the entry."),
+    author: str = typer.Option(
+        ...,
+        "--author",
+        help="Ledger attribution (the proposer named in the entry heading). "
+        "Separate from the git author that signs the commit — a librarian can "
+        "allocate --author <reviewer> while committing under its own identity.",
+    ),
     body_file: Optional[Path] = typer.Option(
         None, "--body-file", help="File whose content becomes the entry body (default: a stub)."
     ),
@@ -348,6 +360,12 @@ def handoff_create(
     from_: str = typer.Option(..., "--from", help="Sending persona."),
     title: str = typer.Option(..., "--title", help="Handoff title (also drives the filename slug)."),
     priority: str = typer.Option("medium", "--priority", help="low | medium | high."),
+    body_file: Optional[Path] = typer.Option(
+        None,
+        "--body-file",
+        help="File whose content becomes the handoff body under the frontmatter "
+        "(default: just the title heading).",
+    ),
     collab: Path = _COLLAB_OPT,
     no_commit: bool = typer.Option(False, "--no-commit", help="Write the file without committing."),
 ) -> None:
@@ -355,6 +373,12 @@ def handoff_create(
     if priority not in handoff_mod.PRIORITIES:
         typer.echo(f"error: --priority must be one of {handoff_mod.PRIORITIES}", err=True)
         raise typer.Exit(2)
+    body: Optional[str] = None
+    if body_file is not None:
+        if not body_file.is_file():
+            typer.echo(f"error: --body-file {body_file} not found", err=True)
+            raise typer.Exit(2)
+        body = body_file.read_text(encoding="utf-8")
     try:
         path = handoff_mod.create(
             collab.resolve(),
@@ -362,6 +386,7 @@ def handoff_create(
             from_=from_,
             title=title,
             priority=priority,
+            body=body,
             commit=not no_commit,
         )
     except handoff_mod.HandoffError as exc:
@@ -374,14 +399,21 @@ def handoff_create(
 def handoff_close(
     file: Path = typer.Argument(..., help="The handoff file (path, or bare filename in _handoff/)."),
     note: Optional[str] = typer.Option(None, "--note", help="Closing note (added as a blockquote)."),
+    as_: Optional[str] = typer.Option(
+        None,
+        "--as",
+        help="Closing persona slug — attributes the close commit as `<slug>:` "
+        "instead of the default `baron:`.",
+    ),
     collab: Path = _COLLAB_OPT,
     no_commit: bool = typer.Option(False, "--no-commit", help="Move without git (no history-preserving mv)."),
 ) -> None:
     """Flip status to done (+ closed: date, optional note) and git-mv the file
     to _handoff/archive/YYYY/ — archive, never delete."""
+    prefix = f"{as_.strip().lower()}:" if as_ and as_.strip() else "baron:"
     try:
         dest = handoff_mod.close(
-            collab.resolve(), file, note=note, commit=not no_commit
+            collab.resolve(), file, note=note, prefix=prefix, commit=not no_commit
         )
     except handoff_mod.HandoffError as exc:
         typer.echo(f"error: {exc}", err=True)

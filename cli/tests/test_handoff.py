@@ -51,6 +51,33 @@ def test_close_flips_status_archives_and_preserves_history(
     assert "handoff | close" in log
 
 
+def test_create_body_file_content_lands_under_frontmatter(
+    collab: Path, fixed_clock: object
+) -> None:
+    body = "## Context\n\nThe seam needs a second look.\n"
+    path = handoff.create(
+        collab, for_="tess", from_="rex", title="Big review", body=body
+    )
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("---\ncreated: 2026-07-22\n")
+    assert "# Big review\n" in text
+    # body appears after the title heading, under the frontmatter
+    assert "## Context" in text
+    assert text.index("## Context") > text.index("# Big review")
+
+
+def test_close_prefix_attributes_the_commit(collab: Path, fixed_clock: object) -> None:
+    path = handoff.create(collab, for_="tess", from_="rex", title="Close mine")
+    handoff.close(collab, path, prefix="tess:")
+    log = run_git(collab, "log", "--oneline", "-1")
+    assert "tess: handoff | close" in log
+    # default stays baron:
+    other = handoff.create(collab, for_="a", from_="b", title="Default close")
+    handoff.close(collab, other)
+    log = run_git(collab, "log", "--oneline", "-1")
+    assert "baron: handoff | close" in log
+
+
 def test_close_refuses_non_open(collab: Path, fixed_clock: object) -> None:
     path = handoff.create(collab, for_="a", from_="b", title="Already done")
     handoff.close(collab, path)

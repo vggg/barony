@@ -6,9 +6,64 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Plugin/skill bundle is unreleased since **1.8.0**. The `barony` CLI patches
-below (**0.5.1–0.5.3**) are already **live on PyPI** — the CLI ships on its own
-version track (see `cli/pyproject.toml`), independent of the plugin bundle.
+Plugin/skill bundle is unreleased since **1.8.0** (**1.8.1** pending, below). The
+`barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
+CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
+plugin bundle; **0.5.4** is pending.
+
+### Security / hardening — `barony` 0.5.4 (interop hardening + backlog burndown)
+
+Driven by a hands-on dogfood of the pydantic-ai adapter (2026-07-28).
+
+- **Least-privilege Shell in the pydantic-ai adapter (real containment gap).**
+  `build_agent`/`plan` previously gave any shell-granting persona a *full* shell
+  (`Shell(cwd, denied_commands=[])`) — a reviewer whose only shell-implying grant
+  was `run_tests` could `curl`/`rm`/`git push feature/x` (the guard only vetoes
+  three git sub-verbs). Now: a persona whose only shell need is `run_tests` (and
+  no broad `write_code`/dev verbs) gets an **allowlisted** shell restricted to
+  test runners (`pytest`/`py.test`/`tox`/`nox`/`unittest`/`coverage`,
+  `denied_commands=[]` since the harness makes allow/deny mutually exclusive); a
+  broader dev shell stays general but now sets `denied_operators=['>', '>>', '|']`
+  so a redirect can't write out of root behind the guard. `python -m pytest` /
+  `make test` are intentionally excluded (the harness matches the executable
+  name; allowing `python`/`make` would re-open a general runner).
+- **Guard denies out-of-root writes itself (defense-in-depth).**
+  `guard.evaluate_write` now normalizes the target and DENIES any path that
+  escapes the collab/persona root (a `../outside.md` resolving above root),
+  rather than leaving it to the harness FS jail (which a Shell `>` redirect
+  escapes anyway).
+- **Guard-bypass honesty is now prominent.** `bash -c '...'` / `sh -c "..."` /
+  `python3 -c '...'` wrappers run their payload uninspected by the static parser
+  — documented plainly in `guard.py`, the pydantic-ai `HYDRATE.md`, and
+  `docs/concepts.md`. (No blocking heuristic added — it would false-positive on
+  every read-only persona's legitimate `bash -c`.)
+- **Calmer remote-less guard wording.** The first-run "origin default branch
+  undeterminable; `main` conservatively treated…" stderr is reworded to a calmer,
+  still-honest phrasing.
+- **`RepoContext` wired (additive).** `build_agent` now adds
+  `RepoContext(workspace_dir=<collab_root>)` when a `collab_root` is passed
+  (auto-loads `CLAUDE.md`/`AGENTS.md`), with a clean fallback if the installed
+  harness lacks it.
+- **`baron handoff create --body-file F`** — parity with `finding`/`decision`;
+  the file's content becomes the handoff body under the frontmatter.
+- **`baron handoff close --as <slug>`** — attributes the close commit as
+  `<slug>:` instead of the default `baron:`.
+- **`BARON_NOW` clock override** — the default clock honors an ISO
+  date/datetime `BARON_NOW` env var for demos/backfills (a testing seam, not for
+  normal use; malformed values raise).
+- **Docs — `--author` vs git author.** `cli/README.md` + command help now
+  document that `--author` sets ledger attribution while the git author identity
+  is separate (allocator-vs-proposer).
+- **Version-string honesty.** The "pydantic-ai-slim 2.16.0" string in
+  `cli/pyproject.toml`, `pydantic_ai.py`, and the adapter `HYDRATE.md` is
+  corrected to the tested range (harness 0.10.0 / slim 2.14.1–2.19.x).
+
+### Changed — plugin/skill **1.8.1** (paired with 0.5.4)
+
+- The pydantic-ai adapter `HYDRATE.md` (skill asset + vendored template, kept
+  byte-identical) documents the least-privilege Shell, `RepoContext` wiring, the
+  prominent `bash -c`/`sh -c` bypass note, and the corrected version range.
+  `plugin.json` + `SKILL.md` bumped together (lint-enforced).
 
 ### Fixed — `barony` 0.5.3 (install-UX shakeout)
 

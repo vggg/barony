@@ -337,6 +337,36 @@ def test_write_code_persona_source_writes_pass_but_denied_scope_blocks(
     assert "wiki" in proc.stderr
 
 
+def test_out_of_root_write_is_denied_even_with_write_code(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    """FIX 2 defense-in-depth: a target that normalizes ABOVE the collab/persona
+    root is denied by the guard itself (not left to the FS jail), even for a
+    write_code persona — a Shell `>` redirect escapes both jail and scoping."""
+    collab = tmp_path / "collab"
+    collab.mkdir()
+    # `..` escaping the root: refused
+    proc = run_guard(
+        personas["dev"],
+        hook("Write", {"file_path": str(collab / "findings" / ".." / ".." / "etc" / "x")}, collab),
+    )
+    assert proc.returncode == 2, proc.stderr
+    assert "escapes" in proc.stderr
+    # a relative payload with `..` collapsing above root, same verdict
+    proc = run_guard(
+        personas["dev"],
+        hook("Write", {"file_path": "findings/../../outside.md"}, collab),
+    )
+    assert proc.returncode == 2
+    assert "escapes" in proc.stderr
+    # sanity: an in-root findings write for the same persona still passes
+    proc = run_guard(
+        personas["dev"],
+        hook("Write", {"file_path": str(collab / "findings" / "ok.md")}, collab),
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
 def test_edit_other_personas_gate(personas: dict[str, Path], tmp_path: Path) -> None:
     other = tmp_path / "agents" / "mona" / "persona.yaml"
     own = tmp_path / "agents" / "dara" / "persona.yaml"

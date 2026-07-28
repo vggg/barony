@@ -158,6 +158,17 @@ allows the call and appends to a **tracked** override log, so every override is
 visible in diffs and expected to become a handoff. On pydantic-ai the same
 rules artifact is enforced in-process, where the hook cannot be absent.
 
+**Known bypass — command-string wrappers.** The parser inspects each top-level
+subcommand's tokens; it does *not* recurse into an interpreter invoked with an
+inline program string. So `bash -c '...'`, `sh -c "..."`, and `python3 -c '...'`
+run their payload uninspected — a `git push origin main` hidden inside `bash -c`
+is **not** caught. `bash -c`/`sh -c` are common enough to hit by honest accident,
+not just adversarially. This is an accepted limit of static enforcement of the
+honest-mistake class, not a guarantee: where the boundary must actually hold
+against a wrapper, use OS-level isolation (a container/sandbox). The pydantic-ai
+in-process Shell narrows the class — it denies redirect/pipe operators and
+allowlists test-only personas' shells — but does not close it.
+
 ## PR-locks
 
 For contested hot files, **the open PR is the lock** (ADR-002 §3): `baron lock
