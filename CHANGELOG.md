@@ -6,10 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Plugin/skill bundle is unreleased since **1.8.0** (**1.8.1** pending, below). The
+Plugin/skill bundle is unreleased since **1.8.0** (**1.8.2** pending, below). The
 `barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4–0.5.5** are pending.
+plugin bundle; **0.5.4–0.5.6** are pending.
+
+### Added — `barony` 0.5.6 + plugin 1.8.2 (session boundary — ADR-007 + thin session primitives)
+
+The 2026-07-28 pydantic-ai interop eval found the split: enforcement is solid
+(the in-process guard vetoes denied tool calls, proven live) but the session
+RITUAL — sync repos, read conventions/handoffs, check the backlog, record
+findings/handoffs, commit with the right prefix, regenerate the index — was
+instructed prose only; a human/script had to drive it.
+[ADR-007](docs/adr/ADR-007-session-boundary.md) records two decisions.
+
+- **Barony does NOT own the agent execution loop.** No `baron run` driver;
+  orchestration/execution belongs to the runtime layer (ADR-001's three-layer
+  positioning: Barony = coordination policy + governance + audit; runtime =
+  execution). A driver would duplicate — and lose to — pydantic-ai / Temporal /
+  Claude Code, and cross the boundary the design defends.
+- **Barony DOES ship thin, optional session-ritual primitives.**
+  `baron session start [--persona] [--sync] [--json]` (session-open: optional
+  `git pull --ff-only`, then the persona's open handoffs + a
+  CONVENTIONS/COORDINATION pointer + the manifest backlog location) and
+  `baron session end [--persona] [--json]` (session-close: regenerate the handoff
+  index, commit dirty `_handoff/ findings/ decisions/ wiki/` by path — never
+  `git add -A` — with the persona's `commit_prefix` else `baron:`, then a
+  `baron status` divergence check; exit 1 on red). They mechanize ONLY the
+  git/markdown bookkeeping — no agent loop, no model calls, no runtime coupling;
+  opt-in (nothing in baron requires them); NOT new capability verbs (the frozen
+  10 stay frozen). They compose existing baron functions (`status`, `handoff`,
+  `indexer`, `gitutil`) — nothing reinvented. Honesty in both `--help`: "they do
+  NOT run an agent — orchestration is the runtime's job (ADR-007)."
+- **Docs:** `cli/README.md` "session ritual primitives (optional)" (the boundary
+  + the three composition points: a human between turns, a driver/CI wrapper, a
+  runtime adapter capability/hook); `docs/concepts.md` short paragraph; the
+  pydantic-ai adapter HYDRATE.md gains a "composing the session ritual (optional)"
+  note (plugin/skill **1.8.1 → 1.8.2**; vendored template copy re-synced
+  byte-identical). `docs/BACKLOG.md`'s "reverse-direction / `baron run` driver —
+  decision pending" note is replaced with the ADR-007 resolution.
+- **Tests:** `cli/tests/test_session.py` — start surfaces a persona's open
+  handoff + brief, `--json` shape, `--sync` fast-forward pulls (bare-origin
+  fixture), end regenerates the index + commits dirty coordination files with the
+  persona prefix + reports status, end exits 1 on red, both no-op-clean.
 
 ### Added — `barony` 0.5.5 (worktree repair commands — rest of baron M6)
 

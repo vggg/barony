@@ -78,11 +78,12 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
   `barony[pydantic-ai]` range, re-verify the `before_tool_execute`/`ModelRetry` veto
   seam and the `FileSystem.protected_patterns` read-only behavior (both are contract
   assumptions recorded in the ADR-004 addendum §4.2).
-- **Session-ritual driver — decision pending: driver vs runtime-owns-orchestration.**
-  Whether baron should ship a `baron run` that drives the session-start ritual, or leave
-  orchestration to the runtime, is a design fork for the owner; the reverse-direction
-  seams stay documented as-is until that call is made. (0.5.4 deliberately did NOT build
-  a driver.)
+- **Session-ritual driver — RESOLVED in [ADR-007](adr/ADR-007-session-boundary.md):**
+  no driver; thin session primitives shipped (0.5.6); runtime-specific capability wrappers
+  = build-on-demand. Barony does not own the agent execution loop (orchestration is the
+  runtime's job); `baron session start/end` mechanize only the git/markdown bookkeeping of
+  the ritual, opt-in and runtime-neutral. A pydantic-ai capability / Claude Code hook / cron
+  driver MAY wrap them, but Barony ships only the CLI — wrappers are built on demand.
 
 ## Consciously deferred inside M1–M3
 

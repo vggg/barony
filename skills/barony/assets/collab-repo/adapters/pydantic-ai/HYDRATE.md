@@ -181,6 +181,29 @@ emission itself needs only baron; *running* the script needs the extra.
 
 ---
 
+## Composing the session ritual (optional)
+
+`build_agent` gives you the *enforcement* half of a persona; the git/markdown
+*bookkeeping* half of the session ritual (sync working copies, surface open
+handoffs, regenerate the handoff index, commit coordination artifacts, run a
+divergence check) is exposed as two thin, opt-in CLI primitives —
+`baron session start` and `baron session end` (ADR-007). A pydantic-ai
+user or driver MAY compose them around a run:
+
+```bash
+baron session start --collab . --persona <slug> --sync   # before the run
+# ... agent.run_sync(...) ...
+baron session end   --collab . --persona <slug>          # after the run (exit 1 = red status)
+```
+
+…or wrap them in a `DynamicWorkflow` step / a capability that shells out to them.
+**Barony ships the runtime-neutral CLI, not the wrapper** — the primitives do NO
+agent loop and NO model calls (that stays your job / pydantic-ai's), so the
+wrapper is build-on-demand. They are not new capability verbs; the frozen
+vocabulary is untouched.
+
+---
+
 ## Notes / limitations
 
 - **In-process only.** The guarantees hold for agents built via `build_agent`. This adapter

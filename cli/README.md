@@ -331,6 +331,44 @@ stays visible, just not alarm-red. **Expiry keeps waivers honest:** an expired
 waiver stops matching (the red resurfaces) and is itself reported as an
 `expired-waiver` warn; malformed entries are reported, never silently dropped.
 
+### `baron session start|end` — session ritual primitives (optional) (ADR-007)
+
+Thin, **opt-in** helpers that mechanize ONLY the git/markdown *bookkeeping* of
+the session ritual. They do **not** run an agent, make no model calls, and have
+no runtime coupling — orchestration is the runtime's job
+([ADR-007](../docs/adr/ADR-007-session-boundary.md)). They are **not** new
+capability verbs (the frozen 10 stay frozen); they are composable commands built
+by reusing `baron status` / `baron index` / `baron handoff` / `gitutil`. Nothing
+in baron requires them — interactive sessions and every command above work
+unchanged.
+
+```bash
+baron session start --collab . --persona fern           # session-open brief
+baron session start --collab . --persona fern --sync    # + git pull --ff-only the working copies
+baron session end   --collab . --persona fern           # session-close bookkeeping
+```
+
+- **`start [--persona SLUG] [--sync] [--json]`** — session-open, read-mostly.
+  With `--sync`, `git pull --ff-only` each manifest working copy (never merges,
+  never force-pulls; non-fast-forwards are reported — repos with no `origin` are
+  skipped). Without `--sync` no pull happens (default off — it is an honest git
+  mutation). Then surfaces, for the persona (else all): OPEN handoffs addressed
+  to them, the `CONVENTIONS.md`/`COORDINATION.md` pointer, and the manifest
+  backlog location. Plain-text brief or `--json`. Exit 0.
+- **`end [--persona SLUG] [--json]`** — session-close. Regenerates the handoff
+  index (`baron index` logic); commits any dirty coordination artifacts
+  (`_handoff/`, `findings/`, `decisions/`, `wiki/`) — staged **by path, never
+  `git add -A`** — with the persona's `commit_prefix` when `--persona` resolves
+  one (the same attribution `baron handoff close --as` uses), else `baron:`;
+  skips cleanly when nothing is outstanding; then prints a `baron status`
+  summary. Exit 0 green / 1 if status finds red (CI-usable).
+
+**Three composition points** (the boundary is the same in all three — bookkeeping
+only): a **human** runs them between turns; a **driver/CI** wraps them around a
+headless run; a **runtime adapter** may expose them as a capability/hook (a
+pydantic-ai capability, a Claude Code session hook, a cron driver). Barony ships
+only the runtime-neutral CLI — those wrappers are build-on-demand, not shipped.
+
 ### `baron hydrate pydantic-ai --persona-file F [--out agent_setup.py]`
 
 Emit a ready-to-edit bootstrap script hydrating one persona onto

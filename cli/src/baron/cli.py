@@ -22,6 +22,7 @@ from . import (
     lock as lock_mod,
     runtimes,
     scaffold as scaffold_mod,
+    session as session_mod,
     status as status_mod,
     validate as validate_mod,
     waivers as waivers_mod,
@@ -844,6 +845,88 @@ def waiver_list(
         )
     for problem in problems:
         typer.echo(f"problem {problem}")
+
+
+# --- session ritual primitives (optional; ADR-007) ------------------------------------
+
+session_app = typer.Typer(
+    help=(
+        "Optional session-ritual bookkeeping (ADR-007). start|end mechanize the "
+        "git/markdown bookkeeping of the session ritual; they do NOT run an agent "
+        "— orchestration is the runtime's job. Opt-in and composable; not new "
+        "capability verbs (the frozen 10 stay frozen)."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(session_app, name="session")
+
+
+@session_app.command("start")
+def session_start(
+    collab: Path = _COLLAB_OPT,
+    persona: Optional[str] = typer.Option(
+        None, "--persona", help="Scope the brief to this persona slug (else all personas)."
+    ),
+    sync: bool = typer.Option(
+        False,
+        "--sync",
+        help="`git pull --ff-only` each manifest working copy first (a git mutation; "
+        "default off). Never merges or force-pulls; non-fast-forwards are reported.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Session-open bookkeeping: sync (optional), then surface the brief.
+
+    Read-mostly (only ``--sync`` mutates): surfaces OPEN handoffs for the persona
+    (else all), a pointer to CONVENTIONS.md/COORDINATION.md, and the manifest
+    backlog location. These mechanize the git/markdown bookkeeping of the session
+    ritual; they do NOT run an agent — orchestration is the runtime's job
+    (ADR-007). Opt-in and composable; not a new capability verb.
+    """
+    try:
+        brief = session_mod.start(collab.resolve(), persona=persona, sync=sync)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    if json_out:
+        _echo_json(brief.to_dict())
+    else:
+        typer.echo(session_mod.render_brief(brief))
+    raise typer.Exit(0)
+
+
+@session_app.command("end")
+def session_end(
+    collab: Path = _COLLAB_OPT,
+    persona: Optional[str] = typer.Option(
+        None,
+        "--persona",
+        help="Attribute the coordination commit with this persona's commit_prefix "
+        "(else `baron:`).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Session-close bookkeeping: regenerate the index, commit dirty coordination
+    artifacts, end with a divergence check.
+
+    Regenerates the handoff index (``baron index`` logic); commits any dirty
+    ``_handoff/ findings/ decisions/ wiki/`` paths (staged by path — NEVER
+    ``git add -A``) with the persona's ``commit_prefix`` (else ``baron:``); then
+    prints a ``baron status`` summary. Skips the commit cleanly when nothing is
+    outstanding. Exit 0 green / 1 if status finds red (CI-usable). These
+    mechanize the git/markdown bookkeeping of the session ritual; they do NOT run
+    an agent — orchestration is the runtime's job (ADR-007).
+    """
+    try:
+        report = session_mod.end(collab.resolve(), persona=persona)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    if json_out:
+        _echo_json(report.to_dict())
+    else:
+        typer.echo(session_mod.render_end(report))
+    raise typer.Exit(1 if report.reds else 0)
 
 
 def main() -> None:  # pragma: no cover - console-script convenience

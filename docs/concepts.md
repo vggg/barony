@@ -144,6 +144,21 @@ reason appended — visible, not alarm-red. An expired waiver stops matching (th
 red resurfaces) and is itself reported, so waivers cannot rot into permanent
 silence.
 
+## Session-ritual primitives (optional)
+
+`baron session start` and `baron session end` are optional bookkeeping helpers
+for the git/markdown parts of the session ritual: `start` optionally
+`git pull --ff-only`s the working copies, then surfaces the persona's open
+handoffs, the `CONVENTIONS.md`/`COORDINATION.md` pointer, and the backlog
+location; `end` regenerates the handoff index, commits dirty coordination
+artifacts (`_handoff/`, `findings/`, `decisions/`, `wiki/`) by path with the
+persona's commit prefix, and closes with a `baron status` divergence check
+(exit 1 on red, CI-usable). They are **opt-in and compose existing commands** —
+nothing in baron requires them, and they are not new capability verbs. The
+boundary they keep — bookkeeping only, no agent loop, no model calls,
+orchestration stays the runtime's job — is
+[ADR-007](adr/ADR-007-session-boundary.md).
+
 ## Guard: enforcement before the tool runs
 
 `baron guard` ([ADR-004](adr/ADR-004-baron-guard-enforcement.md)) is a Claude
