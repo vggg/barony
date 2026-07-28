@@ -92,7 +92,7 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 > triage, 2026-07-23) shipped in v1.5.0 as `.baron-waivers.yaml` + `baron waiver add|list`
 > — see `cli/README.md`.
 
-## From the demo-seeding stranger test (2026-07-27, `barony-demo` — private)
+## From the demo-seeding stranger test (2026-07-27, [`barony-demo`](https://github.com/vggg/barony-demo))
 
 - **Clock override surface:** `baron.clock.set_clock` exists but has no CLI/env
   surface; seeding dated history needed a `sitecustomize` shim. Candidate:

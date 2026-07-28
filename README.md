@@ -87,6 +87,11 @@ setup path (an agent interviews you, then scaffolds) routes through
 `skills/barony/assets/collab-repo/START.md` — see
 [docs/concepts.md](docs/concepts.md).
 
+**See a real one:** [`vggg/barony-demo`](https://github.com/vggg/barony-demo)
+is a seeded example — a week of a fictional project's findings, decisions,
+handoffs (closed and open), a waiver, and a captured live guard refusal. The
+project is fictional; every artifact was produced by the real tools.
+
 ## Core concepts
 
 Longer-form explanations, the emitted repo layout, and the adapter mechanics
