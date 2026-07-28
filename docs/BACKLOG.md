@@ -108,3 +108,46 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 - **Document the `finding new --author X` vs git-author duality** (allocator vs
   proposer; e.g. librarian allocating for a write_path-restricted reviewer) —
   works as designed, currently undocumented.
+
+## Considered directions — from launch Q&A (2026-07-28, LinkedIn thread w/ a staff/SRE reviewer)
+
+### User-extensible guard rules (project-level custom enforcement)
+Today `baron guard` enforces the frozen 10-verb vocabulary via the packaged
+`capability-rules.v1.yaml`; each rule's `detection` is one of a fixed set of
+modalities (`command` = git/gh command-pattern, `file-op` = path scope), hand-
+implemented in `guard.py`. There is no project-level custom-rules file — a user
+can *express* any constraint in `CONVENTIONS.md`/`COORDINATION.md`/persona
+`scope` (instructed tier), but cannot add a new *deterministically enforced*
+rule from config.
+
+- **Cheap (natural next step):** a project-level `.baron/rules.*` (or a manifest
+  block) that guard loads *in addition to* the packaged rules, for the **existing
+  modalities** — extra command patterns and path scopes a team wants blocked.
+  The rules are already externalized data; this is mostly a loader + merge + a
+  precedence/validation story, no new detection code. Keep the honesty label:
+  user rules are still `enforced` only for the shapes guard can mechanically check.
+- **Expensive (needs new detection code):** new modalities — file size, time
+  windows, rate/turn limits, anything semantic ("small tasks only"). Each is a
+  new matcher in `guard.py`, not a config line. Gate on observed need
+  (vocabulary design rule 4), same as the core verbs.
+
+### Centralized cross-project memory substrate
+Within a project the collab repo already *is* the shared memory substrate
+(findings/decisions/wiki/handoffs in git+markdown). Extending to a **centralized,
+cross-project** memory (the Irisidian-vault pattern, productized) is coherent
+because the substrate is plain git+markdown — but it is a distinct product
+surface, not a free consequence, and depends on gaps we already track:
+
+- **Memory lifecycle** — ledgers/handoffs are append-only and grow unbounded;
+  centralizing compounds it. Needs an archive tier + retention story (already a
+  known gap).
+- **Retrieval at scale** — today it's grep + a human-curated wiki; cross-project
+  central memory wants indexing / semantic search.
+- **Single-writer reconciliation** — the librarian model that keeps one project's
+  memory coherent strains under many projects writing one substrate; needs a
+  scoping/namespacing + reconciliation story.
+
+Positioning note: this is Phase-3/4 territory and overlaps the per-agent Memory
+capability some runtimes ship (e.g. pydantic-ai-harness) — but those are
+in-process/per-agent/private; Barony's differentiator is shared, human-legible,
+git-audited memory. Build only on real demand.
