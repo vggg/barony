@@ -33,13 +33,15 @@ distribution*, not in `baron` core. GitHub stays the only built-in.
 (single-account constraint, ADR-002 §1). Same rule as runtime adapters: add when a real
 project on that forge exists.
 
-## Worktree topology — repair commands (rest of baron M6)
+## Worktree topology — repair commands (rest of baron M6) — DONE (barony 0.5.5)
 
-**What (remaining):** the *tooling* shipped in v1.5.0 (`baron worktree add|list|remove`,
-status sweep, [`docs/worktree-migration.md`](worktree-migration.md)); the **live migration**
-of a real clone-per-persona workspace was executed on the pilot 2026-07-23 (see
-[`STATUS.md`](../STATUS.md)). Still open: *repair* commands the migration showed are needed
-(e.g. re-registering a moved worktree, `git worktree prune` wrapping).
+**Shipped:** the base *tooling* landed in v1.5.0 (`baron worktree add|list|remove`, status
+sweep, [`docs/worktree-migration.md`](worktree-migration.md)); the **live migration** of a
+real clone-per-persona workspace ran on the pilot 2026-07-23 (see [`STATUS.md`](../STATUS.md));
+the *repair* commands that migration showed were needed shipped in **barony 0.5.5**:
+`baron worktree prune` (wraps `git worktree prune [-n]` — clears stale `.git/worktrees/`
+registrations for moved/deleted dirs) and `baron worktree repair [PATH…]` (wraps
+`git worktree repair` — re-registers a moved worktree / main repo). Nothing open.
 
 ## Merger precondition verification (baron, forge-consuming)
 

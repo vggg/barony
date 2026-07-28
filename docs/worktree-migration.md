@@ -133,4 +133,12 @@ anything is deleted:
   non-negotiable, and why step 1 says *deliberately*.
 - Worktree gotcha: a worktree registers itself in the shared repo's
   `.git/worktrees/`; never delete a worktree directory with `rm -rf` alone —
-  use `baron worktree remove` (or `git worktree prune` after the fact).
+  use `baron worktree remove`. If a worktree dir *was* moved or deleted outside
+  baron, the stale registration is repairable without touching any commit:
+  - `baron worktree prune --dry-run` then `baron worktree prune` — clears the
+    stale registrations left behind by a deleted/moved worktree dir (wraps
+    `git worktree prune`).
+  - `baron worktree repair [<new-path>…]` — re-registers a worktree (or the main
+    repo) that was *moved* on disk, fixing its admin links (wraps
+    `git worktree repair`). Both only touch `.git/worktrees/` admin state — no
+    branch or commit is affected.

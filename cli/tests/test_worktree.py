@@ -9,6 +9,7 @@ clones), and ``worktree remove`` refuses on unmerged commits until --force.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -148,3 +149,82 @@ def test_worktree_cli_add_list_remove(code_repo: Path, tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "branch persona/fern kept" in result.output
+
+
+def _stale_registration(repo: Path, branch: str) -> bool:
+    """git still lists a registration whose directory is gone (prunable)."""
+    return any(
+        w.branch == branch and not w.is_main and not w.path.is_dir()
+        for w in worktree.list_worktrees(repo)
+    )
+
+
+def test_prune_clears_a_deleted_worktree_registration(
+    code_repo: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "worktrees"
+    wt = worktree.add(code_repo, "fern", root)
+    # Delete the worktree dir out from under git (the migration gotcha).
+    shutil.rmtree(wt)
+    assert _stale_registration(code_repo, "persona/fern"), "expected a stale registration"
+
+    # --dry-run reports but leaves the stale registration in place.
+    report = worktree.prune(code_repo, dry_run=True)
+    assert "fern" in report
+    assert _stale_registration(code_repo, "persona/fern"), "dry run must not prune"
+
+    # A real prune clears it; the persona branch (history) survives untouched.
+    report = worktree.prune(code_repo)
+    assert "fern" in report
+    assert not _stale_registration(code_repo, "persona/fern")
+    assert worktree._branch_exists(code_repo, "persona/fern")
+
+
+def test_prune_noop_when_nothing_stale(code_repo: Path, tmp_path: Path) -> None:
+    worktree.add(code_repo, "fern", tmp_path / "worktrees")
+    assert worktree.prune(code_repo) == ""
+
+
+def test_cli_prune_dry_run_then_prune(code_repo: Path, tmp_path: Path) -> None:
+    wt = worktree.add(code_repo, "fern", tmp_path / "worktrees")
+    shutil.rmtree(wt)
+
+    dry = runner.invoke(
+        app, ["worktree", "prune", "--repo", str(code_repo), "--dry-run"]
+    )
+    assert dry.exit_code == 0, dry.output
+    assert "dry run" in dry.output
+    assert _stale_registration(code_repo, "persona/fern")
+
+    real = runner.invoke(app, ["worktree", "prune", "--repo", str(code_repo)])
+    assert real.exit_code == 0, real.output
+    assert not _stale_registration(code_repo, "persona/fern")
+
+    again = runner.invoke(app, ["worktree", "prune", "--repo", str(code_repo)])
+    assert again.exit_code == 0, again.output
+    assert "nothing to prune" in again.output
+
+
+def test_repair_fixes_links_after_moving_a_worktree(
+    code_repo: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "worktrees"
+    wt = worktree.add(code_repo, "fern", root)
+    # Move the worktree dir out from under git; its .git gitlink now dangles.
+    moved = tmp_path / "moved-fern"
+    shutil.move(str(wt), str(moved))
+    # git worktree repair, given the new location, fixes the admin links so the
+    # moved worktree is operational again (git resolves it at the new path).
+    report = worktree.repair(code_repo, [moved])
+    assert "gitdir" in report  # git reports the gitdir it corrected
+    listed = [w.path for w in worktree.list_worktrees(code_repo)]
+    assert moved in listed and wt not in listed
+    out = run_git(moved, "status", "--porcelain")
+    assert out == "", out  # clean, and git resolves the worktree at its new path
+
+
+def test_cli_repair_all_is_a_clean_noop(code_repo: Path, tmp_path: Path) -> None:
+    worktree.add(code_repo, "fern", tmp_path / "worktrees")
+    result = runner.invoke(app, ["worktree", "repair", "--repo", str(code_repo)])
+    assert result.exit_code == 0, result.output
+    assert "nothing to repair" in result.output

@@ -9,7 +9,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Plugin/skill bundle is unreleased since **1.8.0** (**1.8.1** pending, below). The
 `barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4** is pending.
+plugin bundle; **0.5.4–0.5.5** are pending.
+
+### Added — `barony` 0.5.5 (worktree repair commands — rest of baron M6)
+
+Closes the `docs/BACKLOG.md` "Worktree topology — repair commands" item: the
+migration runbook surfaced two repair needs when a worktree dir is moved or
+deleted *outside* baron (git leaves a stale registration in `.git/worktrees/`).
+
+- **`baron worktree prune [--dry-run]`** — wraps `git worktree prune` to clear
+  stale administrative registrations for worktree dirs that no longer exist.
+  `--dry-run` uses `git worktree prune -n` to report what would go without
+  changing anything; the report (git writes it to stderr) is surfaced in plain
+  text, and a clean "nothing to prune" when there is none.
+- **`baron worktree repair [PATH…]`** — wraps `git worktree repair` to fix a
+  worktree's admin links (gitdir pointer + `.git` gitlink) after a worktree or
+  the main repo was moved on disk. With paths, repairs those; otherwise all.
+  Requires git >= 2.30 (a capability check via `git worktree -h` gives a clean
+  error on an older git).
+- Both are **non-destructive to committed work** — they touch only
+  `.git/worktrees/` admin state, never a branch or its history (stated in
+  `--help`), consistent with `remove`'s safety ethos. `--repo` resolves from the
+  manifest (`repos[role=code]`) exactly like the other worktree commands.
+- Docs: `docs/worktree-migration.md`'s gotcha section now points at
+  `baron worktree prune`/`repair` instead of raw git; `cli/README.md` documents
+  the subcommands.
 
 ### Security / hardening — `barony` 0.5.4 (interop hardening + backlog burndown)
 

@@ -275,7 +275,7 @@ against a fake. The CI side is the emitted
 `.github/workflows/lock-guard.yml` template (bash + `gh`), which fails any
 *other* PR touching a locked path.
 
-### `baron worktree add|list|remove` (M6 tooling)
+### `baron worktree add|list|remove|prune|repair` (M6 tooling)
 
 The branch-per-persona worktree topology (ADR-003 §2.7): one shared object
 store, worktrees under the manifest's `workspace.worktrees_root`.
@@ -285,6 +285,8 @@ baron worktree add fern --collab .        # <worktrees_root>/fern on branch pers
 baron worktree add fern --repo ../code --root ../worktrees   # explicit paths
 baron worktree list
 baron worktree remove fern [--force]
+baron worktree prune [--dry-run]          # clear stale registrations
+baron worktree repair [<path>...]         # fix links after a move
 ```
 
 `add` creates `<root>/<persona>` on branch `persona/<persona>` (created from
@@ -294,6 +296,18 @@ from the manifest (`workspace.worktrees_root`, `repos[role=code]`); `--root` /
 the default branch. `remove` refuses while the worktree is dirty or its branch
 holds unmerged commits unless `--force` — and NEVER deletes the
 `persona/<persona>` branch (removing a working copy must not destroy history).
+
+`prune` and `repair` are the *repair* pair for when a worktree directory is
+moved or deleted **outside** baron (git leaves a stale entry in
+`.git/worktrees/`). `prune` wraps `git worktree prune` (`--dry-run` → `-n`,
+reports what would go and changes nothing) to clear registrations whose
+directory is gone; `repair` wraps `git worktree repair` to re-point the admin
+links after a worktree (or the main repo) was moved — pass the new path(s), or
+none to repair all. Both are **non-destructive to committed work**: they only
+touch `.git/worktrees/` admin state, never a branch or its history. `repair`
+needs git >= 2.30; both give a clean error on an old git or a non-repo path.
+The `--repo` default resolves from the manifest like the other worktree
+commands.
 `baron status` sweeps worktrees like clones (each reports its checked-out
 HEAD's divergence; the repo-wide branch sweep runs once, on the shared repo).
 Converting an existing clone-per-persona workspace:

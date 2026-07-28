@@ -734,6 +734,55 @@ def worktree_remove(
     typer.echo(f"removed {removed.as_posix()} (branch persona/{persona} kept)")
 
 
+@worktree_app.command("prune")
+def worktree_prune(
+    repo: Optional[Path] = _WT_REPO_OPT,
+    collab: Path = _COLLAB_OPT,
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be pruned (git worktree prune -n); change nothing."
+    ),
+) -> None:
+    """Prune stale worktree registrations (`git worktree prune`).
+
+    Clears the administrative entries git leaves in `.git/worktrees/` when a
+    worktree directory is moved or deleted outside baron. Non-destructive: it
+    only touches admin state — no branch or commit is affected."""
+    code_repo, _ = _worktree_context(collab, repo, None, need_root=False)
+    try:
+        report = worktree_mod.prune(code_repo, dry_run=dry_run)
+    except worktree_mod.WorktreeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    if report:
+        typer.echo(report)
+        if dry_run:
+            typer.echo("(dry run — nothing removed; rerun without --dry-run to prune)")
+    else:
+        typer.echo("nothing to prune (no stale worktree registrations)")
+
+
+@worktree_app.command("repair")
+def worktree_repair(
+    paths: Optional[list[Path]] = typer.Argument(
+        None, help="Worktree paths to repair (default: repair all worktrees)."
+    ),
+    repo: Optional[Path] = _WT_REPO_OPT,
+    collab: Path = _COLLAB_OPT,
+) -> None:
+    """Repair worktree admin links after a move (`git worktree repair`).
+
+    Fixes the gitdir pointer and each worktree's `.git` gitlink after a worktree
+    or the main repo was moved on disk. Non-destructive: it only re-points admin
+    files — no branch or commit is affected. Requires git >= 2.30."""
+    code_repo, _ = _worktree_context(collab, repo, None, need_root=False)
+    try:
+        report = worktree_mod.repair(code_repo, paths or None)
+    except worktree_mod.WorktreeError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(report if report else "nothing to repair (worktree links intact)")
+
+
 # --- waivers --------------------------------------------------------------------------
 
 waiver_app = typer.Typer(

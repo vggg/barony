@@ -173,6 +173,60 @@ def remove(repo: Path, persona: str, *, force: bool = False) -> Path:
     return target.path
 
 
+def _worktree_subcommand_available(repo: Path, sub: str) -> bool:
+    """Whether ``git worktree <sub>`` exists in this git — ``repair`` landed in
+    git 2.30, so an old git lists no ``repair`` in ``git worktree -h``."""
+    proc = git(repo, "worktree", "-h", check=False)
+    return sub in (proc.stdout + proc.stderr)
+
+
+def prune(repo: Path, *, dry_run: bool = False) -> str:
+    """Wrap ``git worktree prune``: drop stale administrative registrations in
+    ``.git/worktrees/`` for worktree directories that no longer exist (moved or
+    ``rm``'d out from under git). Non-destructive to committed work — it only
+    touches admin state, never a branch or its history. ``dry_run`` passes
+    ``-n`` to report what *would* be pruned without removing anything. Returns
+    git's (verbose) report; empty means nothing stale."""
+    _require_repo(repo)
+    if not _worktree_subcommand_available(repo, "prune"):
+        raise WorktreeError(
+            f"this git ({repo}) has no `git worktree prune` — upgrade git"
+        )
+    args = ["worktree", "prune", "-v"]
+    if dry_run:
+        args.append("-n")
+    try:
+        proc = git(repo, *args)
+    except GitError as exc:
+        raise WorktreeError(str(exc)) from exc
+    # `git worktree prune -v` writes its "Removing …" report to stderr.
+    return (proc.stdout + proc.stderr).strip()
+
+
+def repair(repo: Path, paths: list[Path] | None = None) -> str:
+    """Wrap ``git worktree repair``: fix the administrative links (the gitdir
+    pointer and each worktree's ``.git`` gitlink) after a worktree or the main
+    repo was moved. With ``paths``, repair those worktrees; otherwise repair all.
+    Non-destructive to committed work — it only re-points admin files, never a
+    branch or its history. Returns git's report (empty when nothing needed
+    fixing). Requires git >= 2.30."""
+    _require_repo(repo)
+    if not _worktree_subcommand_available(repo, "repair"):
+        raise WorktreeError(
+            f"this git ({repo}) has no `git worktree repair` (added in git 2.30)"
+            " — upgrade git"
+        )
+    args = ["worktree", "repair"]
+    if paths:
+        args += [str(p) for p in paths]
+    try:
+        proc = git(repo, *args)
+    except GitError as exc:
+        raise WorktreeError(str(exc)) from exc
+    # `git worktree repair` writes its progress to stderr; surface both.
+    return (proc.stdout + proc.stderr).strip()
+
+
 def render_table(worktrees: list[Worktree]) -> str:
     if not worktrees:
         return "no worktrees"
