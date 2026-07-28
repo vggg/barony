@@ -45,9 +45,13 @@ uv tool install ./cli                   # install the local copy
 
 ## Quickstart
 
-Verified end-to-end on a bare venv (`pip install` the wheel, no repo checkout):
+Verified end-to-end from a `pip install barony`:
 
 ```bash
+# a code repo to govern (skip if you already have one):
+mkdir gardenkit && git -C gardenkit init -b main -q && \
+  git -C gardenkit commit --allow-empty -m "init" -q
+
 baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
   --personas dev:fern,dev:moss,librarian:iris
 cd gardenkit-collab
@@ -57,7 +61,7 @@ baron finding new --title "First finding" --author fern --no-push
 HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
 baron handoff close "$HANDOFF" --note "Done, see F1."
 baron index               # regenerates _handoff/README.md — commit it
-baron worktree add fern   # ../gardenkit-worktrees/fern, branch persona/fern
+baron worktree add fern   # worktree of ./gardenkit — ../gardenkit-worktrees/fern
 ```
 
 ## Commands

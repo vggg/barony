@@ -33,13 +33,13 @@ distribution*, not in `baron` core. GitHub stays the only built-in.
 (single-account constraint, ADR-002 §1). Same rule as runtime adapters: add when a real
 project on that forge exists.
 
-## Worktree topology — live migration + repair (rest of baron M6)
+## Worktree topology — repair commands (rest of baron M6)
 
 **What (remaining):** the *tooling* shipped in v1.5.0 (`baron worktree add|list|remove`,
-status sweep, [`docs/worktree-migration.md`](worktree-migration.md)); still open are the
-**live migration** of a real clone-per-persona workspace (the pilot) and any *repair*
-commands the migration shows are needed (e.g. re-registering a moved worktree,
-`git worktree prune` wrapping).
+status sweep, [`docs/worktree-migration.md`](worktree-migration.md)); the **live migration**
+of a real clone-per-persona workspace was executed on the pilot 2026-07-23 (see
+[`STATUS.md`](../STATUS.md)). Still open: *repair* commands the migration showed are needed
+(e.g. re-registering a moved worktree, `git worktree prune` wrapping).
 
 ## Merger precondition verification (baron, forge-consuming)
 
@@ -92,7 +92,7 @@ acceptance bar for an adapter is a REAL project on the runtime. Still open:
 > triage, 2026-07-23) shipped in v1.5.0 as `.baron-waivers.yaml` + `baron waiver add|list`
 > — see `cli/README.md`.
 
-## From the demo-seeding stranger test (2026-07-27, barony-demo)
+## From the demo-seeding stranger test (2026-07-27, `barony-demo` — private)
 
 - **Clock override surface:** `baron.clock.set_clock` exists but has no CLI/env
   surface; seeding dated history needed a `sitecustomize` shim. Candidate:

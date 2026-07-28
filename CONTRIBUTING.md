@@ -14,7 +14,7 @@ Open an issue first describing what you want to change and why. Small fixes (typ
 
 1. Fork this repo.
 2. Install from your fork: `/plugin install /path/to/your/fork`
-3. Invoke in a throwaway directory: ask Claude to use the `barony` skill to set up a test project.
+3. Invoke in a throwaway directory: ask Claude to use the `barony` skill to set up a test project (on another runtime, invoke the neutral canon files by path — see [`USING-WITH-CODE-PUPPY.md`](USING-WITH-CODE-PUPPY.md)). Or skip the plugin entirely: `pip install barony && baron init …`.
 4. Verify the emitted files match your intended changes and all placeholders resolve correctly.
 
 For PRs touching adapters, references, or the canonical contract files, also run the tests before pushing (stdlib only — no dependencies):

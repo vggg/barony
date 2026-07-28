@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Plugin/skill bundle is unreleased since **1.8.0**. The `barony` CLI patches
+below (**0.5.1–0.5.3**) are already **live on PyPI** — the CLI ships on its own
+version track (see `cli/pyproject.toml`), independent of the plugin bundle.
+
 ### Fixed — `barony` 0.5.3 (install-UX shakeout)
 
 - **`barony` now works as a command too**, aliased to `baron`. A fresh
@@ -86,9 +90,10 @@ CLI version `0.4.0 → 0.5.0`.
 ### Changed
 
 - **README.md / cli/README.md** — new Quickstart sections with the exact
-  command sequence verified end-to-end on a bare venv (wheel install, no repo
-  checkout): init → validate → status → finding → handoff create/close → index →
-  worktree add, plus a `baron guard` deny/allow smoke.
+  command sequence verified end-to-end from a fresh install against an existing
+  git code repo: init → validate → status → finding → handoff create/close →
+  index → worktree add, plus a `baron guard` deny/allow smoke. (The `status` and
+  `worktree` steps require the code repo the quickstart creates first.)
 - **`baron validate`** — the template-skip rule also covers baron's own vendored
   templates (`baron/data/templates/`), mirroring the repo lint.
 - **ORCHESTRATE.md** — notes the `baron init` shortcut for its mechanical steps
@@ -739,7 +744,8 @@ adapter work and exercised on a real dogfood project (55%→100% coverage) — n
 
 ## [0.3.2] — 2026-05-29
 
-Same-day follow-up to v0.3.1, closing out the remaining items from [Decision 6](https://github.com/vggg/Irisidian/blob/main/projects/multi-agent-setup/decisions/2026-05-29-6-bootstrap-genesis-emission.md). All v0.3.1 invocations still work unchanged.
+Same-day follow-up to v0.3.1, closing out the remaining items from an early
+bootstrap-genesis decision (now superseded by [ADR-001](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md)). All v0.3.1 invocations still work unchanged.
 
 ### Added — runtime-aware cron + FAILOVER templating
 

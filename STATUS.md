@@ -103,7 +103,8 @@ unreleased on 2026-07-22; v1.5.0 is its first released version (noted honestly i
   Protocol + the dependency-free `lock-guard.yml` CI template; COORDINATION.md template
   names the concrete commands.
 - [x] **M6 tooling `baron worktree`** — add/list/remove + status sweep +
-  `docs/worktree-migration.md` (live migration deliberately not included).
+  `docs/worktree-migration.md` (live migration not part of the v1.5.0 *tooling*
+  release; it was later executed on the pilot 2026-07-23 — see the In-progress list).
 - [x] **Status waivers** — `.baron-waivers.yaml` + `baron waiver add|list`; red→warn with
   reason, expiry-honest (expired waivers resurface the red and warn on their own).
 

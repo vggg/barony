@@ -85,7 +85,7 @@ runtime supports and degrades gracefully:
 
 | Tier | Runtime | Mechanism | Enforcement |
 |---|---|---|---|
-| 3 | Claude Code or code-puppy | native sub-agents (Claude `.claude/agents/<slug>.md`; code-puppy JSON agents) | capabilities enforced via a tool allow-list — whole-tool denials are real (a read-only persona genuinely cannot write/run shell); sub-tool denials instructed (Claude: enforced-with-baron via the guard hook) |
+| 3 (code-puppy: 2.75) | Claude Code or code-puppy | native sub-agents (Claude `.claude/agents/<slug>.md`; code-puppy JSON agents) | capabilities enforced via a tool allow-list — whole-tool denials are real (a read-only persona genuinely cannot write/run shell); sub-tool denials instructed, except the five guard-covered ones on Claude, which are enforced-with-baron via the hook (`open_pr`/`run_tests` stay instructed everywhere) |
 | 3 | pydantic-ai (+ pydantic-ai-harness) | in-process hydration: `baron.runtimes.pydantic_ai.build_agent` assembles a guarded `Agent` | whole-tool denials via capability omission; the five guard-covered sub-tool denials natively ENFORCED (in-process interception consuming `capability-rules.v1.yaml`) |
 | 2 | Claude Code | persistent `CLAUDE.md` | persistent session context; capabilities instructed |
 | 1 | anything | in-prompt + emitted `AGENTS.md` | persona re-read each turn; self-enforced |

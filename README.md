@@ -56,7 +56,11 @@ Requires Python ≥ 3.10 and git. Every command below is verified as written.
 ```bash
 uv tool install barony                 # or: pip install barony  (live on PyPI)
 
-# Scaffold a collab repo next to your code repo — two devs + a librarian:
+# The code repo you want to govern (skip these two lines if you already have one):
+mkdir gardenkit && git -C gardenkit init -b main -q && \
+  git -C gardenkit commit --allow-empty -m "init" -q
+
+# Scaffold a collab repo next to it — two devs + a librarian:
 baron init gardenkit --dir gardenkit-collab --code-repo ./gardenkit \
   --personas dev:fern,dev:moss,librarian:iris
 cd gardenkit-collab
@@ -70,13 +74,14 @@ HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
 baron handoff close "$HANDOFF" --note "Done, see F1."
 baron index                            # regenerates _handoff/README.md — commit it
 
-# Per-persona working copies (uses the manifest's worktrees_root):
+# Per-persona working copies (worktrees of the code repo above):
 baron worktree add fern                # ../gardenkit-worktrees/fern, branch persona/fern
 ```
 
-Drop `--code-repo` if the code repo doesn't exist yet; drop `--no-push` once the
-collab repo has an origin remote. `baron init` also emits each persona's runtime
-kit under `agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`).
+Drop `--no-push` once the collab repo has an origin remote. The `worktree` step
+needs the `--code-repo` you passed to `init` (that's what created the code repo
+above). `baron init` also emits each persona's runtime kit under
+`agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`).
 Full command reference: [`cli/README.md`](cli/README.md). The conversational
 setup path (an agent interviews you, then scaffolds) routes through
 `skills/barony/assets/collab-repo/START.md` — see
@@ -137,7 +142,7 @@ adapter's machine-readable capability map (checked in CI by
 |---|---|---|---|---|
 | Claude Code | 3 (native subagents) or 2 (`CLAUDE.md`) | enforced at Tier 3 (tool allow-list); instructed at Tier 2 | enforced-with-baron (instructed otherwise) | instructed |
 | pydantic-ai | 3 (in-process hydration) | enforced (capability omission) | enforced (in-process interception — the hook cannot be absent) | instructed |
-| code-puppy | 3 (native JSON agents) | enforced (tool allow-list) | instructed | instructed |
+| code-puppy | 2.75 (native JSON agents)² | enforced (tool allow-list) | instructed | instructed |
 | generic (any runtime) | 1 (in-prompt + `AGENTS.md`) | instructed | instructed | instructed |
 
 ¹ The five sub-tool denials the shared rules artifact
@@ -146,6 +151,10 @@ adapter's machine-readable capability map (checked in CI by
 same artifact, so decisions are identical across runtimes. A persona always runs
 at the highest tier its runtime supports and degrades gracefully — with the
 honesty label degrading alongside it.
+
+² code-puppy enforces whole-tool denials natively (JSON agent allow-list) but
+its sub-tool denials stay instruction-only — a partial Tier 3, which its own
+adapter labels "2.75" rather than round up.
 
 ## What Barony is NOT
 
