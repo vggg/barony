@@ -67,10 +67,16 @@ remains external to the adapters (see `STATUS.md` deferred items).
 | `sync_repos` | bring all configured repos up to date |
 | `read_conventions` | read the collab repo's CONVENTIONS + COORDINATION |
 | `check_handoffs` | find open handoffs addressed to this persona or `all` |
+| `check_review_feedback` | on this persona's open PRs, act on any review verdict that is LIVE at the current head — before claiming new work |
 | `check_backlog` | read the project backlog (source per manifest: file or issue-tracker) |
 
 > v0 used `pull_both_repos` (transport-coupled). v1 renames to `sync_repos` (intent only).
 > The adapter + manifest decide HOW to sync and WHERE the backlog lives.
+
+> **`check_review_feedback` ordering is load-bearing.** It resolves BEFORE `check_backlog`
+> because its purpose is to stop a persona claiming new work while a live verdict is
+> outstanding on work it already has. Liveness is decided by comparing the verdict's head SHA
+> to the PR's current head — never by a label (`CONVENTIONS.md § A label is not evidence`).
 
 ## Example (Tess, v1)
 
@@ -130,3 +136,6 @@ the yaml and re-derive. Adapters likewise read the yaml, not the md.
 - **v1.1** (Claude Tier-3): added the optional, runtime-neutral `runtime.adapters.<runtime>`
   per-persona override envelope (mirrors `manifest.adapters`). First consumer:
   `runtime.adapters.claude.tier`. Additive — existing personas are unchanged.
+- **v1.2** (ways-of-working 2026-07-31, ADR-008): added the `check_review_feedback` session-ritual
+  token, resolving before `check_backlog`. Additive — a persona whose ritual omits it behaves
+  exactly as before; unknown tokens were already a warning, not an error.

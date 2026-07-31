@@ -34,6 +34,9 @@ session_ritual:
   - sync_repos
   - read_conventions
   - check_handoffs
+  # Before claiming new work: act on review verdicts that are LIVE at your current head.
+  # Ordering matters — feedback on work you already have outranks a new ticket (ADR-008).
+  - check_review_feedback
   - check_backlog
 runtime:
   trigger: interactive

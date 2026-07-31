@@ -70,12 +70,31 @@ Run these in order at the start of every session. Do not skip ahead.
      | xargs grep -l "^status: open" 2>/dev/null
    ```
    Read each open file. Act on it. Mark `status: done` when handled — do not delete.
-4. **Check open work assigned to you:**
+4. **Feedback sweep — clear live review verdicts BEFORE claiming new work**
+   (`check_review_feedback`). List your open PRs with their current heads:
+   ```bash
+   gh pr list --author "@me" --state open --repo {{CODE_REPO}} \
+     --json number,headRefOid,labels
+   ```
+   For **each** PR, read the latest verdict comment and compare the SHA it names to that PR's
+   `headRefOid`:
+   - **verdict SHA == head** → the verdict is **live — act on it now.** A `changes-requested`
+     here is a *real, current* block: the review ran after your push. Do not call it stale, do
+     not wait for another review cycle.
+   - **verdict SHA is older than head** (you already pushed past it) → the verdict is **void**;
+     it needs a re-review. Do not re-fix against it, and do not act on a lingering label.
+   - **no verdict comment at all** → nothing to act on; the labels tell you nothing.
+
+   Never substitute the label — or an assumption about it — for the SHA-bound verdict, in
+   either direction. See `CONVENTIONS.md § A label is not evidence`. Then handle the mechanical
+   states: rebase-needed → `git rebase origin/main` + push `--force-with-lease`; owner-blocked →
+   leave it. **Never self-merge** (you deny `merge_pr`).
+5. **Check open work assigned to you** — only once step 4 is clear:
    ```bash
    gh issue list --state open --label agent-{{PERSONA_SLUG}} --repo {{CODE_REPO}}
    gh issue list --state open --label agent-{{PERSONA_SLUG}} --repo {{COLLAB_REPO}}
    ```
-5. **Read the full open backlog — not just yours:**
+6. **Read the full open backlog — not just yours:**
    ```bash
    gh issue list --state open --limit 50 --repo {{CODE_REPO}}
    gh pr list --state merged --limit 5 --repo {{CODE_REPO}}

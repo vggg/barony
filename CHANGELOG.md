@@ -6,10 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Plugin/skill bundle is unreleased since **1.8.0** (**1.8.2** pending, below). The
+Plugin/skill bundle is unreleased since **1.8.0** (**1.9.0** pending, below —
+the pending bundle was relabelled from 1.8.2 when the P1 fold-in added a schema
+token and a new emitted workflow; a patch label would have been wrong). The
 `barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4–0.5.6** are pending.
+plugin bundle; **0.5.4–0.6.0** are pending.
+
+### Added — plugin 1.9.0 + `barony` 0.6.0 (ways of working 2026-07-31 — ADR-008)
+
+Promotes the 2026-07-30/31 badminton-analyzer pilot hardening into the canonical
+templates, so the next `baron init` scaffold ships with it instead of every
+adopter re-discovering it. Same promotion mechanism ADR-002 used for the July
+learnings; recorded in
+[ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md). (AGENT-TASKS P1.1–P1.5.)
+
+Both new review-loop rules trace to one structural gap: **ADR-002 gave verdicts a
+SHA but never said what a label is**, so personas filled the answer in themselves,
+in opposite directions, and both answers were wrong.
+
+- **`CONVENTIONS.md` — "A label is not evidence, in either direction"** (ADR-008
+  §1). Labels are an index; the record is the verdict comment bound to a head SHA
+  (`REVIEW:PASS/FAIL <sha>`). Check the SHA against the current head **before
+  acting on an approval label** *and* **before concluding a block is stale** — the
+  second direction is new; the first existed only as a Merger precondition and is
+  now general. Corollary: green CI does not clear a block. Forbids adjudicating a
+  label-vs-verdict disagreement by adding another persona — check the SHA.
+- **`CONVENTIONS.md` — "Decision & ADR intake: the Librarian RECORDS and
+  RECONCILES"** (ADR-008 §4). Five-step intake: record with supersession →
+  park/close contradicting epics and backlog items → reconcile the direction doc
+  (route a ticket if it's in a repo the Librarian can't write) → broadcast →
+  hydrate directional decisions at session start before ticket selection.
+  Personas re-derive "what next" from the direction doc and open epics, never from
+  `decisions/`, so a recorded-but-unreconciled decision is invisible to exactly
+  the surfaces that drive work. Honest label: discipline-in-a-doc; the mechanical
+  version is the proposed `baron decision` (AGENT-TASKS P2.1).
+- **New session-ritual token `check_review_feedback`** (ADR-008 §2; persona schema
+  **v1.2**) — *act on review verdicts that are LIVE at your current head, before
+  claiming new work.* Ships in the `__DEV__` ritual ordered **before**
+  `check_backlog` (the ordering is the substance: feedback on work you have
+  outranks a new ticket). Mapped in all four adapters' token tables, rendered as
+  SHA-test prose by `baron init`'s runtime kits, and added to baron's
+  `RITUAL_TOKENS`. Additive — a ritual omitting it behaves exactly as before, and
+  unknown tokens were already a warning, not an error.
+- **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
+  `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
+  project's reviewer verdict labels and comments that the head moved, making "a
+  review-state label is present" mean "a verdict exists at *this* head" by
+  construction. Owner gates (`needs-human`, `hold`, `contract-change`) are
+  explicitly excluded — only the owner lifts those. Dependency-free (bash + `gh`,
+  built-in `GITHUB_TOKEN`), no-ops on fork PRs. Carries the `lock-guard.yml`-style
+  honest limitation: it removes a misleading label, it cannot stop a persona that
+  never reads verdicts — the merge gate still lives in the Merger's preconditions.
+  Written into the collab repo (the repo init scaffolds); the header instructs
+  copying it to the code repo, where most reviewed PRs live.
+- **Reviewer / Merger templates hardened** (ADR-008 §1). Reviewer: verdict format
+  is a parsed contract (full head SHA, never a branch/`HEAD`/abbreviation, fetched
+  via `gh pr view --json headRefOid`); re-review publishes a NEW verdict, never
+  edits the old one; labels follow the verdict and never lead it. Merger: **a
+  label is never an input to the merge decision** — read the verdict, compare the
+  SHA yourself, and if label and verdict disagree strip the label and refuse.
+- **`COORDINATION.md § Review and merge`** gains the dev-side feedback-sweep step
+  and states that review-state labels are an index for every persona in the loop.
+
+Vendored template copy re-synced (`cli/scripts/sync_templates.py`); drift guard
+green; 133 CLI tests (2 new) + both stdlib suites pass.
 
 ### Added — `barony` 0.5.6 + plugin 1.8.2 (session boundary — ADR-007 + thin session primitives)
 

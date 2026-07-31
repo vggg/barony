@@ -54,6 +54,7 @@ RITUAL_TOKENS: tuple[str, ...] = (
     "sync_repos",
     "read_conventions",
     "check_handoffs",
+    "check_review_feedback",
     "check_backlog",
 )
 TRIGGERS: tuple[str, ...] = ("interactive", "event", "cron")

@@ -434,6 +434,13 @@ def _ritual_lines(tokens: list, persona: Persona, collab_rel: str) -> list[str]:
             f"In `{collab_rel}/_handoff/`, find files with `status: open` and "
             f"`for: {persona.slug}` or `for: all`."
         ),
+        "check_review_feedback": (
+            "Sweep review feedback BEFORE claiming new work: for each of your open PRs, "
+            "compare the latest verdict comment's head SHA to the PR's current head. Act on "
+            "the verdicts that are LIVE (SHA matches); a verdict at an older SHA is void and "
+            "needs a re-review. Never treat a review-state label as the evidence "
+            f"(`{collab_rel}/CONVENTIONS.md` § A label is not evidence)."
+        ),
         "check_backlog": (
             f"Read `{collab_rel}/backlog.md` for items labelled `agent-{persona.slug}` "
             "(manifest backlog source)."
@@ -711,6 +718,10 @@ def scaffold(
     copy("collab-repo/wiki/index.md", "wiki/index.md", docs)
     write("wiki/log.md", _wiki_log(ctx))
     copy("collab-repo/.github/workflows/lock-guard.yml", ".github/workflows/lock-guard.yml")
+    copy(
+        "collab-repo/.github/workflows/strip-stale-verdict.yml",
+        ".github/workflows/strip-stale-verdict.yml",
+    )
     # Runtime kits (deterministic floor; Tier-3 stays conversational — see module doc).
     for persona in personas:
         _emit_runtime_kit(root, persona, ctx, created)

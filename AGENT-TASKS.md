@@ -25,16 +25,20 @@ adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded th
   text: badminton `CONVENTIONS.md` §§ (2026-07-31). DoD: template carries both rules; drift-guard test green.
   *(Shipped: both rules generalized off the pilot text — project-neutral names, pilot evidence kept as
   rationale; vendored copy re-synced; lint + bi-runtime + 131 CLI tests green. ADR citation backfills in 1.5.)*
-- [ ] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
+- [x] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
   template** (`agents/__DEV__/persona.yaml`). Source: badminton dev `CLAUDE.md` FEEDBACK SWEEP step 0.
-- [ ] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
+- [x] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
   (`agents/__REVIEWER__/`, `agents/__MERGER__/persona.yaml`) — verdict = comment bound to a head SHA;
   never GitHub-approve; merger verifies `reviewed-sha == head` before merge.
-- [ ] **1.4 — Ship `strip-stale-verdict` as a scaffolded workflow** in the template (`baron init` emits
+- [x] **1.4 — Ship `strip-stale-verdict` as a scaffolded workflow** in the template (`baron init` emits
   a `.github/workflows/strip-stale-verdict.yml` that removes `reviewed-approved` + `changes-requested`
   on `synchronize`). Reference impl: badminton `fleet-runner/strip-stale-approval.yml`.
-- [ ] **1.5 — ADR "ways-of-working 2026-07-31"** documenting the fold-in (follows ADR-002). One PR can
+- [x] **1.5 — ADR "ways-of-working 2026-07-31"** documenting the fold-in (follows ADR-002). One PR can
   bundle 1.1–1.5 or split; ADR lands with the templates.
+
+> **P1 CLOSED** — 1.1–1.5 shipped as one PR (owner call, 2026-07-31) in the pending
+> **plugin 1.9.0 + CLI 0.6.0** bundle. [ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md)
+> is the record; `STATUS.md` carries the per-item detail. Vault handoff filed at P1 close.
 
 ## P2 — New capabilities surfaced by the pilot (the probe items)
 

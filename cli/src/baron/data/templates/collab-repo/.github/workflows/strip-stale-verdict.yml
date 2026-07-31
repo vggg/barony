@@ -1,0 +1,74 @@
+# Strip stale verdict labels (ADR-008) — a label must not outlive the commit it described.
+#
+# A verdict is bound to a commit; a label is not. When a PR's head moves, any review-state
+# label describes the OLD commit and is now a lie — in BOTH directions:
+#
+#   approved-style label  -> a merger can act on an approval that was never given to this head
+#   blocked-style label   -> a dev cannot tell "act now" from "already swept" and stalls
+#
+# Stripping both on every push makes "a review-state label is present" mean "a verdict exists
+# at THIS head" by construction. This is the mechanical form of
+# `CONVENTIONS.md § A label is not evidence`; keep that rule as the statement of intent — the
+# SHA check is still what decides, because this workflow narrows the window, it does not
+# remove the need to read the verdict.
+#
+# ALSO INSTALL THIS IN THE CODE REPO. `baron init` writes it here, in the collab repo, because
+# that is the repo it scaffolds — but most reviewed PRs live in the code repo. Copy this file
+# to `<code-repo>/.github/workflows/strip-stale-verdict.yml` as part of code-repo setup.
+#
+# Dependency-free by design: plain bash + the `gh` CLI GitHub Actions provides, using the
+# built-in GITHUB_TOKEN (no secret, no API key). Same-repo branches only — a fork PR gets a
+# read-only token and this job will no-op rather than fail.
+#
+# HONEST LIMITATION (carry this with the file): this removes a misleading label. It cannot
+# prevent a persona that never reads verdicts from merging anyway — enforcement of the merge
+# gate itself lives with the Merger persona's preconditions (`agents/<merger>/AGENT.md`).
+
+name: strip-stale-verdict
+
+on:
+  pull_request:
+    types: [synchronize]   # fires on every push to an open PR's head branch
+
+permissions:
+  pull-requests: write     # to remove the label and post the notice
+  contents: read
+
+jobs:
+  strip:
+    runs-on: ubuntu-latest
+    # Fork PRs get a read-only token; skip rather than fail a check nobody can fix.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Remove review-state labels made stale by the new head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          # Reviewer verdict labels — auto-cleared, because a push voids the verdict.
+          # Adjust to this project's label names; keep OWNER gates out of this list.
+          VERDICT_LABELS: "reviewed-approved changes-requested needs-human-review"
+        run: |
+          set -euo pipefail
+
+          # NOTE: owner gates (e.g. `needs-human`, `hold`, `contract-change`) are NOT reviewer
+          # verdicts and MUST NOT be auto-cleared on push — only the owner lifts those. Keep
+          # them out of VERDICT_LABELS.
+          current=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')
+          stripped=""
+          for want in $VERDICT_LABELS; do
+            # Exact match only — a substring test would strip `changes-requested-by-owner`.
+            if printf '%s\n' "$current" | grep -qx -- "$want"; then
+              gh pr edit "$PR" --repo "$REPO" --remove-label "$want"
+              stripped="${stripped} ${want}"
+            fi
+          done
+
+          if [ -n "$stripped" ]; then
+            gh pr comment "$PR" --repo "$REPO" --body \
+              "🔁 Verdict label(s) auto-removed (${stripped# }): the head moved to \`${SHA:0:7}\`, so any prior verdict is void. A fresh review at this SHA is required. — \`strip-stale-verdict\` (CONVENTIONS.md § A label is not evidence)"
+            echo "stripped${stripped} on #$PR (new head ${SHA:0:7})"
+          else
+            echo "no review-state labels on #$PR — nothing to strip"
+          fi

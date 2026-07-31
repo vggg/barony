@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from baron import ledger
@@ -64,6 +65,7 @@ def test_layout_manifest_and_self_validation(tmp_path: Path, fixed_clock: object
         "wiki/index.md",
         "wiki/log.md",
         ".github/workflows/lock-guard.yml",
+        ".github/workflows/strip-stale-verdict.yml",
     ):
         assert (dest / rel).is_file(), f"missing {rel}"
 
@@ -165,6 +167,61 @@ def test_runtime_kits_per_runtime(tmp_path: Path, fixed_clock: object) -> None:
 
     result, _ = _init(tmp_path / "bad", "--runtime", "emacs")
     assert result.exit_code == 2
+
+
+def test_dev_ritual_sweeps_review_feedback_before_backlog(
+    tmp_path: Path, fixed_clock: object
+) -> None:
+    """ADR-008: dev personas clear LIVE review verdicts before claiming new work.
+
+    The token is a known ritual token (so validate raises no warning), it is ordered
+    ahead of ``check_backlog``, and every runtime kit renders it as a real step."""
+    _, dest = _init(tmp_path / "claude")
+
+    ritual = yaml.safe_load(
+        (dest / "agents/carson/persona.yaml").read_text(encoding="utf-8")
+    )["session_ritual"]
+    assert "check_review_feedback" in ritual
+    assert ritual.index("check_review_feedback") < ritual.index("check_backlog")
+
+    findings, _files, _skipped = validate_path(dest)
+    assert not [
+        f for f in findings if "check_review_feedback" in f.message
+    ], "the new ritual token must be in the known vocabulary"
+
+    # The Tier-2 kit renders the token as prose naming the SHA test, not the token name.
+    claude_md = (dest / "agents/carson/runtime/CLAUDE.md").read_text(encoding="utf-8")
+    assert "check_review_feedback" not in claude_md
+    assert "head SHA" in claude_md and "label" in claude_md
+
+    # Tier-1 kits carry it too — the rule is runtime-neutral.
+    _, generic = _init(tmp_path / "generic", "--runtime", "generic")
+    agents_md = (generic / "agents/carson/runtime/AGENTS.md").read_text(encoding="utf-8")
+    assert "head SHA" in agents_md
+
+
+def test_strip_stale_verdict_workflow(tmp_path: Path, fixed_clock: object) -> None:
+    """ADR-008: the mechanical half of 'a label is not evidence'."""
+    _, dest = _init(tmp_path)
+    wf_text = (dest / ".github/workflows/strip-stale-verdict.yml").read_text(
+        encoding="utf-8"
+    )
+    wf = yaml.safe_load(wf_text)
+
+    # Fires on every push to an open PR — that is the moment a verdict goes stale.
+    # (PyYAML parses a bare `on:` key as the boolean True.)
+    assert wf[True]["pull_request"]["types"] == ["synchronize"]
+    assert wf["permissions"]["pull-requests"] == "write"
+
+    step = wf["jobs"]["strip"]["steps"][0]
+    labels = step["env"]["VERDICT_LABELS"].split()
+    assert "reviewed-approved" in labels and "changes-requested" in labels
+    # Owner gates are NOT reviewer verdicts and must survive a push.
+    assert "needs-human" not in labels and "hold" not in labels
+    # Exact-match stripping — a substring test would eat `changes-requested-by-owner`.
+    assert "grep -qx" in step["run"]
+    # The honest-limitation note travels with the file (the lock-guard precedent).
+    assert "HONEST LIMITATION" in wf_text
 
 
 def test_code_repo_recorded_and_ledger_usable(tmp_path: Path, fixed_clock: object) -> None:
