@@ -1,0 +1,74 @@
+# Barony — agent task queue
+
+Prioritized, chase-top-down work for the generic dev agent on this repo. Scoped from the
+2026-07-30/31 badminton-analyzer pilot run (first-party evidence) + the standing roadmap.
+`STATUS.md` is the canonical progress tracker; this file is the *ordered queue* — when you ship an
+item, update STATUS.md, and **propagate the milestone to the vault** per `CLAUDE.md § Propagate
+project-level updates to the Iris / Brain vault`.
+
+Rules of the road: one item at a time; each ships as its own PR with tests + a STATUS.md update
+(docs-with-code); anything that changes the spec gets an ADR; do not self-decide product direction —
+propose to the owner. Full rationale for P1/P2 lives in the vault:
+`projects/AgentBootstrapNasikoMix/roadmap.md`, `…/probe-findings-to-capabilities.md`,
+`…/research-*.md` (FM4/FM5/FM6), and badminton `decisions/index.md` D56/D57.
+
+---
+
+## P1 — Promote the pilot hardening into the canonical templates (highest leverage)
+
+*Why first: `baron init` flows one-way (Barony → new projects). The 2026-07-31 hardening lives only in
+the badminton pilot's collab repo, so the next scaffold ships WITHOUT it. Until these land, every new
+adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded the July learnings.*
+
+- [ ] **1.1 — Fold `label-is-not-evidence` + the `Decision & ADR intake (record AND reconcile)`
+  protocol into the CONVENTIONS template** (`skills/barony/assets/collab-repo/CONVENTIONS.md`). Source
+  text: badminton `CONVENTIONS.md` §§ (2026-07-31). DoD: template carries both rules; drift-guard test green.
+- [ ] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
+  template** (`agents/__DEV__/persona.yaml`). Source: badminton dev `CLAUDE.md` FEEDBACK SWEEP step 0.
+- [ ] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
+  (`agents/__REVIEWER__/`, `agents/__MERGER__/persona.yaml`) — verdict = comment bound to a head SHA;
+  never GitHub-approve; merger verifies `reviewed-sha == head` before merge.
+- [ ] **1.4 — Ship `strip-stale-verdict` as a scaffolded workflow** in the template (`baron init` emits
+  a `.github/workflows/strip-stale-verdict.yml` that removes `reviewed-approved` + `changes-requested`
+  on `synchronize`). Reference impl: badminton `fleet-runner/strip-stale-approval.yml`.
+- [ ] **1.5 — ADR "ways-of-working 2026-07-31"** documenting the fold-in (follows ADR-002). One PR can
+  bundle 1.1–1.5 or split; ADR lands with the templates.
+
+## P2 — New capabilities surfaced by the pilot (the probe items)
+
+*Each is a candidate net-new differentiator — several may be things no competitor has. Probe/scope
+with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
+
+- [ ] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
+  work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
+  not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
+  a design ADR.
+- [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
+  per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
+  Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
+  identically. Non-deterministic denial is the sharpest enforcement evidence.
+- [ ] **2.3 — `baron validate` spec↔runtime drift** — a persona declared in `persona.yaml` but absent
+  from the registered runtime agents is a validate-time error (this exact gap forced a wrong-persona
+  cron on the pilot).
+- [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
+  of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
+
+## P3 — Productization + dogfood
+
+- [ ] **3.1 — Barony governs Barony** — `baron init` on this repo so the framework dogfoods its own
+  multi-persona fleet (today it's hand-built solo: 20/20 commits owner). Strongest possible case study.
+- [ ] **3.2 — Fleet-health as a capability** — stall detection + the metrics the pilot proved out
+  (mutation-kill rate, claim-drift/PR with direction, **reviewer escape rate**, intervention tax) →
+  the Workstream-D paid observability anchor. Reference impl: badminton `fleet-runner/` (metrics-report,
+  detect_stalls).
+
+## Carried from STATUS.md (in-flight, keep visible)
+- [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.
+- [ ] Merger precondition verification + guard coverage growth (`docs/BACKLOG.md`).
+- [ ] pydantic-ai adapter field validation.
+
+---
+
+*When you complete a P-item or hit a milestone: update `STATUS.md`, and drop a `barony:` handoff into
+the vault (`_handoff/tasks/` for FYI, `_handoff/decisions/` if it needs the owner) so Iris reconciles it
+into the cross-project record. Direction questions → propose to the owner, don't self-decide.*

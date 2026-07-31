@@ -30,7 +30,45 @@ The vault retains a historical copy under `_meta/skills/agent-project-bootstrap/
 
 A fresh Claude Code (or code-puppy, or any other) session landing in this repo operates as a **generic dev archetype**. This repo does not yet dogfood its own multi-persona pattern — there is no `CONVENTIONS.md` / `COORDINATION.md` / `agents/` at the *repo root*. The repo owner works directly with the agent as a single dev. Persona-routing labels (`agent-<name>`) are not defined for this repo.
 
+**Your work queue is [`AGENT-TASKS.md`](AGENT-TASKS.md)** — a prioritized, chase-top-down list (P1 promote-pilot-hardening → P2 new capabilities → P3 dogfood). `STATUS.md` is the canonical progress tracker; `AGENT-TASKS.md` is the ordered queue. When you ship an item, update STATUS.md and propagate the milestone to the vault (see below).
+
 The `CONVENTIONS.md` and `COORDINATION.md` files you'll see under `skills/barony/assets/collab-repo/` are **emit-time templates** that get copied into projects scaffolded BY this skill — they are not this repo's own convention files.
+
+## Propagate project-level updates to the Iris / Brain vault
+
+This repo's *why*-record is local (`STATUS.md`, `docs/adr/`, `CHANGELOG.md`). But **project-level
+decisions, milestones, and direction changes must also reach the owner's vault** — Irisidian / Brain at
+`/Users/vikram/Obsidian/Brain` — so the vault librarian (**Iris**) can reconcile them into the
+cross-project wiki, log, roadmap, and the `AgentBootstrapNasikoMix` project area. There is no automatic
+sync. You drop a handoff.
+
+**Propagate ONLY project-level items** (not every commit):
+- a new **ADR** or a material **decision**;
+- a **release** / version bump / PyPI publish;
+- a **direction / roadmap change**, a **phase completion**, a **milestone**;
+- a **finding** that changes the product thesis or the pitch.
+Do **not** propagate routine commits, refactors, WIP, or internal-only mechanics.
+
+**How** — write a handoff into the vault, then commit + push it there:
+- Needs Vikram's input/awareness (decision, direction) → `/Users/vikram/Obsidian/Brain/_handoff/decisions/YYYY-MM-DD-barony-<topic>.md`
+- FYI milestone / release / completion → `/Users/vikram/Obsidian/Brain/_handoff/tasks/YYYY-MM-DD-HHMM-barony-<slug>.md`
+- Frontmatter (vault schema — `_meta/CONVENTIONS.md § Handoff protocol`):
+  ```yaml
+  ---
+  created: YYYY-MM-DD
+  from: Barony
+  for: Iris
+  status: open
+  priority: low | medium | high
+  ---
+  ```
+  Decision notes add `decision: <one-line>` + `urgency:`. Task notes add `task-status: complete | partial | blocked`.
+- **Body:** what changed, why it matters at the project level, links (commit SHA / ADR# / PR#), and any owner action needed. Only what Iris needs to reconcile — not the full internal detail; the detail stays in this repo.
+- Commit to the **vault repo** with prefix `barony: handoff | …` and push. Iris reads it at her next session, ingests it into `wiki/`+`log`+roadmap, and marks it `done` (never deleted).
+
+If Barony later grows its **own** collab repo + librarian (dogfooding its own multi-persona pattern),
+that librarian owns internal coordination and **forwards the project-level subset** to the vault by this
+same mechanism. Until then, you — the dev agent — do it directly.
 
 ## Repo layout
 
