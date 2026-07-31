@@ -20,9 +20,11 @@ propose to the owner. Full rationale for P1/P2 lives in the vault:
 the badminton pilot's collab repo, so the next scaffold ships WITHOUT it. Until these land, every new
 adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded the July learnings.*
 
-- [ ] **1.1 — Fold `label-is-not-evidence` + the `Decision & ADR intake (record AND reconcile)`
+- [x] **1.1 — Fold `label-is-not-evidence` + the `Decision & ADR intake (record AND reconcile)`
   protocol into the CONVENTIONS template** (`skills/barony/assets/collab-repo/CONVENTIONS.md`). Source
   text: badminton `CONVENTIONS.md` §§ (2026-07-31). DoD: template carries both rules; drift-guard test green.
+  *(Shipped: both rules generalized off the pilot text — project-neutral names, pilot evidence kept as
+  rationale; vendored copy re-synced; lint + bi-runtime + 131 CLI tests green. ADR citation backfills in 1.5.)*
 - [ ] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
   template** (`agents/__DEV__/persona.yaml`). Source: badminton dev `CLAUDE.md` FEEDBACK SWEEP step 0.
 - [ ] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
@@ -52,6 +54,18 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   cron on the pilot).
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
+- [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
+  wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
+  Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
+  (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
+  **Design — two layers, most designs conflate them:** (a) **delivery** — a git-native mailbox
+  `_mailbox/<persona>/` swept first each loop, can't-miss, survives everything; (b) **wake** — a
+  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. `baron notify
+  <persona> <msg>` writes the mailbox AND fires the event. Laptop-off durable; **retires the wasteful
+  wall-clock cron** the badminton pilot polls on now; no bespoke server; on-brand git-native. Adopt A2A
+  *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
+  steering. Start with a design ADR. Detail: vault
+  `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
 
 ## P3 — Productization + dogfood
 
