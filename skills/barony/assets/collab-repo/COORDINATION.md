@@ -118,8 +118,9 @@ Projects that adopt the reviewer + merger personas (`agents/__REVIEWER__/`,
 in this loop. The verdict comment's SHA is the evidence; see `CONVENTIONS.md § A label is not
 evidence`. Projects adopting this module should also scaffold
 `.github/workflows/strip-stale-verdict.yml`, which removes review-state labels on every
-`synchronize` so a label cannot outlive the commit it described. It narrows the window
-mechanically; the SHA check is still what decides.
+`synchronize` so a label is far less likely to outlive the commit it described. It **narrows
+the window; it does not close it** — the SHA check is still what decides. See
+`CONVENTIONS.md § A label is not evidence` for the failure modes it cannot cover.
 
 Projects without the module: per-project review policy decides, and `merge_pr` typically
 stays with {{OWNER_HANDLE}}.

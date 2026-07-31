@@ -65,6 +65,9 @@ jobs:
           # them out of VERDICT_LABELS.
           current=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')
           stripped=""
+          # Word-splitting on VERDICT_LABELS is intended (it is a space-separated list);
+          # globbing is NOT — `set -f` stops a label like `perf/*` expanding to filenames.
+          set -f
           for want in $VERDICT_LABELS; do
             # -x -F: whole line, literal string. Without -F a label containing regex
             # metacharacters (`c++`, `perf/*`) would match the wrong thing; without -x a
