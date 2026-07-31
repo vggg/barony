@@ -45,10 +45,17 @@ in opposite directions, and both answers were wrong.
   **v1.2**) — *act on review verdicts that are LIVE at your current head, before
   claiming new work.* Ships in the `__DEV__` ritual ordered **before**
   `check_backlog` (the ordering is the substance: feedback on work you have
-  outranks a new ticket). Mapped in all four adapters' token tables, rendered as
-  SHA-test prose by `baron init`'s runtime kits, and added to baron's
-  `RITUAL_TOKENS`. Additive — a ritual omitting it behaves exactly as before, and
-  unknown tokens were already a warning, not an error.
+  outranks a new ticket). Mapped in the claude / code-puppy / generic `HYDRATE.md`
+  token tables **and** in the pydantic-ai hydrator (which renders in code, not in a
+  table), rendered as SHA-test prose by `baron init`'s runtime kits, and added to
+  baron's `RITUAL_TOKENS`. Additive — a ritual omitting it behaves exactly as
+  before, and unknown tokens were already a warning, not an error.
+- **New cross-runtime drift guard** for the ritual vocabulary
+  (`test_every_ritual_token_renders_on_every_runtime`). Both renderers fall back to
+  echoing the raw token, so a missing entry does not crash — the rule silently
+  vanishes from that runtime's persona body. `bi_runtime_accept.py` never gated this
+  (it parses capability maps, not ritual tokens). Every `RITUAL_TOKENS` entry must
+  now render real prose on every renderer.
 - **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
   `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
   project's reviewer verdict labels and comments that the head moved, making "a

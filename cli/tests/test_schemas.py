@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from baron.schemas import CAPABILITY_VERBS, PARAMETRIC_VERBS
+from baron.schemas import CAPABILITY_VERBS, PARAMETRIC_VERBS, RITUAL_TOKENS
 
 from conftest import REPO_ROOT
 
@@ -43,3 +43,25 @@ def test_embedded_vocabulary_matches_frozen_spec() -> None:
 
 def test_parametric_verbs_are_in_vocabulary() -> None:
     assert PARAMETRIC_VERBS <= set(CAPABILITY_VERBS)
+
+
+def test_every_ritual_token_renders_on_every_runtime() -> None:
+    """A ritual token with no prose on some runtime silently disappears there.
+
+    Both renderers fall back to echoing the raw token, so a missing entry is not a
+    crash — it is the rule quietly vanishing from that runtime's persona body. This
+    is the gap that shipped `check_review_feedback` to three runtimes and not the
+    fourth; the vocabulary is the contract, so every renderer must cover it."""
+    from baron.runtimes.pydantic_ai import _RITUAL_LINES
+    from baron.scaffold import Persona, _ritual_lines
+
+    missing = sorted(set(RITUAL_TOKENS) - set(_RITUAL_LINES))
+    assert not missing, f"pydantic-ai hydrator renders no prose for: {missing}"
+
+    persona = Persona(archetype="dev", slug="carson")
+    echoed = [
+        tok
+        for tok in RITUAL_TOKENS
+        if _ritual_lines([tok], persona, ".") == [tok]
+    ]
+    assert not echoed, f"baron init runtime kits render no prose for: {echoed}"

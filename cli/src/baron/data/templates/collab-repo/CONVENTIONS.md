@@ -47,10 +47,18 @@ Each persona has a row in this table. The project owner assigns persona slots to
 
 ### A label is not evidence — in either direction (ADR-008 §1)
 
-**Labels are an index, not a record.** The record is the **verdict comment bound to a head SHA**
-(`REVIEW:PASS <sha>` / `REVIEW:FAIL <sha>` — see `COORDINATION.md § Review and merge`). A label can
-be stale, hand-applied, or left behind by a push that landed after the review ran; a verdict names
-the commit it judged and cannot drift.
+**Review-state labels are an index, not a record.** The record is the **verdict comment bound to a
+head SHA** (`REVIEW:PASS <sha>` / `REVIEW:FAIL <sha>` — see `COORDINATION.md § Review and merge`). A
+label can be stale, hand-applied, or left behind by a push that landed after the review ran; a
+verdict names the commit it judged and cannot drift.
+
+> **Scope: this rule is about *review-state* labels only** — the ones asserting a verdict
+> (`reviewed-approved`, `changes-requested`, …). Other labels in this project *are* contracts and
+> are unaffected: `lock:*` labels **are** the lock (`COORDINATION.md § Hot files`), routing labels
+> `agent-<persona>` are how work is addressed, and Owner evidence-gate labels like
+> `contract-change` are gates the owner sets and lifts. Those assert a *state someone set
+> deliberately*; a review-state label asserts a *judgement about a commit*, and only the commit
+> can settle whether it still holds.
 
 This binds every persona, in **both** directions:
 
@@ -66,9 +74,11 @@ This binds every persona, in **both** directions:
 **Corollary — green CI is not the gate either.** CI green plus a pushed fix does not clear a block;
 only a verdict at the current head does.
 
-**Prefer removing the ambiguity to adding a referee.** The durable fix is mechanical — a CI action
-that strips review-state labels on every `synchronize` event, so a label cannot outlive the commit it
-described. Until that is wired, the rule above is the manual stand-in. Do not resolve a
+**Prefer removing the ambiguity to adding a referee.** `.github/workflows/strip-stale-verdict.yml`
+(scaffolded with this repo) removes review-state labels on every `synchronize`, so a label is far
+less likely to outlive the commit it described. It **narrows the window; it does not close it** — the
+workflow can be absent from the code repo, be edited, not cover a label this project added, or
+simply not have run yet. The SHA check above is still what decides. Do not resolve a
 label-vs-verdict disagreement by adding another persona to adjudicate it; check the SHA.
 
 > **Why this rule exists (pilot evidence, 2026-07-31).** Both directions failed in production inside

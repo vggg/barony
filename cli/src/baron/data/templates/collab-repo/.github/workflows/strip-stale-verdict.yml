@@ -47,8 +47,16 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.event.pull_request.head.sha }}
           # Reviewer verdict labels — auto-cleared, because a push voids the verdict.
-          # Adjust to this project's label names; keep OWNER gates out of this list.
-          VERDICT_LABELS: "reviewed-approved changes-requested needs-human-review"
+          # Space-separated, matched EXACTLY; label names containing spaces are not
+          # supported here (rename them, or switch this to a newline-delimited list).
+          #
+          # Adjust to this project's label names, and keep OWNER gates out of the list
+          # (see the note in the script below). If your reviewer publishes a
+          # "needs a human" verdict, give it a name that cannot be confused with the
+          # owner gate — e.g. `review:needs-human` vs the owner's `needs-human`. A
+          # verdict label and an owner gate that differ only by a suffix is a footgun:
+          # one is auto-stripped on every push and the other must never be.
+          VERDICT_LABELS: "reviewed-approved changes-requested"
         run: |
           set -euo pipefail
 
@@ -58,8 +66,10 @@ jobs:
           current=$(gh pr view "$PR" --repo "$REPO" --json labels --jq '.labels[].name')
           stripped=""
           for want in $VERDICT_LABELS; do
-            # Exact match only — a substring test would strip `changes-requested-by-owner`.
-            if printf '%s\n' "$current" | grep -qx -- "$want"; then
+            # -x -F: whole line, literal string. Without -F a label containing regex
+            # metacharacters (`c++`, `perf/*`) would match the wrong thing; without -x a
+            # substring test would strip `changes-requested-by-owner`.
+            if printf '%s\n' "$current" | grep -qxF -- "$want"; then
               gh pr edit "$PR" --repo "$REPO" --remove-label "$want"
               stripped="${stripped} ${want}"
             fi

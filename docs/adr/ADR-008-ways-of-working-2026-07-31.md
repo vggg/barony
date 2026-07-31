@@ -78,8 +78,19 @@ arbitrating it (§3 below is that removal).
 **Decision.** Add `check_review_feedback` to the frozen-by-convention session-ritual token set
 (`references/persona.schema.md`, schema v1.2): *on this persona's open PRs, act on any review
 verdict that is LIVE at the current head — before claiming new work.* It ships in the `__DEV__`
-template's ritual, resolving **before** `check_backlog`. All four adapters map it, and
-`baron init`'s runtime kits render it as prose naming the SHA test.
+template's ritual, resolving **before** `check_backlog`. Every runtime renders it — but note the
+two different mechanisms: the claude / code-puppy / generic adapters carry a **token table** in
+`HYDRATE.md`, while pydantic-ai hydrates **in code** (`baron.runtimes.pydantic_ai`), so its
+rendering lives in a Python table, not in its `HYDRATE.md`. `baron init`'s runtime kits render the
+token as prose naming the SHA test.
+
+**Corollary — the vocabulary needs a cross-runtime drift guard.** Both renderers fall back to
+echoing the raw token, so a missing entry does not crash: the rule quietly vanishes from that
+runtime's persona body. That is exactly what happened on the first cut of this change (caught in
+review, before merge — the token shipped to three runtimes and not the fourth, the one whose
+selling point is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
+capability maps, never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real
+prose on *every* renderer.
 
 **Rationale / evidence.** The dev-side half of §1 needs a *place to happen*. A rule in
 `CONVENTIONS.md` that no ritual step executes is exactly the enforcement theater
@@ -149,7 +160,7 @@ not a requirement.
 - Positive: the review loop's two failure directions both get a rule, a ritual step that
   executes it, and a mechanism that narrows the window. New projects inherit all three.
 - Positive: decisions become reconcilable-by-protocol rather than by whoever remembers.
-- Negative / costs: one more session-ritual token to render in four adapters and the scaffold
+- Negative / costs: one more session-ritual token to render on every runtime and in the scaffold
   (bounded — a token table row each); one more emitted workflow that a project may not want;
   the §4 intake is real Librarian work per decision, and it is discipline, not enforcement —
   the templates say so rather than overselling.

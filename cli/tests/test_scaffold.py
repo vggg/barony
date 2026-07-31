@@ -216,10 +216,18 @@ def test_strip_stale_verdict_workflow(tmp_path: Path, fixed_clock: object) -> No
     step = wf["jobs"]["strip"]["steps"][0]
     labels = step["env"]["VERDICT_LABELS"].split()
     assert "reviewed-approved" in labels and "changes-requested" in labels
-    # Owner gates are NOT reviewer verdicts and must survive a push.
-    assert "needs-human" not in labels and "hold" not in labels
-    # Exact-match stripping — a substring test would eat `changes-requested-by-owner`.
-    assert "grep -qx" in step["run"]
+
+    # Owner gates are NOT reviewer verdicts and must survive a push. Check by PREFIX,
+    # not membership: an exact-match assertion passes vacuously against a longer
+    # variant like `needs-human-review`, which is precisely the collision that would
+    # auto-strip something only the owner may lift.
+    owner_gates = ("needs-human", "hold", "contract-change")
+    assert not [
+        lab for lab in labels if lab.startswith(owner_gates)
+    ], f"owner gate (or a name confusable with one) in the strip list: {labels}"
+
+    # Whole-line, fixed-string matching — see the comment in the workflow.
+    assert "grep -qxF" in step["run"]
     # The honest-limitation note travels with the file (the lock-guard precedent).
     assert "HONEST LIMITATION" in wf_text
 

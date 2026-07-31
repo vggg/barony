@@ -16,8 +16,10 @@ the same mechanism ADR-002 used. Ships in the pending **plugin 1.9.0 + CLI 0.6.0
   directions (approval and block); the Librarian RECORDS **and RECONCILES** the work-pull
   surfaces a decision contradicts.
 - [x] **P1.2 — `check_review_feedback` session-ritual token** (persona schema v1.2), in the
-  `__DEV__` ritual ordered before `check_backlog`; mapped in all four adapters, rendered by
-  the `baron init` runtime kits, added to baron's `RITUAL_TOKENS`. Additive.
+  `__DEV__` ritual ordered before `check_backlog`; mapped in the three table-driven adapters
+  **and** the pydantic-ai hydrator (which renders in code), rendered by the `baron init`
+  runtime kits, added to baron's `RITUAL_TOKENS`, with a new cross-runtime drift guard so a
+  token can never again reach some runtimes and not others. Additive.
 - [x] **P1.3 — Reviewer/Merger templates hardened.** Verdict format as a parsed contract +
   new-verdict-on-re-review + labels-follow-the-verdict (Reviewer); *a label is never an
   input to the merge decision* (Merger). `COORDINATION.md § Review and merge` updated.
