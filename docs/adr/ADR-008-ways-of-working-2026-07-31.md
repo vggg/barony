@@ -84,9 +84,9 @@ two different mechanisms: the claude / code-puppy / generic adapters carry a **t
 rendering lives in a Python table, not in its `HYDRATE.md`. `baron init`'s runtime kits render the
 token as prose naming the SHA test.
 
-**Corollary — the vocabulary needs a cross-runtime drift guard.** Both renderers fall back to
-echoing the raw token, so a missing entry does not crash: the rule quietly vanishes from that
-runtime's persona body. That is exactly what happened on the first cut of this change (caught in
+**Corollary — the vocabulary needs a cross-runtime drift guard.** Every renderer — the two code
+ones and the three prose tables alike — falls back to echoing the raw token, so a missing entry
+does not crash: the rule quietly vanishes from that runtime's persona body. That is exactly what happened on the first cut of this change (caught in
 review, before merge — the token shipped to three runtimes and not the fourth, the one whose
 selling point is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
 capability maps, never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real

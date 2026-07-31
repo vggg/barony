@@ -6,8 +6,9 @@
 #   approved-style label  -> a merger can act on an approval that was never given to this head
 #   blocked-style label   -> a dev cannot tell "act now" from "already swept" and stalls
 #
-# Stripping both on every push makes "a review-state label is present" mean "a verdict exists
-# at THIS head" by construction. This is the mechanical form of
+# Stripping both on every push is meant to make "a review-state label is present" mean "a
+# verdict exists at THIS head" — but only where this workflow is installed, current, and
+# covers the label in question. This is the mechanical form of
 # `CONVENTIONS.md § A label is not evidence`; keep that rule as the statement of intent — the
 # SHA check is still what decides, because this workflow narrows the window, it does not
 # remove the need to read the verdict.

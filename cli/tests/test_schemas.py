@@ -51,7 +51,12 @@ def test_every_ritual_token_renders_on_every_runtime() -> None:
     Both renderers fall back to echoing the raw token, so a missing entry is not a
     crash — it is the rule quietly vanishing from that runtime's persona body. This
     is the gap that shipped `check_review_feedback` to three runtimes and not the
-    fourth; the vocabulary is the contract, so every renderer must cover it."""
+    fourth; the vocabulary is the contract, so every renderer must cover it.
+
+    SCOPE — this guards the two CODE renderers only. The claude / code-puppy /
+    generic adapters render ritual tokens from prose tables in their HYDRATE.md and
+    NOTHING parses those, so a new token can still miss all three silently. See
+    ADR-008 §2 and docs/BACKLOG.md; do not read a green run here as full coverage."""
     from baron.runtimes.pydantic_ai import _RITUAL_LINES
     from baron.scaffold import Persona, _ritual_lines
 
