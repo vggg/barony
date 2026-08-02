@@ -28,11 +28,22 @@ on day one. So `baron notify` = an ordinary handoff **plus** a
 fails, the message is still a committed file and arrives on the next spawn.
 
 ADR-007 holds — baron writes the file and fires the event; the *spawn* lives in a
-project-owned workflow slot, never in baron. §5 carries loop-safety guards
-(origin-chain depth cap, workflow concurrency group, no automatic repo-event
-triggers at first cut) because a wake mechanism whose failure mode is "spends money
-in a loop" needs its guards in the decision record. §8 lists five blocking
-questions, starting with whether dropping the mailbox is right.
+project-owned workflow slot, never in baron.
+
+**Rev. 2 after adversarial design review**, which upheld the mailbox call (and
+supplied a better argument for it: `_handoff/` already carries `priority:`) but
+found four false claims asserted as decided. The material one: **"delivery is
+independent of wake" was false** — `handoff.create` commits but never pushes, so
+the dispatch would reach GitHub before the message and a cloud runner would clone
+and find nothing. Notify must push before dispatching, and must not dispatch if the
+push fails. Loop safety was rebuilt rather than restated: the depth counter had no
+propagation channel (each spawned agent re-invokes fresh; ADR-003 §2.2 forbids
+sidecar state) so depth now rides in the **handoff frontmatter**; the concurrency
+group bounds parallelism, not recursion, and no longer claims otherwise; and the
+real backstop turns out to be that `GITHUB_TOKEN` cannot chain dispatch-driven
+workflows — simultaneously the strongest guard and a silent failure, neither
+previously mentioned. FM5 was overclaimed (it needs the reviewer's same-SHA
+idempotency carve-out too). §8 now lists eight blocking questions.
 
 ## [1.9.0] — 2026-08-02
 

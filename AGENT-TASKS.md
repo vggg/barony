@@ -45,17 +45,45 @@ adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded th
 *Each is a candidate net-new differentiator — several may be things no competitor has. Probe/scope
 with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
 
+> **2026-08-02 — reconciled against five independent reviews** (research/architect/PM scope-
+> discipline pass + architect/PM product-vision pass, vault
+> `projects/AgentBootstrapNasikoMix/2026-08-02-synthesis-plan.md`). Two changes below (2.2 reframed,
+> 2.4 demoted); one new top-priority item (2.0); three new items (2.6–2.8); one open decision logged,
+> not resolved (identity sequencing, see the callout after 2.8).
+
+- [ ] **2.0 — Guard self-test: fail LOUD when the hook/executable is missing.** Converged
+  highest-priority item across all five 2026-08-01 reviews ("highest-value item in the whole
+  roadmap" — PM; "do immediately, no dependencies" — architect). Closes the real residual of FM4:
+  the guard itself is a real deterministic block for recognized ops, but its *absence* is silent —
+  that's how ~15 PRs merged past a denied `merge_pr`. Ship alongside: enforcement-strength labels
+  (`enforced` / `enforced-with-baron` / `instructed`) surfaced in every generated persona + audit
+  report, and an explicit fail-open/fail-closed policy (currently undefined). Detail: roadmap.md
+  § `baron guard` hardening.
 - [~] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
   work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
   *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
-  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. Q1/Q3/Q4 still open —
-  pick this up after P2.3 lands.)*
-- [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
-  per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
-  Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
-  identically. Non-deterministic denial is the sharpest enforcement evidence.
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. P2.3 shipped 0.7.0 —
+  this is now unblocked. Q1/Q3/Q4 still open — pick this up next. **2026-08-02: the PM product-vision
+  review independently promotes this from "wedge item #6" to mandatory/signature — no competitor in
+  any segment has decision durability, and D57 is "the pilot's most expensive failure." Bound the
+  mutation half per the architect review (F5): prefer reporting the reconciliation obligation over
+  actively mutating the backlog; do GitHub honestly, report other trackers `unverifiable` rather than
+  building a multi-backend adapter matrix.**)*
+- [ ] **2.2 — Platform-enforced merge gate** (reframed 2026-08-02 — was "Deterministic enforcement").
+  **Cut the "make the denied call impossible / generalize the interceptor across the vocab" ambition**
+  — converged finding across research + architect scope reviews: that is the sandbox/authorization
+  category `baron guard`'s own positioning disclaims ("not a security boundary"), a static shell
+  parser can't win that arms race (`bash -c` bypass, documented in `guard.py`'s own docstring), and
+  OS/container sandboxing + GitHub branch protection already own hard denial for free. **What survives:**
+  `baron platform apply` provisions branch-protection rulesets + required checks from the manifest; a
+  `signet-verify` Action re-derives the reviewer's SHA-bound verdict as a required status; the merger
+  persona's `merge_pr` becomes real because *only its App credential can merge*. This closes the
+  enforcement story honestly — `guard` stays the cooperating-agent nudge, the platform gate is where
+  anything irreversible actually gets stopped. **Depends on identity** (see the open-decision callout
+  below) for the credential half; the ruleset-generator + verify-Action half can be designed now.
+  FM4 stays the driver evidence.
 - [x] **2.3 — `baron validate` spec↔runtime drift** — a persona declared in `persona.yaml` but absent
   from the registered runtime agents is a validate-time error (this exact gap forced a wrong-persona
   cron on the pilot).
@@ -64,8 +92,12 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   Signal is **partial registration**, so Tier-1/Tier-2/fresh-scaffold projects stay silent;
   claude + code-puppy registries; `--no-runtime-drift` opts out. Verified against the real pilot
   repo (reports terrence + carson) and against a fresh scaffold (clean).)*
-- [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
-  of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
+- [ ] **2.4 — `baron promote`** — **demote from product roadmap (2026-08-02).** Both the research
+  scope-review (#9) and the PM scope-review (finding #3) independently conclude this solves the
+  *maintainer's own* template-sync chore, not an adopter's problem — "internal tooling wearing a
+  product-feature costume." Keep as a script/Makefile target; do not build it as a governed `baron`
+  subcommand or keep it on the public roadmap. (P1 remains the manual precedent for the fold-in
+  itself, which stays real and necessary — only the mechanized-command *product feature* is cut.)
 - [~] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
   wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
   Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**

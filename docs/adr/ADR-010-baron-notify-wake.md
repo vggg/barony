@@ -9,6 +9,8 @@ related:
   - "[[docs/adr/ADR-002-ways-of-working-2026-07]]"
   - "[[docs/adr/ADR-003-baron-cli]]"
   - "[[docs/adr/ADR-007-session-boundary]]"
+  - "[[docs/adr/ADR-008-ways-of-working-2026-07-31]]"
+  - "[[docs/adr/ADR-009-baron-decision-reconciliation]]"
 ---
 
 # ADR-010 (PROPOSED): `baron notify` — waking an idle persona without owning the loop
@@ -16,7 +18,7 @@ related:
 | Field | Value |
 |---|---|
 | **Status** | **Proposed** — design only; not implemented, not ratified |
-| **Date** | 2026-08-02 |
+| **Date** | 2026-08-02 (rev. 2, after adversarial design review) |
 | **Authors** | Claude (design proposal for Vikram) |
 | **Supersedes** | — (extends ADR-002 §2; constrained by [ADR-007](ADR-007-session-boundary.md)) |
 | **Evidence base** | FM1 / FM5 + the 2026-07-31 `research-a2a-wake-nudge` survey |
@@ -56,11 +58,19 @@ delivery half be dropped, because Barony already has it.**
 `check_review_feedback` positioned ahead of `check_backlog` precisely to make "this outranks new
 work" mechanical.
 
+It also already carries **`priority:`** in its frontmatter (`handoff.py`) — which is the
+research's "prioritized" requirement, satisfied today. Rev. 1 missed that and argued the weaker
+case.
+
 Adding `_mailbox/` would create **two message surfaces restating one contract** — and this repo
-has just spent an entire release learning what that costs. ADR-002 §2's rule is "everything
-material gets a handoff. No exceptions"; a second inbox would need that sentence to grow an
-exception on day one, and every persona, adapter and ritual token would need to know which
-surface to read first.
+has just spent an entire release learning what that costs. Every persona, adapter, ritual token
+and runtime kit would need to know which surface to read first.
+
+*(Rev. 1 attributed "everything material gets a handoff. No exceptions" to ADR-002 §2. The
+"no exceptions" wording is in the emitted `CONVENTIONS.md`, and ADR-002 §2 governs
+findings/decisions/corrections versus PR bodies — a transient wake message is not obviously in
+that class. The citation was doing work it could not support; the argument above stands without
+it.)*
 
 **So: `_handoff/` IS the mailbox.** What is missing is not delivery. It is *wake*.
 
@@ -70,19 +80,36 @@ ADR-002 already put it.
 ## 3. Decision — `baron notify` = an existing handoff, plus an event
 
 ```
-baron notify <persona> --title "..." [--body-file F] [--from <slug>] [--no-wake]
+baron notify <persona> --title "..." [--body-file F] [--from <slug>]
+                       [--in-reply-to <handoff-stem>] [--max-depth N] [--no-wake]
 ```
 
-1. **Deliver** — compose a `_handoff/` addressed to `<persona>` by calling the existing
-   `baron handoff create` path. No new format, no new directory, no new lifecycle.
-2. **Wake** — fire a forge `repository_dispatch` carrying `event_type: baron-notify` and a
-   payload naming the persona and the handoff filename stem.
+**The order is load-bearing, and rev. 1 got it wrong.**
 
-**Delivery is independent of wake, and that is the design's load-bearing property.** If the
-dispatch fails — no forge, no token, no workflow installed, rate-limited — the message is still
-a committed file and the persona gets it on its next spawn, exactly as today. The wake is a
-latency optimisation over a guarantee that already holds. `--no-wake` makes that explicit and
-keeps the command useful with no `gh` at all (ADR-003 §2.3).
+1. **Deliver** — compose a `_handoff/` addressed to `<persona>` via the existing
+   `baron handoff create` path. No new format, no new directory, no new lifecycle.
+2. **Publish** — `git push`. **This step did not exist in rev. 1 and its absence made the
+   design's headline property false.** `handoff.create` commits but never pushes. A dispatch
+   reaches GitHub immediately; a local commit does not. The cloud runner would clone the remote
+   and find *nothing* — the wake arriving **before** the message, which is precisely the hazard
+   §3 claimed was impossible. Notify must push, and must **not** dispatch if the push fails.
+3. **Wake** — fire a forge `repository_dispatch` (`event_type: baron-notify`) naming the persona
+   and the handoff stem.
+
+**Delivery is independent of wake — in that direction only.** If the *dispatch* fails (no forge,
+no PAT, no workflow, rate limit) the message is pushed and the persona gets it on its next spawn.
+The converse does not hold and must not be claimed: a wake without a published message is a
+runner spawned to read something that isn't there. Hence the ordering, and hence the failure
+mode is "no wake" rather than "empty wake".
+
+`--no-wake` skips step 3 and keeps the command useful with no `gh` at all (ADR-003 §2.3).
+
+**Prerequisite this exposes.** `handoff.create` names files `YYYY-MM-DD-<slug>.md`, but the
+emitted `CONVENTIONS.md` documents `YYYY-MM-DD-HHMM-<from>-<topic-slug>.md`. Code and template
+already disagree; rev. 1 then described the surface as "ordered (timestamped filenames)", which
+is false at date granularity — and intra-day order matters *more* under a low-latency wake, not
+less. Reconciling the two is a prerequisite, tracked separately (§8 Q6) rather than smuggled in
+here.
 
 ## 4. Where the boundary sits (ADR-007)
 
@@ -105,25 +132,54 @@ an explicitly-marked project-owned slot** — the same shape as `lock-guard.yml`
 That keeps ADR-007 intact: baron makes no model calls, drives no loop, and is runtime-neutral.
 It fires an event; what the project does with it is the project's.
 
-## 5. Loop safety — the failure this invites
+## 5. Loop safety — rebuilt, because rev. 1's guards did not work
 
-A persona that can wake another persona can be woken back. Reviewer wakes dev, dev pushes, the
-push wakes reviewer. Unbounded, that is a token-burning cycle running on someone's Actions
-minutes with nobody watching.
+A persona that can wake another can be woken back. Reviewer wakes dev, dev pushes, the push
+wakes reviewer. Unbounded, that is a cycle spending the owner's Actions minutes unattended.
 
-Three guards, all cheap:
+**Rev. 1 proposed three guards. Review showed two of them were inert, so they are replaced here
+rather than restated.**
 
-- **Origin chain in the payload.** Each dispatch carries `depth` and the originating persona.
-  `baron notify` refuses to fire beyond `--max-depth` (proposed default **2**), and says so.
-  Delivery still happens; only the wake is suppressed.
-- **Concurrency guard in the template.** `concurrency: { group: baron-notify-<persona>,
-  cancel-in-progress: false }` so a persona cannot be spawned into itself.
-- **A wake is never automatic on repo events at first cut.** Label/review/comment triggers are
-  tempting (the research lists them as first-class) but they multiply the cycle surface. Explicit
-  `baron notify` only, until the loop guards have field evidence.
+### 5.1 — Depth, propagated through the substrate (replaces the payload counter)
 
-This is stated here because a wake mechanism whose failure mode is "spends money in a loop"
-deserves its guards in the decision record, not in a follow-up.
+Rev. 1 put `depth` in the dispatch payload. That has **no channel**: each spawned agent
+re-invokes the CLI fresh, and ADR-003 §2.2 forbids sidecar state, so the next `baron notify`
+starts at zero and the cap can never trip.
+
+The fix uses the substrate that already carries everything else. The **handoff frontmatter**
+records `wake_depth:` and `wake_origin:`. `baron notify --in-reply-to <stem>` reads the handoff
+being answered, increments its depth, and **refuses to wake** past `--max-depth` (proposed
+default **2**) — delivering the message regardless, and saying why the wake was suppressed. The
+chain is durable, auditable in git, and legible to a human reading `_handoff/`, which is the
+same argument ADR-003 §2.2 makes for every other piece of baron state.
+
+Honest limit: this binds only when the caller passes `--in-reply-to`. An agent that notifies
+"fresh" restarts the chain. That is a real hole, and it is why 5.3 matters.
+
+### 5.2 — The concurrency group bounds parallelism, not recursion
+
+Rev. 1 claimed `concurrency: { group: baron-notify-<persona> }` guarded the cycle it named. It
+does not: reviewer→dev→reviewer alternates between two *different* per-persona groups and never
+contends, and `cancel-in-progress: false` queues rather than blocks. It is worth keeping as a
+stampede guard, and worth **not** claiming as a loop guard.
+
+### 5.3 — The real backstop: `GITHUB_TOKEN` cannot chain
+
+A workflow run authenticated with the default `GITHUB_TOKEN` **cannot trigger another
+dispatch-driven workflow**. So an agent spawned by a wake cannot, with default credentials, wake
+anyone else: the chain terminates at depth 1 by platform design.
+
+This cuts both ways and rev. 1 mentioned neither side. It is the strongest loop guard available
+— and it is also a **silent failure**: a project that wants legitimate multi-hop wakes must
+supply a PAT, and until it does, chained notifies no-op with no error. The emitted workflow
+template must say so, and `baron notify` should detect the no-op case and report it rather than
+appearing to succeed.
+
+### 5.4 — No automatic repo-event triggers at first cut
+
+Label/review/comment triggers are tempting and the research lists them as first-class, but they
+multiply the cycle surface while 5.1's hole is open. Explicit `baron notify` only, until there is
+field evidence.
 
 ## 6. Forge Protocol extension (additive)
 
@@ -133,15 +189,25 @@ older surface loses `notify --wake` and nothing else; `--no-wake` keeps working 
 
 ## 7. Honest limits
 
-- **The wake needs a forge and an installed workflow.** Without both, `baron notify` degrades to
-  `baron handoff create` plus a warning. That is a real degradation, not a silent one.
-- **Enforcement class: none.** This is a delivery-and-latency mechanism. Nothing here makes a
-  persona *read* its handoffs; that remains the ritual's job (instructed).
-- **GitHub-only at first cut**, like every other forge-consuming command.
-- **Actions minutes are real money** on private repos, and a wake spawns a run. The guards in §5
-  bound it; they do not make it free.
-- **It does not fix FM6.** A decision reaching the work-pull surfaces is ADR-009's problem. A
-  broadcast wake could *announce* a decision, but announcing is not reconciling.
+- **The wake needs a forge, an installed workflow, and (for any chain) a PAT.** Without them
+  `baron notify` degrades to deliver-only plus a warning — visibly, not silently (§5.3).
+- **Enforcement class: none.** This is delivery-and-latency. Nothing makes a persona *read* its
+  handoffs; that stays the ritual's job (instructed).
+- **It does not, by itself, fix FM5.** Rev. 1 claimed it did. FM5 is the reviewer/dev deadlock,
+  and clearing that needs the reviewer's same-SHA idempotency carve-out — permission to re-verdict
+  an unchanged head — as well as a wake. A wake alone delivers a nudge into an unchanged
+  deadlock. It fixes **FM1** (delivery + latency) outright; FM5 needs the carve-out too.
+- **It does not fix FM6.** A decision reaching the work-pull surfaces is ADR-009's problem;
+  broadcasting is not reconciling.
+- **Idempotency is unresolved and the default is bad.** `handoff.create` raises on a duplicate
+  title within a day, so notifying the same thing twice currently yields **no delivery and no
+  wake** — on the repeated-nudge case, which is this command's most likely use. §8 Q7.
+- **An unknown persona is accepted silently today.** Notify should refuse a slug absent from
+  `manifest.personas` rather than filing mail nobody sweeps.
+- **GitHub-only at first cut**, and `get_forge` has no graceful path for a forge lacking
+  `dispatch_event` — that degradation has to be built, not assumed.
+- **Actions minutes are real money** on private repos. §5 bounds the spend; it does not make it
+  free.
 
 ## 8. Open questions for the owner (blocking implementation)
 
@@ -159,6 +225,14 @@ older surface loses `notify --wake` and nothing else; `--no-wake` keeps working 
 4. **Repo-event triggers (label/review/comment) — in or out of the first cut?** §5 proposes out.
 5. **Is this the right next build** versus P2.2 (deterministic enforcement — the largest, with
    the sharpest evidence in FM4), P2.4 (`baron promote`), or P3.1 (Barony governs Barony)?
+6. **Handoff filename format.** `handoff.create` emits `YYYY-MM-DD-<slug>.md`; the emitted
+   `CONVENTIONS.md` documents `YYYY-MM-DD-HHMM-<from>-<topic-slug>.md`. Code and template already
+   disagree, independent of this ADR. Fix as a prerequisite here, or as its own change?
+7. **Duplicate-notify policy.** Reuse the existing handoff (wake only), suffix a new one, or
+   refuse? Today's raise-on-duplicate is the worst of the three for a nudge command.
+8. **Should `notify` be capability-gated?** It is not a new verb (ADR-007's precedent: commands
+   are not permissions) — but a wake lets persona A spend the owner's Actions minutes, which is
+   the first baron command with a direct cost side effect. Rev. 1 did not raise this at all.
 
 ## 9. Decision record
 
