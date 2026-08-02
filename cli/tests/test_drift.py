@@ -219,3 +219,32 @@ def test_user_level_match_is_not_evidence_of_hydration(tmp_path: Path) -> None:
     ]
     assert len(errors) == 1 and "terrence" in errors[0].message
     assert "registered in this project's own repo" in errors[0].message
+
+
+def test_per_persona_tier_2_override_is_honoured(tmp_path: Path) -> None:
+    """persona.schema.md v1.1: `runtime.adapters.claude.tier: 2` locks ONE persona
+    to Tier 2 even when the project default is auto/3 — and HYDRATE.md forbids a
+    subagent file at Tier 2. So that persona legitimately has no registration and
+    must not be reported as drift (nor counted as a sibling)."""
+    collab, home = _dirs(tmp_path)
+    _registry(collab, ".claude/agents", ["dev", "iris"])
+    for slug, spec in (
+        ("dev", {}),
+        ("iris", {}),
+        ("terrence", {"runtime": {"adapters": {"claude": {"tier": 2}}}}),
+    ):
+        d = collab / "agents" / slug
+        d.mkdir(parents=True)
+        (d / "persona.yaml").write_text(yaml.safe_dump({"slug": slug, **spec}), encoding="utf-8")
+
+    manifest = _manifest(["dev", "iris", "terrence"], CLAUDE)
+    assert drift.check(collab, manifest, home=home) == []
+
+    # Without the override the same layout IS drift, and the message names the
+    # escape hatch rather than only telling the user to register it.
+    (collab / "agents/terrence/persona.yaml").write_text(
+        yaml.safe_dump({"slug": "terrence"}), encoding="utf-8"
+    )
+    errors = [f for f in drift.check(collab, manifest, home=home) if f.severity == "error"]
+    assert len(errors) == 1
+    assert "runtime.adapters.claude.tier: 2" in errors[0].message

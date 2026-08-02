@@ -58,6 +58,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 #: runtime key -> (registry subdirectory, per-persona filename template).
 #: Sources: adapters/claude/HYDRATE.md step 3a (``<code_repo>/.claude/agents/<slug>.md``
 #: — project-scoped, TRAVELS WITH THE REPO) and adapters/code-puppy/HYDRATE.md
@@ -152,6 +154,38 @@ def _claude_tier(manifest: dict) -> str | None:
     return None
 
 
+def _persona_tier(collab_root: Path, manifest: dict, slug: str, runtime: str) -> str | None:
+    """This persona's ``runtime.adapters.<runtime>.tier`` override, if any.
+
+    persona.schema.md v1.1 documents this as the way to "lock a persona to Tier 2
+    even when the project default is auto/3" — and at Tier 2 HYDRATE.md forbids
+    emitting a subagent file. So a persona carrying this override legitimately has
+    no registration, and must not be counted as drift OR as evidence of hydration.
+    """
+    personas = manifest.get("personas")
+    if not isinstance(personas, list):
+        return None
+    for entry in personas:
+        if not isinstance(entry, dict) or entry.get("slug") != slug:
+            continue
+        spec = entry.get("spec")
+        if not isinstance(spec, str):
+            return None
+        try:
+            data = yaml.safe_load((collab_root / spec).read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            return None  # validate's schema pass owns reporting a broken spec
+        if not isinstance(data, dict):
+            return None
+        node = data.get("runtime")
+        for key in ("adapters", runtime, "tier"):
+            if not isinstance(node, dict):
+                return None
+            node = node.get(key)
+        return None if node is None else str(node)
+    return None
+
+
 def check(
     collab_root: Path, manifest: dict, *, home: Path | None = None
 ) -> list[DriftFinding]:
@@ -181,9 +215,20 @@ def check(
         if not present:
             continue
 
+        # Personas explicitly locked to Tier 2 have no subagent BY DESIGN
+        # (persona.schema.md v1.1 override; HYDRATE.md forbids a dead file there).
+        # Drop them from both sides of the comparison.
+        active = [
+            s
+            for s in slugs
+            if _persona_tier(collab_root, manifest, s, runtime) != "2"
+        ]
+        if not active:
+            continue
+
         registered: dict[str, list[Path]] = {}
         repo_scoped: set[str] = set()
-        for slug in slugs:
+        for slug in active:
             hits = [d for d in present if _registered(d, slug, filename)]
             if hits:
                 registered[slug] = hits
@@ -197,10 +242,10 @@ def check(
         # whenever ~/.claude/agents happened to hold one of the new persona slugs,
         # which is common precisely because slugs like `dev` and `librarian` are
         # the scaffold defaults.
-        if not repo_scoped or len(registered) == len(slugs):
+        if not repo_scoped or len(registered) == len(active):
             pass
         else:
-            for slug in slugs:
+            for slug in active:
                 if slug in registered:
                     continue
                 where = ", ".join(str(d) for d in present)
@@ -210,14 +255,17 @@ def check(
                         "runtime-drift",
                         f"{runtime}: persona '{slug}' is declared in manifest.personas "
                         f"but has no agent registered, while "
-                        f"{len(repo_scoped)}/{len(slugs)} sibling personas are "
+                        f"{len(repo_scoped)}/{len(active)} sibling personas are "
                         f"registered in this project's own repo "
                         f"({', '.join(sorted(repo_scoped))}) — so this project DOES "
                         f"hydrate agents here and '{slug}' was missed. Work routed to "
                         f"it will silently run as some other agent: wrong identity, "
                         f"wrong commit prefix, wrong capabilities. Register it per "
                         f"adapters/{runtime}/HYDRATE.md, or remove it from the "
-                        f"manifest. Looked in: {where}."
+                        f"manifest. If '{slug}' intentionally runs at Tier 2 "
+                        f"(no subagent by design), declare it in its persona.yaml as "
+                        f"runtime.adapters.{runtime}.tier: 2 and this stops being "
+                        f"drift. Looked in: {where}."
                     )
                 )
 

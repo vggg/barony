@@ -151,9 +151,13 @@ warning); it can never establish that the project hydrates agents at all.
 **All-or-nothing is silent**, because zero registered agents is *correct* in three
 legitimate cases: a Tier-2 Claude project (`HYDRATE.md` says at Tier 2 "do NOT
 emit a dead subagent file"), a freshly scaffolded project (Tier-3 hydration is
-conversational — ADR-006 §3), and any Tier-1 runtime. It also sidesteps
-`tier: auto` — the default — which cannot be resolved statically at all. An
-explicit `adapters.claude.tier: 2` is skipped outright.
+conversational — ADR-006 §3), and any Tier-1 runtime. **`tier: auto` is not sidestepped — it is treated as Tier 3 and that is a
+judgement call**, stated here rather than buried: under `auto`, HYDRATE.md allows
+per-persona, per-session degradation to Tier 2, so a persistent partial registry
+*could* be legitimate degradation rather than drift. baron cannot tell them apart
+statically. It errors, and the message names the escape hatch: declare
+`runtime.adapters.claude.tier: 2` in that persona's `persona.yaml` and the check
+honours it. Explicit `tier: 2` — at project or persona level — is skipped outright.
 
 Registration is matched by the filename the adapter writes **and** by a `name:`
 frontmatter match, since that is what Claude actually keys a subagent on.
