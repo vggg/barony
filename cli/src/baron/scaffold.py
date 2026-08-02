@@ -3,9 +3,9 @@
 The non-conversational subset of the ORCHESTRATE.md recipe: create the collab
 repo skeleton (CONVENTIONS/COORDINATION, manifest, canon/ + adapters/ from the
 vendored templates, hydrated ``agents/<slug>/persona.yaml`` per persona, the
-genesis handoff, ledger index headers, wiki stub, the lock-guard and
-strip-stale-verdict CI templates), then git-init and commit. Everything emitted is deterministic — no interview,
-no runtime self-assessment.
+genesis handoff, ledger index headers, wiki stub, the lock-guard and the
+strip-stale-verdict CI templates), then git-init and commit. Everything
+emitted is deterministic — no interview, no runtime self-assessment.
 
 What stays on the conversational path (canon/ORCHESTRATE.md, by design):
 persona scope prose (init fills a generic edit-me scope), ``AGENT.md``

@@ -84,14 +84,20 @@ two different mechanisms: the claude / code-puppy / generic adapters carry a **t
 rendering lives in a Python table, not in its `HYDRATE.md`. `baron init`'s runtime kits render the
 token as prose naming the SHA test.
 
-**Corollary — the vocabulary needs a cross-runtime drift guard.** Every renderer — the two code
-ones and the three prose tables alike — falls back to echoing the raw token, so a missing entry
-does not crash: the rule quietly vanishes from that runtime's persona body. That is exactly what happened on the first cut of this change (caught in
-review, before merge — the token shipped to three runtimes and not the fourth, the one whose
-selling point is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
-capability maps, never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real
-prose on both **code** renderers — `scaffold._ritual_lines` (the `baron init` runtime kits) and
-`runtimes.pydantic_ai._RITUAL_LINES`.
+**Corollary — the vocabulary needs a cross-runtime drift guard.** A token missing from a renderer
+fails *silently* everywhere, by two different mechanisms:
+
+- **The two code renderers** (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`) look
+  the token up in a dict and **fall back to echoing the raw token** — the persona body gets a bare
+  `check_review_feedback` bullet instead of the instruction.
+- **The three prose tables** (claude / code-puppy / generic `HYDRATE.md`) have no code and no
+  fallback: an absent row simply **isn't there**, and the hydrating agent renders nothing at all.
+
+Neither errors. That is exactly what happened on the first cut of this change (caught in review,
+before merge — the token shipped to three runtimes and not the fourth, the one whose selling point
+is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses capability maps,
+never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real prose on **both
+code renderers**.
 
 **Honest limit of that guard:** the three table-driven adapters render from prose tables in their
 `HYDRATE.md`, and **no test parses those tables**. A future ritual token can still be added to the
@@ -116,14 +122,16 @@ project's reviewer verdict labels and comment saying the head moved. **Owner gat
 (`needs-human`, `hold`, `contract-change`) are explicitly excluded — they are not reviewer
 verdicts and only the owner lifts them.
 
-This makes "a review-state label is present" mean "a verdict exists at *this* head" by
-construction, which is what personas were already assuming.
+Where it is installed and covers the label in question, this makes "a review-state label is
+present" mean "a verdict exists at *this* head" — which is what personas were already assuming.
+It does not make that true unconditionally: the workflow can be missing from the code repo,
+edited, or not yet run.
 
 **Rationale / evidence.** ADR-002 §3's precedent: where a coordination rule can be made
 mechanical with a dependency-free CI action, make it mechanical and keep the prose as the
-statement of intent. Same honest limitation, carried in the file header: this removes a
-misleading label, it cannot stop a persona that never reads verdicts — the merge gate itself
-still lives in the Merger's preconditions. It is scoped deliberately narrower than the guard:
+statement of intent. The file header carries the honest limitation in the same terms used here —
+it removes a misleading label; it cannot stop a persona that never reads verdicts, and the merge
+gate itself still lives in the Merger's preconditions. It is scoped deliberately narrower than the guard:
 a workflow that removes a label is not an enforcement mechanism in the
 [ADR-004](ADR-004-baron-guard-enforcement.md) sense, and the templates must not claim it is.
 

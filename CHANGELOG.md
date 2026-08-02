@@ -60,9 +60,10 @@ in opposite directions, and both answers were wrong.
   token tables remain **ungated** — a known, recorded gap (ADR-008 §2, `docs/BACKLOG.md`).
 - **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
   `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
-  project's reviewer verdict labels and comments that the head moved, making "a
-  review-state label is present" mean "a verdict exists at *this* head" by
-  construction. Owner gates (`needs-human`, `hold`, `contract-change`) are
+  project's reviewer verdict labels and comments that the head moved, so that —
+  where it is installed and covers the label — "a review-state label is present"
+  means "a verdict exists at *this* head". Owner gates (`needs-human`, `hold`,
+  `contract-change`) are
   explicitly excluded — only the owner lifts those. Dependency-free (bash + `gh`,
   built-in `GITHUB_TOKEN`), no-ops on fork PRs. Carries the `lock-guard.yml`-style
   honest limitation: it removes a misleading label, it cannot stop a persona that

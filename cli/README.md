@@ -417,7 +417,11 @@ entry-point group; GitLab is backlog — design sketch in `../docs/BACKLOG.md`.
 uv run --project cli pytest cli/tests    # from the repo root
 ```
 
-The suite includes the capability-vocabulary drift guard, a synthetic divergent
+The suite includes the capability-vocabulary drift guard, the ritual-token
+cross-renderer guard (every `RITUAL_TOKENS` entry must render real prose in BOTH
+code renderers — the `baron init` kits and the pydantic-ai hydrator; the three
+adapters' `HYDRATE.md` prose tables stay ungated, see `../docs/BACKLOG.md`), a
+synthetic divergent
 git topology reproducing the 2026-07-22 triple-stranding incident classes, the
 ledger push-rejection race test, subprocess-driven guard hook tests (synthetic
 PreToolUse JSON on stdin), a recorded fake forge for the lock lifecycle, a real
