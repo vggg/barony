@@ -727,7 +727,16 @@ def scaffold(
         _emit_runtime_kit(root, persona, ctx, created)
 
     # Self-check: everything just written must pass `baron validate`.
-    findings, _files, _skipped = validate_mod.validate_path(root)
+    #
+    # runtime_drift=False scopes this to the SPEC init actually wrote. The drift
+    # check (P2.3) reads the surrounding environment — registries in sibling repos
+    # and under ~/ — which init neither created nor can fix, so a failure there
+    # would be init blaming itself for someone else's machine. Concretely: a user
+    # whose ~/.claude/agents already holds an agent matching ONE of the new
+    # persona slugs would hit the partial-registration signal and see `baron init`
+    # fail its own output. Init validates what it emitted; `baron validate` (which
+    # init prints as the next step) validates the environment.
+    findings, _files, _skipped = validate_mod.validate_path(root, runtime_drift=False)
     errors = [f for f in findings if f.severity == "error"]
     if errors:
         detail = "; ".join(f"{f.file}: {f.message}" for f in errors[:5])

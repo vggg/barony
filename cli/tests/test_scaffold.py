@@ -69,8 +69,13 @@ def test_layout_manifest_and_self_validation(tmp_path: Path, fixed_clock: object
     ):
         assert (dest / rel).is_file(), f"missing {rel}"
 
-    # The scaffold passes the real schemas with zero findings.
-    findings, files, _skipped = validate_path(dest)
+    # The scaffold passes the real SCHEMAS with zero findings.
+    # runtime_drift=False: a fresh scaffold has declared personas and no
+    # registered runtime agents by design (Tier-3 hydration is conversational,
+    # ADR-006 §3), and the drift check reads the DEVELOPER's real
+    # ~/.claude/agents — so leaving it on would make this assertion depend on
+    # the machine it runs on. Drift has its own suite: tests/test_drift.py.
+    findings, files, _skipped = validate_path(dest, runtime_drift=False)
     assert [f.to_dict() for f in findings] == []
     assert len(files) == 4  # manifest + 3 personas
 
@@ -184,7 +189,9 @@ def test_dev_ritual_sweeps_review_feedback_before_backlog(
     assert "check_review_feedback" in ritual
     assert ritual.index("check_review_feedback") < ritual.index("check_backlog")
 
-    findings, _files, _skipped = validate_path(dest)
+    # runtime_drift=False: this asserts SCHEMA acceptance of the new ritual token.
+    # Leaving drift on would read the developer's real ~/.claude/agents.
+    findings, _files, _skipped = validate_path(dest, runtime_drift=False)
     assert not [
         f for f in findings if "check_review_feedback" in f.message
     ], "the new ritual token must be in the known vocabulary"

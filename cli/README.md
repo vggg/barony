@@ -125,11 +125,72 @@ templates legitimately carry placeholders and often aren't valid YAML at all.
 Fixture paths (`tests/examples/`) are validated but exempt from the placeholder
 check only. An explicitly named file is always validated.
 
+**Spec↔runtime drift (P2.3, since 0.7.0).** When you validate a directory
+holding `manifest.yaml`, baron also compares the declared personas against the
+agent registry of every runtime the manifest declares under `adapters`:
+
+| Runtime | Registry checked |
+|---|---|
+| `claude` | `.claude/agents/<slug>.md` — collab root, each `repos[].path`, then `~/` |
+| `code-puppy` | `.code_puppy/agents/<slug>.json` (note the underscore) |
+| `pydantic-ai`, `generic` | none — hydration is in-process / Tier-1 prose, so there is nothing to inspect |
+
+**The signal is PARTIAL registration, not absence.** If some declared personas
+are registered and others are not, the project demonstrably hydrates agents on
+this runtime, so the gaps are real drift and each is an **ERROR**: work routed to
+a missing persona does not fail loudly — it runs as whatever agent the runtime
+*does* have, with the wrong identity, commit prefix and capability set. That is
+how a cron ran under the wrong persona on the pilot.
+
+**That evidence must be repo-scoped.** A `~/.claude/agents` entry named after one
+of your personas proves nothing about *this* project — the directory is shared
+machine-wide, and `dev`/`librarian` are the `baron init` defaults, so collisions
+are common. A user-level file can still *satisfy* a persona (with a scope
+warning); it can never establish that the project hydrates agents at all.
+
+**All-or-nothing is silent**, because zero registered agents is *correct* in three
+legitimate cases: a Tier-2 Claude project (`HYDRATE.md` says at Tier 2 "do NOT
+emit a dead subagent file"), a freshly scaffolded project (Tier-3 hydration is
+conversational — ADR-006 §3), and any Tier-1 runtime. **`tier: auto` is not sidestepped — it is treated as Tier 3 and that is a
+judgement call**, stated here rather than buried: under `auto`, HYDRATE.md allows
+per-persona, per-session degradation to Tier 2, so a persistent partial registry
+*could* be legitimate degradation rather than drift. baron cannot tell them apart
+statically. It errors, and the message names the escape hatch: declare
+`runtime.adapters.claude.tier: 2` in that persona's `persona.yaml` and the check
+honours it. **Weigh that before reaching for it:** the override is permanent and
+locks the persona out of Tier 3 (`HYDRATE.md` makes `auto`→Tier 3 conditional on
+its absence), so its whole-tool denials drop from *enforced* to *instruction-only*
+— while the ambiguity it silences is only per-session. Suppressing a warning
+should not quietly cost you enforcement. Explicit `tier: 2` — at project or
+persona level — is skipped outright.
+
+Registration is matched by the filename the adapter writes **and** by a `name:`
+frontmatter match, since that is what Claude actually keys a subagent on.
+
+Only runtimes the manifest **explicitly declares** are checked, so a stray
+registry cannot fail a project that does not hydrate agents. A persona resolving
+*only* via the user-level `~/` registry warns: that directory is shared across
+every project on the machine, so a same-named agent from elsewhere would satisfy
+the check.
+
+**Honest limits.** A project with exactly one persona cannot produce a partial
+state, so a single unregistered persona is invisible; and if *every* persona
+drifted at once that reads as "not hydrated" and stays silent. The pilot shape —
+some registered, some not — is what this catches.
+
+**On CI:** the Claude registry is repo-scoped and *travels with the clone*
+(`HYDRATE.md` step 3a), so a committed `.claude/agents/` **is** present in CI —
+by design. A partially-registered project therefore fails CI, which is the
+intended behaviour, not an accident. `--no-runtime-drift` opts out where that is
+unwanted. (`baron init` passes it for its own self-check: init validates the spec
+it wrote, not the environment around it.)
+
 Exit 0 = no errors (warnings allowed) / 1 = errors. `--json` for machines.
 
 ```bash
 baron validate tests/examples/tess/persona.yaml
 baron validate . --json
+baron validate . --no-runtime-drift   # spec conformance only
 ```
 
 ### `baron status [--fetch] [--sla N] [--json]` (M2)

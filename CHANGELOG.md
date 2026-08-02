@@ -11,7 +11,62 @@ the pending bundle was relabelled from 1.8.2 when the P1 fold-in added a schema
 token and a new emitted workflow; a patch label would have been wrong). The
 `barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4–0.6.0** are pending.
+plugin bundle; **0.5.4–0.7.0** are pending.
+
+### Added — `barony` 0.7.0: spec↔runtime drift detection (AGENT-TASKS P2.3)
+
+`baron validate` now compares the personas a project **declares** against the
+agents its runtime has actually **registered**. Owner picked this over P2.1
+(2026-08-02) as the smaller, schema-change-free build.
+
+**The failure it closes** (badminton-analyzer pilot, 2026-07): the collab repo
+declared eight personas; the Claude subagent registry held six. `terrence` and
+`carson` existed only as `persona.yaml`. Routing work to them did not fail
+loudly — it fell through to whatever agent the runtime *did* have, so a cron ran
+under the **wrong persona**: wrong identity, wrong commit prefix, wrong
+capability set. Verified against the real pilot repo: the check reports exactly
+those two.
+
+- **The signal is PARTIAL registration, not absence.** Some personas registered
+  and others not is positive evidence that the project hydrates agents on this
+  runtime, which makes the gaps genuine drift (**error**). **That evidence must be
+  repo-scoped** — a user-level `~/.claude/agents` entry matching a persona name
+  proves nothing about this project (the directory is machine-wide and `dev` /
+  `librarian` are the scaffold defaults); it can satisfy a persona but never
+  establish that the project hydrates agents. All-or-nothing is
+  **silent**, because zero registered is *correct* for a Tier-2 Claude project
+  (`HYDRATE.md`: at Tier 2 "do NOT emit a dead subagent file"), a freshly
+  scaffolded project (Tier-3 hydration is conversational, ADR-006 §3), and any
+  Tier-1 runtime. **`tier: auto` is treated as Tier 3 — a judgement call, not a
+  sidestep:** under `auto` HYDRATE.md permits per-persona degradation to Tier 2,
+  which baron cannot distinguish statically from drift. It errors, and names the
+  escape hatch in the message — declare `runtime.adapters.<runtime>.tier: 2` on
+  that persona and the check honours it. **That escape hatch has a real cost, and
+  the message says so:** the override is permanent and locks the persona out of
+  Tier 3, so its whole-tool denials drop from enforced to instruction-only —
+  whereas the ambiguity it resolves (`auto` degradation) is per-session. Explicit `tier: 2` at **either** the
+  manifest or the per-persona level (`persona.schema.md` v1.1) is skipped.
+- **Registries** — `claude` (`.claude/agents/<slug>.md`) and `code-puppy`
+  (`.code_puppy/agents/<slug>.json`), searched collab-root → `paths.root` → each
+  `repos[].path` → `~/`. Registration matches the adapter's filename **or** a
+  `name:` frontmatter match, since that is what Claude keys a subagent on.
+  `pydantic-ai` and `generic` have no inspectable registry (in-process hydration
+  / Tier-1 prose) and are excluded in code with a comment.
+- **Only declared runtimes are checked**, so a stray registry cannot fail a
+  project that does not hydrate agents. User-level-only resolution **warns**:
+  `~/.claude/agents` is shared across every project on the machine.
+- **Honest limits, stated in the module**: a one-persona project cannot produce a
+  partial state, and a fleet that drifted *entirely* reads as "not hydrated".
+- **On CI:** the Claude registry is repo-scoped and travels with the clone
+  (`HYDRATE.md` step 3a), so a committed `.claude/agents/` **is** present in CI by
+  design, and a partially-registered project fails there deliberately.
+  `--no-runtime-drift` opts out. `baron init` passes it for its own self-check —
+  init validates the spec it wrote, not the environment around it.
+- **Tests:** `cli/tests/test_drift.py` (13 cases: the pilot shape, the
+  fresh-scaffold regression, explicit tier 2 vs 3, `paths.root` resolution,
+  frontmatter matching, and an anti-vacuity guard that fails if `check` is
+  gutted). Two `test_scaffold.py` assertions were reading the *developer's* real
+  `~/.claude/agents`; both now scope to schema conformance.
 
 ### Proposed (no code) — [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md): `baron decision`
 

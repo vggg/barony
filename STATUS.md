@@ -38,6 +38,20 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — P2.3 `baron validate` spec↔runtime drift
+
+`barony` **0.7.0**. `baron validate` compares the personas a project declares against the
+agents its runtime has registered. **The signal is partial registration:** some registered
+and others not is evidence the project hydrates agents here, so the gaps are errors;
+all-or-nothing is silent (correct for Tier-2, Tier-1, and a fresh scaffold). Explicit
+`tier: 2` is skipped at both the manifest and per-persona level; **`tier: auto` is treated as
+Tier 3 — a judgement call, not a sidestep** (under `auto` HYDRATE.md permits per-persona
+degradation, which baron cannot distinguish statically from drift), with an escape hatch named
+in the error message. Only
+runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts out.
+Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
+a fresh `baron init` scaffold validates clean.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
