@@ -43,26 +43,27 @@ the *repair* commands that migration showed were needed shipped in **barony 0.5.
 registrations for moved/deleted dirs) and `baron worktree repair [PATH…]` (wraps
 `git worktree repair` — re-registers a moved worktree / main repo). Nothing open.
 
-## Ritual-token coverage in the adapters' HYDRATE.md tables (post-ADR-008)
+## Ritual-token coverage in the adapters' HYDRATE.md prose surfaces (post-ADR-008)
 
 **What:** `check_review_feedback` (ADR-008 §2) shipped to three of four runtimes on its first
-cut, because each renderer keeps its own token table and nothing cross-checked them against
+cut, because each renderer keeps its own ritual-token surface and nothing cross-checked them against
 `schemas.RITUAL_TOKENS`. Caught in review. The fix that landed guards the two **code**
 renderers (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`); the claude /
-code-puppy / generic adapters render from **prose tables in their `HYDRATE.md`**, and no test
-parses those. A future token can still be added to the vocabulary and miss all three silently —
-the failure is quiet by construction, since both renderer styles fall back to echoing the raw
-token rather than erroring.
+code-puppy / generic adapters render from **prose in their `HYDRATE.md`** (two pipe tables and
+one bullet list), and no test parses those. A future token can still be added to the vocabulary
+and miss all three silently — and silently in two different ways: the code renderers fall back
+to echoing the raw token, while the prose surfaces have no fallback at all, so an absent row is
+simply not there. Neither path raises.
 
 **Design sketch:** extend `tests/bi_runtime_accept.py` with a second parse pass — it already
 reads the adapters' machine-readable capability maps, so it is the natural home — asserting
-every `RITUAL_TOKENS` entry appears in each table-driven adapter's ritual table. Needs the token
-tables to be machine-readable first (they are markdown tables today, in three different shapes:
-two `|`-tables and one bullet list). Either normalize the three shapes, or give the ritual table
-the same explicit machine-readable fence the capability maps use.
+every `RITUAL_TOKENS` entry appears in each prose-rendered adapter's ritual surface. Needs those
+surfaces to be machine-readable first: they are markdown today, in two shapes — two `|`-tables
+(claude, code-puppy) and one bullet list (generic). Either normalize those two shapes, or give
+the ritual surface the same explicit machine-readable fence the capability maps use.
 
 **Why deferred:** the acceptance harness is stdlib-only and deliberately parses *declared*
-contracts, not prose; making ritual tables machine-readable is a small spec change to three
+contracts, not prose; making the ritual surfaces machine-readable is a small spec change to three
 adapters that deserves its own PR rather than being improvised inside the change that exposed
 the gap.
 

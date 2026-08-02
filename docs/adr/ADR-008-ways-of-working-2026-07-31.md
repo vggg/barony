@@ -79,25 +79,32 @@ arbitrating it (§3 below is that removal).
 (`references/persona.schema.md`, schema v1.2): *on this persona's open PRs, act on any review
 verdict that is LIVE at the current head — before claiming new work.* It ships in the `__DEV__`
 template's ritual, resolving **before** `check_backlog`. Every runtime renders it — but note the
-two different mechanisms: the claude / code-puppy / generic adapters carry a **token table** in
-`HYDRATE.md`, while pydantic-ai hydrates **in code** (`baron.runtimes.pydantic_ai`), so its
-rendering lives in a Python table, not in its `HYDRATE.md`. `baron init`'s runtime kits render the
-token as prose naming the SHA test.
+two different mechanisms: the claude / code-puppy / generic adapters carry a **prose ritual-token
+surface** in `HYDRATE.md`, while pydantic-ai hydrates **in code**
+(`baron.runtimes.pydantic_ai`), so its rendering lives in a Python dict, not in its
+`HYDRATE.md`. `baron init`'s runtime kits render the token as prose naming the SHA test.
 
-**Corollary — the vocabulary needs a cross-runtime drift guard.** Every renderer — the two code
-ones and the three prose tables alike — falls back to echoing the raw token, so a missing entry
-does not crash: the rule quietly vanishes from that runtime's persona body. That is exactly what happened on the first cut of this change (caught in
-review, before merge — the token shipped to three runtimes and not the fourth, the one whose
-selling point is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
-capability maps, never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real
-prose on both **code** renderers — `scaffold._ritual_lines` (the `baron init` runtime kits) and
-`runtimes.pydantic_ai._RITUAL_LINES`.
+**Corollary — the vocabulary needs a cross-runtime drift guard.** A token missing from a renderer
+fails *silently* everywhere, by two different mechanisms:
 
-**Honest limit of that guard:** the three table-driven adapters render from prose tables in their
-`HYDRATE.md`, and **no test parses those tables**. A future ritual token can still be added to the
+- **The two code renderers** (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`) look
+  the token up in a dict and **fall back to echoing the raw token** — the persona body gets the
+  literal string `check_review_feedback` where the instruction should be.
+- **The three prose surfaces** (claude / code-puppy `HYDRATE.md` pipe tables, generic's bullet
+  list) have no code and no fallback: an absent row simply **isn't there**, so the hydrating agent
+  is given nothing to render from.
+
+Neither path raises. That is exactly what happened on the first cut of this change (caught in review,
+before merge — the token shipped to three runtimes and not the fourth, the one whose selling point
+is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses capability maps,
+never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real prose on **both
+code renderers**.
+
+**Honest limit of that guard:** the other three adapters render from the prose surfaces in their
+`HYDRATE.md`, and **no test parses them**. A future ritual token can still be added to the
 vocabulary and silently miss all three. Closing that needs an acceptance-harness extension
 (`bi_runtime_accept.py` is capability-maps-only by construction) — tracked in `docs/BACKLOG.md`,
-not fixed here, because inventing a token-table parser under review pressure is how the *first*
+not fixed here, because inventing a ritual-surface parser under review pressure is how the *first*
 version of this change went wrong.
 
 **Rationale / evidence.** The dev-side half of §1 needs a *place to happen*. A rule in
@@ -116,14 +123,16 @@ project's reviewer verdict labels and comment saying the head moved. **Owner gat
 (`needs-human`, `hold`, `contract-change`) are explicitly excluded — they are not reviewer
 verdicts and only the owner lifts them.
 
-This makes "a review-state label is present" mean "a verdict exists at *this* head" by
-construction, which is what personas were already assuming.
+Where it is installed and covers the label in question, this makes "a review-state label is
+present" mean "a verdict exists at *this* head" — which is what personas were already assuming.
+It does not make that true unconditionally: the workflow can be missing from the code repo,
+edited, or not yet run.
 
 **Rationale / evidence.** ADR-002 §3's precedent: where a coordination rule can be made
 mechanical with a dependency-free CI action, make it mechanical and keep the prose as the
-statement of intent. Same honest limitation, carried in the file header: this removes a
-misleading label, it cannot stop a persona that never reads verdicts — the merge gate itself
-still lives in the Merger's preconditions. It is scoped deliberately narrower than the guard:
+statement of intent. The file header carries the honest limitation in the same terms used here —
+it removes a misleading label; it cannot stop a persona that never reads verdicts, and the merge
+gate itself still lives in the Merger's preconditions. It is scoped deliberately narrower than the guard:
 a workflow that removes a label is not an enforcement mechanism in the
 [ADR-004](ADR-004-baron-guard-enforcement.md) sense, and the templates must not claim it is.
 
@@ -169,7 +178,7 @@ not a requirement.
   executes it, and a mechanism that narrows the window. New projects inherit all three.
 - Positive: decisions become reconcilable-by-protocol rather than by whoever remembers.
 - Negative / costs: one more session-ritual token to render on every runtime and in the scaffold
-  (bounded — a token table row each); one more emitted workflow that a project may not want;
+  (bounded — one ritual-surface entry each); one more emitted workflow that a project may not want;
   the §4 intake is real Librarian work per decision, and it is discipline, not enforcement —
   the templates say so rather than overselling.
 - The capability vocabulary is untouched. Everything here composes from the frozen v1 verbs and
