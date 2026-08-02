@@ -29,7 +29,11 @@ those two.
 
 - **The signal is PARTIAL registration, not absence.** Some personas registered
   and others not is positive evidence that the project hydrates agents on this
-  runtime, which makes the gaps genuine drift (**error**). All-or-nothing is
+  runtime, which makes the gaps genuine drift (**error**). **That evidence must be
+  repo-scoped** — a user-level `~/.claude/agents` entry matching a persona name
+  proves nothing about this project (the directory is machine-wide and `dev` /
+  `librarian` are the scaffold defaults); it can satisfy a persona but never
+  establish that the project hydrates agents. All-or-nothing is
   **silent**, because zero registered is *correct* for a Tier-2 Claude project
   (`HYDRATE.md`: at Tier 2 "do NOT emit a dead subagent file"), a freshly
   scaffolded project (Tier-3 hydration is conversational, ADR-006 §3), and any

@@ -191,3 +191,31 @@ def test_wired_into_validate_and_opt_out(tmp_path: Path) -> None:
     # CLI: repo-scoped registration makes this independent of the real ~/.
     assert runner.invoke(app, ["validate", str(collab), "--no-runtime-drift"]).exit_code == 0
     assert runner.invoke(app, ["validate", str(collab)]).exit_code == 1
+
+
+def test_user_level_match_is_not_evidence_of_hydration(tmp_path: Path) -> None:
+    """B1 regression, second cut.
+
+    A `~/.claude/agents` entry named after one of THIS project's personas proves
+    nothing about this project — the directory is shared machine-wide, and slugs
+    like `dev`/`librarian` are the `baron init` defaults, so collisions are
+    common. Counting a user-level hit as evidence of hydration made a fresh
+    scaffold fail `baron validate .`, which init prints as the next step.
+    """
+    collab, home = _dirs(tmp_path)
+    # Two of three personas happen to exist as user-level agents; NOTHING is
+    # registered in the project itself.
+    _registry(home, ".claude/agents", ["carson", "iris", "unrelated"])
+
+    findings = drift.check(collab, _manifest(["carson", "terrence", "iris"], CLAUDE), home=home)
+    assert [f for f in findings if f.severity == "error"] == []
+
+    # But once the project registers one of its OWN, the gap is real drift.
+    _registry(collab, ".claude/agents", ["carson"])
+    errors = [
+        f
+        for f in drift.check(collab, _manifest(["carson", "terrence", "iris"], CLAUDE), home=home)
+        if f.severity == "error"
+    ]
+    assert len(errors) == 1 and "terrence" in errors[0].message
+    assert "registered in this project's own repo" in errors[0].message

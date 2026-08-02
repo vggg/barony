@@ -27,7 +27,16 @@ statically at all: it is a per-session self-assessment.
 So baron does not ask "does a registry exist?" It asks **"has this project
 registered SOME of its personas and not others?"** Partial registration is
 positive evidence that the project does hydrate agents on this runtime, which
-makes the gaps genuine drift. All-or-nothing is silent. That is self-calibrating:
+makes the gaps genuine drift. All-or-nothing is silent.
+
+That evidence must be **repo-scoped**. The user-level registry (``~/.claude/agents``)
+is shared by every project on the machine, so an agent there named after one of
+this project's personas proves nothing about this project — and counting it made
+``baron init``'s own printed next step (``baron validate .``) fail whenever the
+user happened to have an agent matching one of the new slugs, which is common
+because ``dev`` and ``librarian`` are the scaffold defaults. A user-level file can
+still SATISFY a persona (with a scope warning); it can never be what establishes
+that the project hydrates agents at all. That is self-calibrating:
 it needs no declared tier, and it cannot fail a project that simply doesn't
 hydrate agents.
 
@@ -163,21 +172,32 @@ def check(
             continue
 
         subdir, filename = REGISTRIES[runtime]
-        dirs = [root / subdir for root in _search_roots(collab_root, manifest)]
-        dirs.append(home / subdir)
-        present = [d for d in dirs if d.is_dir()]
+        repo_dirs = [
+            root / subdir for root in _search_roots(collab_root, manifest)
+        ]
+        user_dir = home / subdir
+        repo_present = [d for d in repo_dirs if d.is_dir()]
+        present = repo_present + ([user_dir] if user_dir.is_dir() else [])
         if not present:
             continue
 
         registered: dict[str, list[Path]] = {}
+        repo_scoped: set[str] = set()
         for slug in slugs:
             hits = [d for d in present if _registered(d, slug, filename)]
             if hits:
                 registered[slug] = hits
+            if any(d in repo_present for d in hits):
+                repo_scoped.add(slug)
 
-        # All or nothing -> this project does not hydrate agents here (Tier 1/2,
-        # unhydrated, or a fresh scaffold). Not drift.
-        if not registered or len(registered) == len(slugs):
+        # Evidence that THIS project hydrates agents here must be REPO-SCOPED.
+        # The user-level directory is shared by every project on the machine, so a
+        # same-named agent from an unrelated project is not evidence of anything —
+        # counting it made `baron init`'s own next step (`baron validate .`) fail
+        # whenever ~/.claude/agents happened to hold one of the new persona slugs,
+        # which is common precisely because slugs like `dev` and `librarian` are
+        # the scaffold defaults.
+        if not repo_scoped or len(registered) == len(slugs):
             pass
         else:
             for slug in slugs:
@@ -190,8 +210,9 @@ def check(
                         "runtime-drift",
                         f"{runtime}: persona '{slug}' is declared in manifest.personas "
                         f"but has no agent registered, while "
-                        f"{len(registered)}/{len(slugs)} sibling personas do "
-                        f"({', '.join(sorted(registered))}) — so this project DOES "
+                        f"{len(repo_scoped)}/{len(slugs)} sibling personas are "
+                        f"registered in this project's own repo "
+                        f"({', '.join(sorted(repo_scoped))}) — so this project DOES "
                         f"hydrate agents here and '{slug}' was missed. Work routed to "
                         f"it will silently run as some other agent: wrong identity, "
                         f"wrong commit prefix, wrong capabilities. Register it per "

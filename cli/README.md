@@ -142,6 +142,12 @@ a missing persona does not fail loudly — it runs as whatever agent the runtime
 *does* have, with the wrong identity, commit prefix and capability set. That is
 how a cron ran under the wrong persona on the pilot.
 
+**That evidence must be repo-scoped.** A `~/.claude/agents` entry named after one
+of your personas proves nothing about *this* project — the directory is shared
+machine-wide, and `dev`/`librarian` are the `baron init` defaults, so collisions
+are common. A user-level file can still *satisfy* a persona (with a scope
+warning); it can never establish that the project hydrates agents at all.
+
 **All-or-nothing is silent**, because zero registered agents is *correct* in three
 legitimate cases: a Tier-2 Claude project (`HYDRATE.md` says at Tier 2 "do NOT
 emit a dead subagent file"), a freshly scaffolded project (Tier-3 hydration is
