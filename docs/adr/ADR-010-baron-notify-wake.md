@@ -1,8 +1,9 @@
 ---
 created: 2026-08-02
+accepted: 2026-08-02
 type: decision
-status: proposed
-decided_by: Vikram (pending)
+status: accepted
+decided_by: Vikram
 adr: 010
 project: barony
 related:
@@ -17,15 +18,16 @@ related:
 
 | Field | Value |
 |---|---|
-| **Status** | **Proposed** — design only; not implemented, not ratified |
+| **Status** | **Approved with changes** (Vikram, 2026-08-02) — all §8 questions answered; not yet implemented |
 | **Date** | 2026-08-02 (rev. 2, after adversarial design review) |
 | **Authors** | Claude (design proposal for Vikram) |
 | **Supersedes** | — (extends ADR-002 §2; constrained by [ADR-007](ADR-007-session-boundary.md)) |
 | **Evidence base** | FM1 / FM5 + the 2026-07-31 `research-a2a-wake-nudge` survey |
 | **Decision owner** | Vikram |
 
-> **This ADR proposes; it does not decide.** §8 lists the questions that need an answer
-> before any code.
+> **Accepted with changes, 2026-08-02.** All eight §8 questions are answered inline there.
+> The owner's substantive departures from the draft: a **slow backstop cron** rather than
+> retiring it, and a **manifest allowlist** gating who may fire a wake (§5.5).
 
 ## 1. The problem
 
@@ -175,6 +177,27 @@ supply a PAT, and until it does, chained notifies no-op with no error. The emitt
 template must say so, and `baron notify` should detect the no-op case and report it rather than
 appearing to succeed.
 
+### 5.5 — Who may fire a wake: an explicit manifest allowlist (owner decision)
+
+A wake spends the owner's Actions minutes, making `notify` the first baron command with a direct
+cost side effect. It is still **not** a capability verb — the frozen v1 vocabulary holds, per
+ADR-007 (commands are not permissions) — but the spend is gated by configuration:
+
+```yaml
+# manifest.yaml (additive, optional; schema v1.4)
+notify:
+  wake_allowed: [librarian, reviewer]   # personas that may fire a repository_dispatch
+```
+
+- **Absent key → nobody may wake.** Fail-closed, matching `baron guard`'s posture (ADR-004 §2.3):
+  a project that has not thought about who may spend money does not spend money. `--no-wake`
+  delivery keeps working regardless, so the command is never useless.
+- `baron notify --from <slug>` checks the caller against the list and refuses the wake — not the
+  delivery — when the persona is not listed, naming the manifest key.
+- This is **instructed, not enforced**: a persona could pass a `--from` that is not its own. It
+  bounds honest mistakes and makes intent auditable, which is the same class of protection every
+  other non-guard mechanism here provides. Saying so plainly matters more than the gate itself.
+
 ### 5.4 — No automatic repo-event triggers at first cut
 
 Label/review/comment triggers are tempting and the research lists them as first-class, but they
@@ -211,34 +234,40 @@ older surface loses `notify --wake` and nothing else; `--no-wake` keeps working 
 
 ## 8. Open questions for the owner (blocking implementation)
 
-1. **Is dropping the mailbox right?** §2 departs from the research's recommendation. The
-   counter-argument is that `_handoff/` carries a lot of traffic and a dedicated high-priority
-   inbox is easier for a persona to sweep first. My read is that a second surface costs more than
-   it buys, and sweep order is already expressible — but the research argued otherwise and this is
-   the call worth challenging.
-2. **Does `baron notify` retire the pilot's 15-minute cron, or run beside it?** The research says
-   it retires it. Retiring removes the safety net that catches a *missed* wake; keeping both keeps
-   the empty-sweep token burn. A middle option is a much slower cron (hourly/daily) purely as a
-   backstop.
-3. **`--max-depth 2` — right default?** And should the depth guard live in the CLI, the workflow,
-   or both?
-4. **Repo-event triggers (label/review/comment) — in or out of the first cut?** §5 proposes out.
-5. **Is this the right next build** versus P2.2 (deterministic enforcement — the largest, with
-   the sharpest evidence in FM4), P2.4 (`baron promote`), or P3.1 (Barony governs Barony)?
-6. **Handoff filename format.** `handoff.create` emits `YYYY-MM-DD-<slug>.md`; the emitted
-   `CONVENTIONS.md` documents `YYYY-MM-DD-HHMM-<from>-<topic-slug>.md`. Code and template already
-   disagree, independent of this ADR. Fix as a prerequisite here, or as its own change?
-7. **Duplicate-notify policy.** Reuse the existing handoff (wake only), suffix a new one, or
-   refuse? Today's raise-on-duplicate is the worst of the three for a nudge command.
-8. **Should `notify` be capability-gated?** It is not a new verb (ADR-007's precedent: commands
-   are not permissions) — but a wake lets persona A spend the owner's Actions minutes, which is
-   the first baron command with a direct cost side effect. Rev. 1 did not raise this at all.
+*All answered — Vikram, 2026-08-02. Recorded verbatim so the reasoning survives.*
+
+1. ~~**Is dropping the mailbox right?**~~ — **YES, stands.** Adversarial review upheld it
+   independently and supplied the stronger argument (`_handoff/` already carries `priority:`).
+2. ~~**Cron: retire or keep?**~~ — **SLOW BACKSTOP.** Drop the pilot's 15-minute cron to
+   hourly/daily as a safety net rather than retiring it. Rationale (owner): §5.3's silent-no-op
+   paths — missing PAT, missing workflow, rate limit — are real, so something must still catch a
+   wake that never fired; a slow cron kills most of the empty-sweep burn without removing the net.
+3. ~~**`--max-depth 2`, and where does the guard live?**~~ — **default 2, enforced in BOTH.** The
+   CLI refuses to fire past the cap; the workflow re-checks. Belt and braces, because §5.1's chain
+   only binds when the caller passes `--in-reply-to`.
+4. ~~**Repo-event triggers in the first cut?**~~ — **OUT**, as §5.4 proposed.
+5. ~~**Is this the right next build?**~~ — **build everything, sequenced by dependency**
+   (owner: "all either in parallel or sequential as it makes sense"). Measurement work that needs
+   no decision runs first/alongside; design-blocked items follow their ADRs.
+6. ~~**Handoff filename format.**~~ — **its own change.** The code/template disagreement predates
+   this ADR; fixing it here would smuggle an unrelated behaviour change into a wake feature.
+7. ~~**Duplicate-notify policy.**~~ — **reuse the existing handoff and wake only.** Today's
+   raise-on-duplicate yields neither delivery nor wake on the repeated-nudge case, which is this
+   command's most likely use.
+8. ~~**Capability-gating.**~~ — **GATE VIA MANIFEST CONFIG** (owner's call; §5.5 below). Not a new
+   capability verb: the frozen 10-verb vocabulary stays frozen, per ADR-007's rule that commands
+   are not permissions. Instead an explicit allowlist in `manifest.yaml` names which personas may
+   fire a wake.
 
 ## 9. Decision record
 
 - [ ] Approved as written
-- [ ] Approved with changes
+- [x] **Approved with changes** (Vikram, 2026-08-02)
 - [ ] Needs revision
 - [ ] Rejected
 
-**Status: awaiting owner review.** No implementation until §8 is answered.
+**Changes from the draft:** the pilot cron becomes a slow backstop rather than being retired
+(§8 Q2), and who may fire a wake is gated by a fail-closed `manifest.notify.wake_allowed`
+allowlist rather than left ungoverned (§8 Q8 → §5.5). Rev. 2's four corrections — push before
+dispatch, depth via handoff frontmatter, the concurrency group demoted to a stampede guard, and
+the `GITHUB_TOKEN` chain limit — are folded in. Cleared for implementation.

@@ -113,6 +113,31 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   *(Design ADR drafted: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md), status **proposed**.
   **BLOCKED on owner review** — §8 has five questions; the headline one is that the design DROPS the
   proposed `_mailbox/` surface because `_handoff/` already is it. No code until answered.)*
+- [ ] **2.6 — Handoff lifecycle under pressure** (new 2026-08-02, PM product-vision M5). Wire the
+  archive tier into `handoff close` by default — the pilot's 156-file flat `_handoff/` dir with 0
+  archived shows the lifecycle mechanism exists but exerts no pressure to use it. Add SLA autotriage
+  to `baron status` (overdue-open counts already exist; add a "stale-open → propose-close" batch
+  helper). `baron index` stays the generated view. Small, on shipped `handoff`/`status`. Evidence:
+  60/156 open in the pilot, 38%, triage currently a manual ~20-item librarian sweep.
+- [ ] **2.7 — `baron merge-check`** (new 2026-08-02, PM product-vision M6). CLI/CI-level precondition
+  verification: confirm a SHA-bound `REVIEW:PASS <sha>` comment exists **at the current head** and CI
+  is green, before the merger persona may merge — refuse naming the failed precondition, never treat a
+  label as an input. This is the mechanism half of 2.2 that needs no identity work and composes
+  directly with the shipped `strip-stale-verdict` Action (P1.4) and signets; ship it independently of
+  the identity fork below. Converts "the merger *verifying* the verdict is discipline" into "is
+  mechanism" — the exact gap class Barony exists to close (the launch FAQ already concedes it's open).
+
+> **Open decision — identity sequencing (2026-08-02, not resolved, needs the owner's call).**
+> Verified per-persona identity (GitHub App per persona + signed commits; unlocks 2.2's credential
+> half, `baron join`, and provable two-party review) has two competing sequencing recommendations
+> from the 2026-08-01 product-vision reviews: the **architect** says pull it to *first*, ahead of even
+> 2.0 — it's the precondition that converts branch protection, signets, and the audit's attribution
+> claim from convention to fact. The **PM** says *design now, build the day adopter #1 adds a second
+> operator* — zero external adopters today, so building identity infra ahead of proven need is
+> speculative platform work, and it isn't on the critical path for 2.0/2.1/2.6/2.7. Full argument on
+> both sides: vault `projects/AgentBootstrapNasikoMix/2026-08-02-synthesis-plan.md` §4. **Not
+> self-decided** per this file's own rule — propose to the owner before starting build (design work is
+> fine either way).
 
 ## P3 — Productization + dogfood
 
