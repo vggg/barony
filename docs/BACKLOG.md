@@ -49,10 +49,11 @@ registrations for moved/deleted dirs) and `baron worktree repair [PATH…]` (wra
 cut, because each renderer keeps its own token table and nothing cross-checked them against
 `schemas.RITUAL_TOKENS`. Caught in review. The fix that landed guards the two **code**
 renderers (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`); the claude /
-code-puppy / generic adapters render from **prose tables in their `HYDRATE.md`**, and no test
-parses those. A future token can still be added to the vocabulary and miss all three silently —
-the failure is quiet by construction, since both renderer styles fall back to echoing the raw
-token rather than erroring.
+code-puppy / generic adapters render from **prose in their `HYDRATE.md`** (two pipe tables and
+one bullet list), and no test parses those. A future token can still be added to the vocabulary
+and miss all three silently — and silently in two different ways: the code renderers fall back
+to echoing the raw token, while the prose surfaces have no fallback at all, so an absent row is
+simply not there. Neither path raises.
 
 **Design sketch:** extend `tests/bi_runtime_accept.py` with a second parse pass — it already
 reads the adapters' machine-readable capability maps, so it is the natural home — asserting

@@ -48,8 +48,8 @@ def test_parametric_verbs_are_in_vocabulary() -> None:
 def test_every_ritual_token_renders_on_every_runtime() -> None:
     """A ritual token with no prose on some runtime silently disappears there.
 
-    Both renderers fall back to echoing the raw token, so a missing entry is not a
-    crash — it is the rule quietly vanishing from that runtime's persona body. This
+    Both code renderers fall back to echoing the raw token, so a missing entry is
+    not a crash — it is the rule quietly vanishing from that runtime's persona body. This
     is the gap that shipped `check_review_feedback` to three runtimes and not the
     fourth; the vocabulary is the contract, so every renderer must cover it.
 

@@ -88,12 +88,13 @@ token as prose naming the SHA test.
 fails *silently* everywhere, by two different mechanisms:
 
 - **The two code renderers** (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`) look
-  the token up in a dict and **fall back to echoing the raw token** — the persona body gets a bare
-  `check_review_feedback` bullet instead of the instruction.
-- **The three prose tables** (claude / code-puppy / generic `HYDRATE.md`) have no code and no
-  fallback: an absent row simply **isn't there**, and the hydrating agent renders nothing at all.
+  the token up in a dict and **fall back to echoing the raw token** — the persona body gets the
+  literal string `check_review_feedback` where the instruction should be.
+- **The three prose surfaces** (claude / code-puppy `HYDRATE.md` pipe tables, generic's bullet
+  list) have no code and no fallback: an absent row simply **isn't there**, so the hydrating agent
+  is given nothing to render from.
 
-Neither errors. That is exactly what happened on the first cut of this change (caught in review,
+Neither path raises. That is exactly what happened on the first cut of this change (caught in review,
 before merge — the token shipped to three runtimes and not the fourth, the one whose selling point
 is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses capability maps,
 never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real prose on **both

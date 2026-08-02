@@ -63,8 +63,8 @@ in opposite directions, and both answers were wrong.
   project's reviewer verdict labels and comments that the head moved, so that —
   where it is installed and covers the label — "a review-state label is present"
   means "a verdict exists at *this* head". Owner gates (`needs-human`, `hold`,
-  `contract-change`) are
-  explicitly excluded — only the owner lifts those. Dependency-free (bash + `gh`,
+  `contract-change`) are explicitly excluded — only the owner lifts those.
+  Dependency-free (bash + `gh`,
   built-in `GITHUB_TOKEN`), no-ops on fork PRs. Carries the `lock-guard.yml`-style
   honest limitation: it removes a misleading label, it cannot stop a persona that
   never reads verdicts — the merge gate still lives in the Merger's preconditions.
