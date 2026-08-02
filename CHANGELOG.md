@@ -6,12 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Plugin/skill bundle is unreleased since **1.8.0** (**1.9.0** pending, below —
-the pending bundle was relabelled from 1.8.2 when the P1 fold-in added a schema
-token and a new emitted workflow; a patch label would have been wrong). The
-`barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
-CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4–0.7.0** are pending.
+_Nothing yet._
+
+## [1.9.0] — 2026-08-02
+
+The governance-hardening release: the 2026-07-31 pilot ways-of-working folded
+into the canonical templates (ADR-008), and spec↔runtime drift detection
+(P2.3). Bundles everything accumulated since **1.8.0** — the plugin/skill was
+unreleased across 1.8.1 and 1.8.2, and the pending bundle was relabelled to
+**1.9.0** when the P1 fold-in added a schema token and a new emitted workflow;
+a patch label would have been wrong.
+
+**CLI track (`barony` on PyPI, versioned independently — `cli/pyproject.toml`):**
+0.5.1, 0.5.2, 0.5.3, 0.5.5 and 0.5.6 are live. **0.5.4 was never published** (its
+content ships inside 0.5.5), and **0.6.0 is likewise not published separately** —
+its content ships inside **0.7.0**, which is the version released here. Skipping
+an intermediate version rather than back-publishing it follows the 0.5.4
+precedent: the CHANGELOG keeps the full per-version history either way.
 
 ### Added — `barony` 0.7.0: spec↔runtime drift detection (AGENT-TASKS P2.3)
 
