@@ -16,14 +16,14 @@ related:
 | Field | Value |
 |---|---|
 | **Status** | **Proposed** — design only; not implemented, not ratified |
-| **Date** | 2026-08-01 |
+| **Date** | 2026-08-01 (rev. 2, after adversarial design review) |
 | **Authors** | Claude (design proposal for Vikram) |
 | **Supersedes** | — (mechanizes [ADR-008](ADR-008-ways-of-working-2026-07-31.md) §4) |
 | **Evidence base** | FM6 / badminton-analyzer D57 + D56 (2026-07-31) |
 | **Decision owner** | Vikram |
 
 > **This ADR proposes; it does not decide.** Per `AGENT-TASKS.md`'s rules of the road, product
-> direction is the owner's call. §9 lists the questions that need an answer before any code.
+> direction is the owner's call. §10 lists the questions that need an answer before any code.
 
 ## 1. Summary
 
@@ -40,34 +40,28 @@ The failure it addresses, in one line from the FM6 write-up:
 Agents do not re-read `decisions/` when choosing work. They re-derive direction from the direction
 doc, the open epics, and the backlog. On the pilot, a directional decision was ratified across
 *multiple sessions* and still kept being re-litigated, because the epic encoding the superseded
-direction sat open **generating tickets**. Every fresh session read the stale surface and re-derived
-the parked direction. The owner's question — *"why do we keep circling on this?"* — is the symptom
-this command exists to remove.
+direction sat open **generating tickets**. The owner's question — *"why do we keep circling on
+this?"* — is the symptom this command exists to remove.
 
 ## 2. The boundary — what baron decides, and what it must never decide
 
-The single most important design constraint, and the one that makes this buildable:
+> **baron never determines *what* a decision contradicts.** The contradicted surfaces are
+> **declared input**. baron performs the mechanical steps and **verifies discharge**.
 
-> **baron never determines *what* a decision contradicts.** Judging that epic #214 encodes a
-> direction this decision supersedes is semantic work belonging to the agent or the owner. baron
-> takes the contradicted surfaces as **declared input**, performs the mechanical steps, and
-> **verifies discharge**.
+The justification is **not** "detection was never the problem." Rev. 1 claimed that, on the
+grounds that D57 names epic #214 itself. That reasoning is unsound: D57 is the *RCA output*,
+written after the failure. During the multi-session window when the decision was silently losing,
+no entry named #214. Detection genuinely was part of the failure.
 
-This is [ADR-007](ADR-007-session-boundary.md)'s boundary applied again: baron is the clerk who
-keeps the books, not the judge who decides the case. A `baron decision` that tried to infer
-contradiction would need a model call, and would have crossed the line ADR-007 drew.
-
-What is left after that subtraction is still the whole failure mode — because FM6 was never a
-*detection* failure. Nobody was confused about which epic contradicted D57; it was named in the
-decision entry itself. The failure was that **naming it changed nothing about whether an agent
-could still pick it up.** Mechanizing the discharge is mechanizing the part that actually broke.
+The real justification is [ADR-007](ADR-007-session-boundary.md)'s boundary plus an asymmetry of
+costs: inferring contradiction needs a model call (crossing the boundary), and its **worst failure
+mode is a false positive that parks live work** — strictly worse than the failure being fixed. A
+human or agent naming the surfaces is cheap; baron guessing them is not.
 
 ## 3. Decision — the reconciliation contract lives in the ledger, as data
 
-Per [ADR-003](ADR-003-baron-cli.md) §2.2 the substrate IS the database: no second store, no
-sidecar. A ratified decision's obligations live **inside its `decisions/index.md` entry**, in a
-marker-delimited machine-owned region — the same pattern `baron index` already uses for
-`_handoff/README.md`, so generation never eats prose:
+Per [ADR-003](ADR-003-baron-cli.md) §2.2 the substrate IS the database. A ratified decision's
+obligations live **inside its `decisions/index.md` entry**, in a marker-delimited region:
 
 ```markdown
 ### D57 — VLM commodity-footage intelligence is the product (2026-07-31, Vikram)
@@ -76,113 +70,198 @@ marker-delimited machine-owned region — the same pattern `baron index` already
 
 <!-- BEGIN BARON RECONCILE -->
 supersedes:
-  - ref: docs/adr/ADR-0011.md#phase-priority   # back-pointer required both ways
-  - ref: north-star.md#2
+  - ref: docs/adr/ADR-0011.md          # a FILE, in a named repo
+    repo: code
 park:
-  - issue: 214                    # the work generator
+  - issue: 214
     repo: code
 broadcast:
-  - handoff: _handoff/2026-07-31-...-rfc-all-vlm-intelligence.md
+  - handoff: 2026-07-31-carson-rfc-all-vlm-intelligence   # filename STEM, not a path
 direction_doc:
   - path: docs/north-star.md
-    repo: code                    # Librarian cannot write there
-    via_ticket: 231               # so the obligation is a routed ticket
+    repo: code
+    ticket: 231                        # tracking only — NOT a discharge condition (§3.3)
 <!-- END BARON RECONCILE -->
 ```
 
-Four obligation types, chosen because each has a **mechanically checkable** discharge condition —
-that is the selection criterion, not completeness:
+`repo:` names an entry in `manifest.repos[].id` — not a backlog location; those are different
+things and rev. 1 conflated them.
 
-| Obligation | Discharged when |
+### 3.1 — Precedent honesty: this is not the handoff index
+
+Rev. 1 justified the marker block by pointing at `_handoff/README.md`. **That precedent is the
+wrong shape**, and the difference matters: the handoff index is a **derived view**, fully
+regenerable from the handoff files, so a corrupted block is repaired by re-running `baron index`.
+This block is **authored primary data** — lose it and the obligations are gone. It is the first
+machine-owned region of that kind in the repo (the handoff index is the only one today).
+
+What follows, and must be designed rather than assumed:
+
+- `reconcile` **only appends or updates its own block**, never regenerates it from elsewhere.
+- Concurrency: the ledger's push-retry (ADR-003 §2.5) is the model, but **not the code** —
+  `ledger.add_entry` rolls back with `git reset --hard HEAD~1`, which is safe only for a
+  just-created commit. `reconcile` edits an *existing* entry, so it needs its own narrower
+  rollback. Flagged explicitly because copying the ledger's path would be a data-loss bug.
+- A malformed block is **reported, never silently rewritten** — the ADR-003 §2.6 precedent
+  (report numbering problems; don't renumber).
+
+### 3.2 — `park`: the read-side is the mechanism
+
+This is what rev. 1 got wrong, and it is the heart of the design.
+
+Rev. 1 discharged `park` on *"issue closed **or** park label + citing comment."* **D57's own
+surfaces table records epic #214 as parked exactly that way — `label 'parked' + decision comment`
+— and left OPEN. FM6's root cause is that #214 "sat open generating work."** Rev. 1's check would
+have printed green on the precise state that caused the failure it cites. A discharge condition
+already satisfied by the motivating incident is not a mechanism.
+
+The fix: **a park is discharged only when an agent's own backlog query stops returning the item.**
+
+| Discharge | Condition |
 |---|---|
-| `supersedes` | the named artifact carries a back-pointer to this decision (checked both ways) |
-| `park` | the issue is closed, **or** carries the project's park label **and** a comment citing this decision |
-| `broadcast` | a `_handoff/` with `for: all` exists citing this decision |
-| `direction_doc` | the doc references this decision, **or** the routed ticket is closed |
+| **closed** | the issue is closed — nothing returns it |
+| **filtered** | the issue carries the park label, **and** the project declares that label in `manifest.backlog.park_label`, **and** the rendered `check_backlog` query excludes it |
 
-An obligation whose discharge cannot be checked mechanically does not belong here — it belongs in
-the prose above the marker.
+The `filtered` route needs a real spec change — the honest cost of doing this properly:
 
-## 4. Command surface
+- `manifest.backlog` gains an optional **`park_label`** (additive; schema v1.3).
+- The `check_backlog` renderers — the two code renderers and the three adapter prose surfaces
+  (ADR-008 §2's list) — emit a query that **excludes** `park_label` when declared.
+- `check` verifies the declaration and the label; it cannot verify that a hand-written agent
+  honoured the query. That residue is instructed, and §7 says so.
 
-- **`baron decision new`** (exists, M3) — unchanged. Allocates the number via push-retry.
-- **`baron decision reconcile <N> [--supersedes REF] [--park ISSUE] [--broadcast] [--direction-doc PATH [--via-ticket N]]`**
-  — writes the obligation block, then performs the mechanical steps it can: applies the park label
-  and posts the citing comment via the forge; drafts the `for: all` broadcast handoff. Prints what
-  it could **not** do (a direction doc in a repo baron cannot write) as explicit remaining work.
-- **`baron decision check [N] [--json]`** — verifies each declared obligation against live state.
-  Exit 0 all-discharged / 1 outstanding. CI-usable.
-- **`baron status`** gains a `decision-unreconciled` **red** row. This is the load-bearing
-  integration: `baron status` already gates CI and is already the thing personas and the owner
-  read. A ratified decision with an open obligation becomes an alarm, not a memory.
+**Without `park_label` declared, the only discharge is `closed`.** The default fails toward the
+strong condition.
 
-## 5. Forge Protocol extension (additive)
+### 3.3 — `direction_doc`: a ticket is an index, not a record
 
-Reconciliation needs issue operations the Protocol lacks: `list_issues`, `label_issue`,
-`comment_issue`, `close_issue`. Added **additively**, exactly as ADR-003 §5.1 added
-`create_branch` / `close_pr` for `baron lock`: a `baron.forges` plugin implementing only the older
-surface loses decision-reconciliation and nothing else. `park` obligations on a project whose
-backlog is a **file** (`manifest.backlog.source: file`) need no forge at all — the check is a
-text assertion, and that path must keep working with no `gh` installed (ADR-003 §2.3).
+Rev. 1 discharged this on *"the doc references this decision, **or** the routed ticket is closed."*
+The second branch is exactly what this repo shipped into every template eight days ago and called
+a failure: **an index substituted for the record** (ADR-008 §1, and its corollary that a green
+signal elsewhere is not the gate). A closed ticket asserts that someone believes the doc was
+updated.
 
-## 6. Deliberately out of scope
+**Discharge is the doc itself referencing this decision.** `ticket:` is retained for routing and
+traceability — so `check` can say *"outstanding; tracked by #231"* — but never as a discharge
+condition. Where the doc lives in a repo baron cannot read, the obligation reports
+**`unverifiable`**, never green (§4).
 
-- **Semantic contradiction detection** — §2. The declared list is the input.
-- **Auto-parking without an explicit list** — a command that closes work it inferred was
-  contradicted is a much worse failure than the one being fixed.
-- **Editing a direction doc baron cannot write.** Route a ticket; never reach across the
-  capability boundary. (ADR-008 §4 step 3.)
-- **D57's fifth move — "track delivered-value, because shipped wins generate no tickets."** Real,
-  and the same class of invisibility, but it is a *fleet-health metric*, not a decision obligation.
-  It belongs to AGENT-TASKS P3.2. Noted so the omission is deliberate rather than forgotten.
-- **Enforcement.** `park` makes contradicting work *visible as un-parked* and stops it being
-  silently claimable; it does not make claiming it impossible. Honest tier: **enforced where the
-  forge state is the control** (a closed issue cannot be picked up), **instructed elsewhere**. The
-  templates must not oversell this — the ADR-008 §3 lesson.
+### 3.4 — `supersedes` and `broadcast`
 
-## 7. Alternatives considered
+**`supersedes`** discharges when the named artifact contains a literal reference to this decision
+(`D57`, or the ADR id) **and** the decision entry names the artifact — a back-pointer both ways,
+as a plain substring search over a **file in a declared repo**. Rev. 1's examples used section
+anchors (`ADR-0011.md#phase-priority`, `north-star.md#2`); those are **not mechanically
+verifiable** and are dropped. Anchor-level precision belongs in the prose above the block.
+
+**`broadcast`** discharges when a `_handoff/` with `for: all` references this decision. Store the
+filename **stem**, not a path: `baron handoff close` relocates files to `_handoff/archive/YYYY/`,
+so a stored path would rot. Resolution searches both locations.
+
+## 4. Three states, not two
+
+`check` reports per obligation: **discharged** / **outstanding** / **unverifiable** (forge
+unreachable, `gh` absent, or the artifact is in a repo not present locally). `unverifiable` is
+never counted as discharged and never raised as red — it is a warn naming exactly what could not
+be reached. Collapsing it into either neighbour would make the command lie in one direction or cry
+wolf in the other.
+
+## 5. Command surface, and what `baron status` may assume
+
+- **`baron decision new`** (exists, M3) — unchanged.
+- **`baron decision reconcile <N> [--supersedes REF] [--park ISSUE] [--broadcast] [--direction-doc PATH [--ticket N]]`**
+  — writes/updates the block, then performs the mechanical steps it can. **Idempotent and
+  resumable**: a re-run after partial failure re-attempts only what is outstanding. The local block
+  is committed *before* remote steps are attempted, so a network failure leaves a recorded
+  obligation rather than a silent no-op.
+- **`baron decision check [N] [--fetch] [--json]`** — exit 0 = nothing outstanding / 1 = outstanding.
+- **`baron status`** gains a `decision-unreconciled` row — **red only for locally-decidable
+  obligations.** This is a constraint, not a detail: `status.py` is pure local git today, with
+  network behind opt-in `--fetch`, and ADR-003 §2.3 keeps `gh` optional. So by default `status`
+  evaluates what it can read locally and reports the rest as `unverifiable` warns; forge-dependent
+  checks run only under `--fetch`. Waiver SUBJECT: `decision-unreconciled:D<N>`, so
+  `.baron-waivers.yaml` can park a known-outstanding obligation with a reason and an expiry.
+
+### 5.1 — Backlog sources
+
+`manifest.backlog.source` admits `file`, `github_issues`, and `jira`.
+
+| Source | `park` support |
+|---|---|
+| `github_issues` | full — `closed` or `filtered`, via the forge |
+| `file` | `filtered` only, as a text assertion (item absent, or marked with `park_label`); **needs no `gh`**, per ADR-003 §2.3 |
+| `jira` | **not supported at first cut** — reports `unverifiable`. Named so the omission is deliberate; a Jira path needs the forge-plugin treatment (`docs/BACKLOG.md`) |
+
+## 6. Forge Protocol extension (additive)
+
+Needs `list_issues`, `label_issue`, `comment_issue`, `close_issue` — added additively, exactly as
+ADR-003 §5.1 added `create_branch` / `close_pr` for `baron lock`. A `baron.forges` plugin
+implementing only the older surface loses decision-reconciliation and nothing else.
+
+## 7. Enforcement class — stated plainly
+
+**Nothing in this design is `enforced` in the [ADR-004](ADR-004-baron-guard-enforcement.md) sense.**
+ADR-004 defines enforced as *blocked before the call runs*. Nothing here vetoes a tool call.
+
+Rev. 1 claimed tier `enforced` for "a closed issue cannot be picked up" while citing ADR-008 §3's
+lesson in the same sentence — and ADR-008 §3 says verbatim that a label-manipulating workflow "is
+not an enforcement mechanism in the ADR-004 sense." A closed or filtered issue is the same class:
+it changes what a **query returns**. That is genuinely valuable — the difference between work that
+is claimable and work that is not — but it is *removal from a default view*, not a veto, and the
+templates must not blur the two. Rev. 1 was also internally inconsistent, saying "does not make
+claiming it impossible" and `enforced` one line apart.
+
+Honest tier: **instructed, with a mechanical visibility surface** — the same class of strength as
+`lock-guard.yml`: enforcement by convention plus a visible alarm that `baron status` will not let
+you forget.
+
+## 8. Deliberately out of scope
+
+- **Semantic contradiction detection** (§2).
+- **Auto-parking without an explicit declared list.**
+- **Editing a direction doc baron cannot write** — route a ticket; never reach across the
+  capability boundary.
+- **D57's fifth move — delivered-value tracking.** A fleet-health metric, not a decision
+  obligation; AGENT-TASKS P3.2.
+- **ADR-008 §4 step 5 — session-start hydration of directional decisions.** Complementary, and
+  currently mechanized nowhere; `baron session start` (ADR-007) is the natural host. Not designed
+  here, and **added to `docs/BACKLOG.md`** so it is tracked rather than quietly dropped.
+- **Supersession lifecycle.** When D60 supersedes D57, D57's outstanding obligations should stop
+  being red. `check` treats decisions independently at this cut, so a superseded decision must be
+  waived by hand — a known gap, §10 Q4.
+
+## 9. Alternatives considered
 
 | Alternative | Why rejected |
 |---|---|
-| **A. Prose protocol only** (status quo, ADR-008 §4) | Already shipped and already known insufficient — the pilot re-litigated a decision that *was* correctly recorded. Prose does not reach the control surface. |
-| **B. A sidecar reconciliation store** (JSON/SQLite) | Violates ADR-003 §2.2 head-on. The obligations must be legible to the humans and agents reading `decisions/index.md`, in the file they already read. |
-| **C. baron infers contradictions from decision text** | Needs a model call; crosses ADR-007's boundary; and the highest-cost failure mode is a false positive that parks live work. |
-| **D. Fold into `baron session start`** (surface un-reconciled decisions at session open) | Complementary, not a substitute — it would put the obligation in front of an agent but still never discharge it. Worth doing *after* this lands (§9). |
+| **A. Prose protocol only** (status quo, ADR-008 §4) | Already shipped and already known insufficient — the pilot re-litigated a decision that *was* correctly recorded. |
+| **B. A sidecar store** (JSON/SQLite) | Violates ADR-003 §2.2. Obligations must be legible in the file humans and agents already read. |
+| **C. baron infers contradictions** | Model call; crosses ADR-007's boundary; worst failure is parking live work (§2). |
+| **D. Fold into `baron session start`** | Complementary, not a substitute — it puts the obligation in front of an agent but never discharges it. Tracked as the §8 session-hydration item. |
 
-## 8. Consequences
+## 10. Open questions for the owner (blocking implementation)
 
-- Positive: the pilot's exact failure gets a mechanism at the layer it failed — a ratified decision
-  cannot quietly leave contradicting work claimable, because `baron status` goes red until it
-  does not. Decision durability becomes a *governed operation* rather than a Librarian's memory.
-- Positive: the obligation block makes reconciliation **auditable after the fact** — which is what
-  the `multi-agent-audit` rubric wants to measure and currently cannot.
-- Negative / costs: a fourth machine-owned region in a human file; a forge Protocol extension; real
-  Librarian work per decision (the command reduces it, it does not remove it). Projects whose
-  backlog is a file get a weaker check than those on a forge.
-- The capability vocabulary is untouched — `baron decision` composes existing verbs and gates
-  nothing new. Consistent with ADR-007: these are commands, not permissions.
+1. **Scope for a first cut.** `park` alone — demonstrably the obligation that caused FM6 — or all
+   four? `park` alone is the smallest thing that addresses the incident, but it is also the one
+   that now carries a schema change (§3.2).
+2. **Is the `park_label` read-side change acceptable?** It is what makes `park` real rather than
+   theatre, but it touches `manifest.schema.md` (v1.3) and all five `check_backlog` renderers.
+   Without it, `park` discharges only on **closed** — which may be too blunt for the
+   "parked, recoverable" state D57 deliberately wanted.
+3. **Who may run `reconcile`?** ADR-008 §4 makes intake the Librarian's surface. Capability-gate to
+   the librarian archetype, or leave it to convention?
+4. **Retrofit and supersession.** Block-less legacy decisions: green (opt-in) or warn? And is
+   hand-waiving a superseded decision's obligations acceptable for a first cut (§8)?
+5. **Is this the right next build at all** — versus P2.3 (`validate` spec↔runtime drift; small,
+   self-contained, no schema change) or P2.5 (`baron notify`)? P2.1 is marked "the next thing to
+   extend on," which is why it was drafted first — but §3.2's schema change makes it materially
+   bigger than it looked, and that changes the comparison.
 
-## 9. Open questions for the owner (blocking implementation)
-
-1. **Scope for a first cut.** Is the full four-obligation model right, or does `park` alone —
-   demonstrably the one that caused FM6 — earn its way in first?
-2. **Park label name.** Reuse the pilot's `parked`, or a namespaced `baron:parked`? Affects whether
-   `strip-stale-verdict.yml`-style workflows could ever confuse it with a verdict label.
-3. **Who may run `reconcile`?** ADR-008 §4 makes intake the Librarian's surface. Should the command
-   refuse when the acting persona is not the librarian archetype, or stay uncapability-gated and
-   leave it to convention?
-4. **Retrofit or not.** Existing decisions have no obligation block. Does `check` treat a
-   block-less decision as green (opt-in) or warn (nudging retrofit)?
-5. **Is this the right next build at all** — versus AGENT-TASKS P2.3 (`validate` spec↔runtime
-   drift, small and self-contained) or P2.5 (`baron notify`, which shares the "signal doesn't reach
-   the agent" family)? P2.1 is marked "the next thing to extend on," which is why it is drafted
-   first, but the sequencing is the owner's call.
-
-## 10. Decision record
+## 11. Decision record
 
 - [ ] Approved as written
 - [ ] Approved with changes
 - [ ] Needs revision
 - [ ] Rejected
 
-**Status: awaiting owner review.** No implementation until §9 is answered.
+**Status: awaiting owner review.** No implementation until §10 is answered.

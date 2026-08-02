@@ -20,15 +20,25 @@ a ratified decision must reach the surfaces personas pull *work* from, not just
 `decisions/`. **Awaiting owner review — nothing implemented.**
 
 Load-bearing boundary: **baron never determines what a decision contradicts** —
-that judgement needs a model call and would cross ADR-007's line. The
-contradicted surfaces are declared input; baron performs the mechanical steps
-and, critically, **verifies discharge**. Four obligation types (`supersedes`,
-`park`, `broadcast`, `direction_doc`) chosen because each has a mechanically
-checkable discharge condition, recorded in a marker-delimited region inside the
-`decisions/index.md` entry (ADR-003 §2.2 — no second store). `baron status`
-gains a `decision-unreconciled` red, which is what makes it stick. Additive
-forge Protocol extension for issue ops, per the ADR-003 §5.1 precedent.
-§9 lists five questions blocking implementation.
+inferring it needs a model call (crossing ADR-007's line) and its worst failure
+is parking live work. Surfaces are declared input; baron performs the mechanical
+steps and **verifies discharge**, reporting three states (discharged /
+outstanding / **unverifiable**) so an unreachable forge is never scored as
+either. Obligations live in a marker-delimited region inside the
+`decisions/index.md` entry (ADR-003 §2.2 — no second store).
+
+**Rev. 2 after adversarial design review**, which found four blocking defects in
+rev. 1. The material one: `park` discharged on "closed OR label+comment", but
+D57's own table records the FM6 epic as parked exactly that way and left OPEN —
+the check would have gone green on the state that caused the failure it cites.
+Park now discharges only when an agent's backlog query stops returning the item
+(closed, or filtered via a declared `manifest.backlog.park_label` — a real
+schema change, which is the honest cost). Also corrected: the `enforced` tier
+claim (nothing here vetoes a call — instructed + visibility, per ADR-004);
+`direction_doc` discharging on a closed ticket (an index substituted for the
+record — the exact ADR-008 §1 failure); and the "detection was never the
+problem" justification, which generalized from a post-hoc RCA.
+§10 lists five questions blocking implementation.
 
 ### Added — plugin 1.9.0 + `barony` 0.6.0 (ways of working 2026-07-31 — ADR-008)
 
