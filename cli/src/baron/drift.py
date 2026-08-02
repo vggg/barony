@@ -21,8 +21,12 @@ produce zero registered agents:
   hydration is conversational (ADR-006 §3). Zero is the correct intermediate state.
 - a **Tier-1** runtime (generic, and code-puppy's documented fallback).
 
-Meanwhile ``tier: auto`` — the default ``baron init`` writes — cannot be resolved
-statically at all: it is a per-session self-assessment.
+``tier: auto`` — the default ``baron init`` writes — is a per-session
+self-assessment, so it cannot be resolved statically. baron treats it as Tier 3.
+That is a JUDGEMENT CALL, not a sidestep: under ``auto`` HYDRATE.md permits
+per-persona degradation to Tier 2, so a persistent partial registry could be
+legitimate degradation rather than drift, and baron cannot tell them apart. It
+errors, and the message names the escape hatch (see ``_persona_tier``).
 
 So baron does not ask "does a registry exist?" It asks **"has this project
 registered SOME of its personas and not others?"** Partial registration is
@@ -173,7 +177,7 @@ def _persona_tier(collab_root: Path, manifest: dict, slug: str, runtime: str) ->
             return None
         try:
             data = yaml.safe_load((collab_root / spec).read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
             return None  # validate's schema pass owns reporting a broken spec
         if not isinstance(data, dict):
             return None
@@ -265,7 +269,9 @@ def check(
                         f"manifest. If '{slug}' intentionally runs at Tier 2 "
                         f"(no subagent by design), declare it in its persona.yaml as "
                         f"runtime.adapters.{runtime}.tier: 2 and this stops being "
-                        f"drift. Looked in: {where}."
+                        f"drift — but note that override is PERMANENT and locks the "
+                        f"persona out of Tier 3, so its whole-tool denials become "
+                        f"instruction-only. Looked in: {where}."
                     )
                 )
 

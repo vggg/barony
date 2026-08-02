@@ -43,8 +43,11 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 `barony` **0.7.0**. `baron validate` compares the personas a project declares against the
 agents its runtime has registered. **The signal is partial registration:** some registered
 and others not is evidence the project hydrates agents here, so the gaps are errors;
-all-or-nothing is silent (correct for Tier-2, Tier-1, and a fresh scaffold, and it sidesteps
-`tier: auto`, which cannot be resolved statically). Explicit `tier: 2` is skipped. Only
+all-or-nothing is silent (correct for Tier-2, Tier-1, and a fresh scaffold). Explicit
+`tier: 2` is skipped at both the manifest and per-persona level; **`tier: auto` is treated as
+Tier 3 — a judgement call, not a sidestep** (under `auto` HYDRATE.md permits per-persona
+degradation, which baron cannot distinguish statically from drift), with an escape hatch named
+in the error message. Only
 runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts out.
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.

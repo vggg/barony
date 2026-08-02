@@ -41,7 +41,10 @@ those two.
   sidestep:** under `auto` HYDRATE.md permits per-persona degradation to Tier 2,
   which baron cannot distinguish statically from drift. It errors, and names the
   escape hatch in the message — declare `runtime.adapters.<runtime>.tier: 2` on
-  that persona and the check honours it. Explicit `tier: 2` at **either** the
+  that persona and the check honours it. **That escape hatch has a real cost, and
+  the message says so:** the override is permanent and locks the persona out of
+  Tier 3, so its whole-tool denials drop from enforced to instruction-only —
+  whereas the ambiguity it resolves (`auto` degradation) is per-session. Explicit `tier: 2` at **either** the
   manifest or the per-persona level (`persona.schema.md` v1.1) is skipped.
 - **Registries** — `claude` (`.claude/agents/<slug>.md`) and `code-puppy`
   (`.code_puppy/agents/<slug>.json`), searched collab-root → `paths.root` → each
@@ -59,7 +62,7 @@ those two.
   design, and a partially-registered project fails there deliberately.
   `--no-runtime-drift` opts out. `baron init` passes it for its own self-check —
   init validates the spec it wrote, not the environment around it.
-- **Tests:** `cli/tests/test_drift.py` (11 cases: the pilot shape, the
+- **Tests:** `cli/tests/test_drift.py` (13 cases: the pilot shape, the
   fresh-scaffold regression, explicit tier 2 vs 3, `paths.root` resolution,
   frontmatter matching, and an anti-vacuity guard that fails if `check` is
   gutted). Two `test_scaffold.py` assertions were reading the *developer's* real

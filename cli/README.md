@@ -157,7 +157,12 @@ per-persona, per-session degradation to Tier 2, so a persistent partial registry
 *could* be legitimate degradation rather than drift. baron cannot tell them apart
 statically. It errors, and the message names the escape hatch: declare
 `runtime.adapters.claude.tier: 2` in that persona's `persona.yaml` and the check
-honours it. Explicit `tier: 2` — at project or persona level — is skipped outright.
+honours it. **Weigh that before reaching for it:** the override is permanent and
+locks the persona out of Tier 3 (`HYDRATE.md` makes `auto`→Tier 3 conditional on
+its absence), so its whole-tool denials drop from *enforced* to *instruction-only*
+— while the ambiguity it silences is only per-session. Suppressing a warning
+should not quietly cost you enforcement. Explicit `tier: 2` — at project or
+persona level — is skipped outright.
 
 Registration is matched by the filename the adapter writes **and** by a `name:`
 frontmatter match, since that is what Claude actually keys a subagent on.
