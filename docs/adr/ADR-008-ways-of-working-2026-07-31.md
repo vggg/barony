@@ -79,10 +79,10 @@ arbitrating it (§3 below is that removal).
 (`references/persona.schema.md`, schema v1.2): *on this persona's open PRs, act on any review
 verdict that is LIVE at the current head — before claiming new work.* It ships in the `__DEV__`
 template's ritual, resolving **before** `check_backlog`. Every runtime renders it — but note the
-two different mechanisms: the claude / code-puppy / generic adapters carry a **token table** in
-`HYDRATE.md`, while pydantic-ai hydrates **in code** (`baron.runtimes.pydantic_ai`), so its
-rendering lives in a Python table, not in its `HYDRATE.md`. `baron init`'s runtime kits render the
-token as prose naming the SHA test.
+two different mechanisms: the claude / code-puppy / generic adapters carry a **prose ritual-token
+surface** in `HYDRATE.md`, while pydantic-ai hydrates **in code**
+(`baron.runtimes.pydantic_ai`), so its rendering lives in a Python dict, not in its
+`HYDRATE.md`. `baron init`'s runtime kits render the token as prose naming the SHA test.
 
 **Corollary — the vocabulary needs a cross-runtime drift guard.** A token missing from a renderer
 fails *silently* everywhere, by two different mechanisms:
@@ -104,7 +104,7 @@ code renderers**.
 `HYDRATE.md`, and **no test parses them**. A future ritual token can still be added to the
 vocabulary and silently miss all three. Closing that needs an acceptance-harness extension
 (`bi_runtime_accept.py` is capability-maps-only by construction) — tracked in `docs/BACKLOG.md`,
-not fixed here, because inventing a token-table parser under review pressure is how the *first*
+not fixed here, because inventing a ritual-surface parser under review pressure is how the *first*
 version of this change went wrong.
 
 **Rationale / evidence.** The dev-side half of §1 needs a *place to happen*. A rule in
@@ -178,7 +178,7 @@ not a requirement.
   executes it, and a mechanism that narrows the window. New projects inherit all three.
 - Positive: decisions become reconcilable-by-protocol rather than by whoever remembers.
 - Negative / costs: one more session-ritual token to render on every runtime and in the scaffold
-  (bounded — a token table row each); one more emitted workflow that a project may not want;
+  (bounded — one ritual-surface entry each); one more emitted workflow that a project may not want;
   the §4 intake is real Librarian work per decision, and it is discipline, not enforcement —
   the templates say so rather than overselling.
 - The capability vocabulary is untouched. Everything here composes from the frozen v1 verbs and

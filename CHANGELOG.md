@@ -41,15 +41,16 @@ in opposite directions, and both answers were wrong.
   `decisions/`, so a recorded-but-unreconciled decision is invisible to exactly
   the surfaces that drive work. Honest label: discipline-in-a-doc; the mechanical
   version is the proposed `baron decision` (AGENT-TASKS P2.1).
-- **New session-ritual token `check_review_feedback`** (ADR-008 §2; persona schema
-  **v1.2**) — *act on review verdicts that are LIVE at your current head, before
-  claiming new work.* Ships in the `__DEV__` ritual ordered **before**
+- **New session-ritual token `check_review_feedback`** (ADR-008 §2; persona
+  schema **v1.2**) — *act on review verdicts that are LIVE at your current head,
+  before claiming new work.* Ships in the `__DEV__` ritual ordered **before**
   `check_backlog` (the ordering is the substance: feedback on work you have
-  outranks a new ticket). Mapped in the claude / code-puppy / generic `HYDRATE.md`
-  token tables **and** in the pydantic-ai hydrator (which renders in code, not in a
-  table), rendered as SHA-test prose by `baron init`'s runtime kits, and added to
-  baron's `RITUAL_TOKENS`. Additive — a ritual omitting it behaves exactly as
-  before, and unknown tokens were already a warning, not an error.
+  outranks a new ticket). Mapped in the claude / code-puppy / generic
+  `HYDRATE.md` prose ritual-token surfaces **and** in the pydantic-ai hydrator
+  (which renders in code, not in prose), rendered as SHA-test prose by `baron
+  init`'s runtime kits, and added to baron's `RITUAL_TOKENS`. Additive — a
+  ritual omitting it behaves exactly as before, and unknown tokens were already
+  a warning, not an error.
 - **New cross-runtime drift guard** for the ritual vocabulary
   (`test_every_ritual_token_renders_on_every_runtime`). Both **code** renderers
   fall back to echoing the raw token, so a missing entry does not crash — the
@@ -66,11 +67,11 @@ in opposite directions, and both answers were wrong.
   means "a verdict exists at *this* head". Owner gates (`needs-human`, `hold`,
   `contract-change`) are explicitly excluded — only the owner lifts those.
   Dependency-free (bash + `gh`, built-in `GITHUB_TOKEN`), no-ops on fork PRs.
-  Carries the `lock-guard.yml`-style
-  honest limitation: it removes a misleading label, it cannot stop a persona that
-  never reads verdicts — the merge gate still lives in the Merger's preconditions.
-  Written into the collab repo (the repo init scaffolds); the header instructs
-  copying it to the code repo, where most reviewed PRs live.
+  Carries the `lock-guard.yml`-style honest limitation: it removes a misleading
+  label, it cannot stop a persona that never reads verdicts — the merge gate
+  still lives in the Merger's preconditions. Written into the collab repo (the
+  repo init scaffolds); the header instructs copying it to the code repo, where
+  most reviewed PRs live.
 - **Reviewer / Merger templates hardened** (ADR-008 §1). Reviewer: verdict format
   is a parsed contract (full head SHA, never a branch/`HEAD`/abbreviation, fetched
   via `gh pr view --json headRefOid`); re-review publishes a NEW verdict, never
