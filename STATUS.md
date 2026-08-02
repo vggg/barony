@@ -38,15 +38,16 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
-## Awaiting owner review — P2.1 `baron decision` design
+## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
 FM6/D57 mechanism ADR-008 §4 named: a ratified decision must reach the work-pull surfaces, not
 just `decisions/`. Boundary held from ADR-007 — baron never infers *what* a decision
 contradicts; the surfaces are declared input and baron verifies **discharge**. `baron status`
-gains a `decision-unreconciled` red. **Five open questions in §9 block implementation** — chiefly
-whether to build the full four-obligation model or `park` alone first, and whether P2.1 is even
-the right next build versus P2.3 / P2.5.
+gains a `decision-unreconciled` red. **Owner review 2026-08-02:** the `park_label` read-side
+change is **accepted** (§3.2 stands — a park discharges only when an agent's backlog query stops
+returning the item), and **P2.3 is built first** (smaller, no schema change). Q1/Q3/Q4 stay open;
+this is parked, not rejected.
 
 ## In progress — Phase 2: conventions → mechanisms (baron CLI)
 

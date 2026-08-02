@@ -15,7 +15,7 @@ related:
 
 | Field | Value |
 |---|---|
-| **Status** | **Proposed** — design only; not implemented, not ratified |
+| **Status** | **Proposed / parked** — design only; Q2 + Q5 answered 2026-08-02; build order: after P2.3 |
 | **Date** | 2026-08-01 (rev. 2, after adversarial design review) |
 | **Authors** | Claude (design proposal for Vikram) |
 | **Supersedes** | — (mechanizes [ADR-008](ADR-008-ways-of-working-2026-07-31.md) §4) |
@@ -244,18 +244,17 @@ you forget.
 1. **Scope for a first cut.** `park` alone — demonstrably the obligation that caused FM6 — or all
    four? `park` alone is the smallest thing that addresses the incident, but it is also the one
    that now carries a schema change (§3.2).
-2. **Is the `park_label` read-side change acceptable?** It is what makes `park` real rather than
-   theatre, but it touches `manifest.schema.md` (v1.3) and all five `check_backlog` renderers.
-   Without it, `park` discharges only on **closed** — which may be too blunt for the
-   "parked, recoverable" state D57 deliberately wanted.
+2. ~~**Is the `park_label` read-side change acceptable?**~~ — **ANSWERED (Vikram, 2026-08-02):
+   yes.** §3.2 stands as designed: `park` discharges on *closed* **or** *filtered via a declared
+   `manifest.backlog.park_label`*. The schema change (v1.3) and the five `check_backlog` renderers
+   are in scope when this is built.
 3. **Who may run `reconcile`?** ADR-008 §4 makes intake the Librarian's surface. Capability-gate to
    the librarian archetype, or leave it to convention?
 4. **Retrofit and supersession.** Block-less legacy decisions: green (opt-in) or warn? And is
    hand-waiving a superseded decision's obligations acceptable for a first cut (§8)?
-5. **Is this the right next build at all** — versus P2.3 (`validate` spec↔runtime drift; small,
-   self-contained, no schema change) or P2.5 (`baron notify`)? P2.1 is marked "the next thing to
-   extend on," which is why it was drafted first — but §3.2's schema change makes it materially
-   bigger than it looked, and that changes the comparison.
+5. ~~**Is this the right next build at all**~~ — **ANSWERED (Vikram, 2026-08-02): P2.3 first.**
+   `baron validate` spec↔runtime drift is smaller and carries no schema change; this design is
+   **parked, not rejected**, and is picked up after P2.3 lands. Q1, Q3 and Q4 stay open until then.
 
 ## 11. Decision record
 
@@ -264,4 +263,7 @@ you forget.
 - [ ] Needs revision
 - [ ] Rejected
 
-**Status: awaiting owner review.** No implementation until §10 is answered.
+**Status: PARKED after partial owner review (2026-08-02).** Q2 answered (the `park_label`
+read-side change is accepted, so §3.2 stands); Q5 answered (**P2.3 is built first**). Q1 (first-cut
+scope), Q3 (who may run `reconcile`) and Q4 (retrofit + supersession) remain open. No
+implementation until they are.

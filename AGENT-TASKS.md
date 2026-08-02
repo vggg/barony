@@ -49,9 +49,9 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
-  *(Design ADR drafted: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed**.
-  **BLOCKED on owner review** — §9 has five open questions, incl. whether to build the full
-  four-obligation model or `park` alone first, and whether P2.1 outranks P2.3/P2.5. No code until answered.)*
+  *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. Q1/Q3/Q4 still open —
+  pick this up after P2.3 lands.)*
 - [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
