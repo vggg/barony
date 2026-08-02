@@ -45,10 +45,13 @@ adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded th
 *Each is a candidate net-new differentiator — several may be things no competitor has. Probe/scope
 with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
 
-- [ ] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
+- [~] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
   work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
+  *(Design ADR drafted: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed**.
+  **BLOCKED on owner review** — §9 has five open questions, incl. whether to build the full
+  four-obligation model or `park` alone first, and whether P2.1 outranks P2.3/P2.5. No code until answered.)*
 - [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused

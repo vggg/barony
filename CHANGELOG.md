@@ -13,6 +13,23 @@ token and a new emitted workflow; a patch label would have been wrong). The
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
 plugin bundle; **0.5.4–0.6.0** are pending.
 
+### Proposed (no code) — [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md): `baron decision`
+
+Design proposal for the FM6/D57 mechanism ADR-008 §4 named but shipped as prose:
+a ratified decision must reach the surfaces personas pull *work* from, not just
+`decisions/`. **Awaiting owner review — nothing implemented.**
+
+Load-bearing boundary: **baron never determines what a decision contradicts** —
+that judgement needs a model call and would cross ADR-007's line. The
+contradicted surfaces are declared input; baron performs the mechanical steps
+and, critically, **verifies discharge**. Four obligation types (`supersedes`,
+`park`, `broadcast`, `direction_doc`) chosen because each has a mechanically
+checkable discharge condition, recorded in a marker-delimited region inside the
+`decisions/index.md` entry (ADR-003 §2.2 — no second store). `baron status`
+gains a `decision-unreconciled` red, which is what makes it stick. Additive
+forge Protocol extension for issue ops, per the ADR-003 §5.1 precedent.
+§9 lists five questions blocking implementation.
+
 ### Added — plugin 1.9.0 + `barony` 0.6.0 (ways of working 2026-07-31 — ADR-008)
 
 Promotes the 2026-07-30/31 badminton-analyzer pilot hardening into the canonical
