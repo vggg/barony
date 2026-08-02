@@ -189,7 +189,9 @@ def test_dev_ritual_sweeps_review_feedback_before_backlog(
     assert "check_review_feedback" in ritual
     assert ritual.index("check_review_feedback") < ritual.index("check_backlog")
 
-    findings, _files, _skipped = validate_path(dest)
+    # runtime_drift=False: this asserts SCHEMA acceptance of the new ritual token.
+    # Leaving drift on would read the developer's real ~/.claude/agents.
+    findings, _files, _skipped = validate_path(dest, runtime_drift=False)
     assert not [
         f for f in findings if "check_review_feedback" in f.message
     ], "the new ritual token must be in the known vocabulary"

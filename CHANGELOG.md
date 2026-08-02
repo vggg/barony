@@ -11,7 +11,7 @@ the pending bundle was relabelled from 1.8.2 when the P1 fold-in added a schema
 token and a new emitted workflow; a patch label would have been wrong). The
 `barony` CLI patches below (**0.5.1–0.5.3**) are already **live on PyPI** — the
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
-plugin bundle; **0.5.4–0.6.0** are pending.
+plugin bundle; **0.5.4–0.7.0** are pending.
 
 ### Added — `barony` 0.7.0: spec↔runtime drift detection (AGENT-TASKS P2.3)
 
@@ -24,32 +24,38 @@ declared eight personas; the Claude subagent registry held six. `terrence` and
 `carson` existed only as `persona.yaml`. Routing work to them did not fail
 loudly — it fell through to whatever agent the runtime *did* have, so a cron ran
 under the **wrong persona**: wrong identity, wrong commit prefix, wrong
-capability set. The canon said one thing, the machine did another, and nothing
-compared them. Verified against the real pilot repo: the new check reports
-exactly those two personas.
+capability set. Verified against the real pilot repo: the check reports exactly
+those two.
 
-- **Registries checked** — `claude` (`.claude/agents/<slug>.md`) and `code-puppy`
-  (`.code_puppy/agents/<slug>.json`), searched collab-root → each `repos[].path`
-  → `~/`. `pydantic-ai` and `generic` have no registry to inspect (in-process
-  hydration / Tier-1 prose) and are listed in the code as deliberately excluded.
-- **Three states, not two** (the ADR-009 §4 shape): *registered* silent,
-  *missing* **error**, *unverifiable* — no registry found anywhere — a
-  **warning**. Registries are machine-local (ADR-002 §7), so a CI runner without
-  one must never go red; that constraint drove the design.
-- **Only declared runtimes are checked.** baron does not guess from what happens
-  to be on the laptop, so a stray `~/.claude/agents` cannot fail a generic-tier
-  project.
-- **User-level-only resolution warns** — `~/.claude/agents` is shared across
-  every project on the machine, so a same-named agent from another project would
-  otherwise satisfy the check silently.
-- `--no-runtime-drift` opts out. `baron init` passes it for its own self-check:
-  a fresh scaffold has specs and no registered agents *by design*, since Tier-3
-  hydration is conversational (ADR-006 §3) — running the check there would make
-  init fail its own output every time.
-- **Tests:** `cli/tests/test_drift.py` (8 cases incl. the pilot reproduction).
-  Two pre-existing `test_scaffold.py` assertions were made environment-independent
-  — they called `validate_path()` and so were reading the *developer's* real
-  `~/.claude/agents`; one of them passed for the wrong reason on the first run.
+- **The signal is PARTIAL registration, not absence.** Some personas registered
+  and others not is positive evidence that the project hydrates agents on this
+  runtime, which makes the gaps genuine drift (**error**). All-or-nothing is
+  **silent**, because zero registered is *correct* for a Tier-2 Claude project
+  (`HYDRATE.md`: at Tier 2 "do NOT emit a dead subagent file"), a freshly
+  scaffolded project (Tier-3 hydration is conversational, ADR-006 §3), and any
+  Tier-1 runtime. It also sidesteps `tier: auto` — the `baron init` default —
+  which cannot be resolved statically at all. An explicit `tier: 2` is skipped.
+- **Registries** — `claude` (`.claude/agents/<slug>.md`) and `code-puppy`
+  (`.code_puppy/agents/<slug>.json`), searched collab-root → `paths.root` → each
+  `repos[].path` → `~/`. Registration matches the adapter's filename **or** a
+  `name:` frontmatter match, since that is what Claude keys a subagent on.
+  `pydantic-ai` and `generic` have no inspectable registry (in-process hydration
+  / Tier-1 prose) and are excluded in code with a comment.
+- **Only declared runtimes are checked**, so a stray registry cannot fail a
+  project that does not hydrate agents. User-level-only resolution **warns**:
+  `~/.claude/agents` is shared across every project on the machine.
+- **Honest limits, stated in the module**: a one-persona project cannot produce a
+  partial state, and a fleet that drifted *entirely* reads as "not hydrated".
+- **On CI:** the Claude registry is repo-scoped and travels with the clone
+  (`HYDRATE.md` step 3a), so a committed `.claude/agents/` **is** present in CI by
+  design, and a partially-registered project fails there deliberately.
+  `--no-runtime-drift` opts out. `baron init` passes it for its own self-check —
+  init validates the spec it wrote, not the environment around it.
+- **Tests:** `cli/tests/test_drift.py` (11 cases: the pilot shape, the
+  fresh-scaffold regression, explicit tier 2 vs 3, `paths.root` resolution,
+  frontmatter matching, and an anti-vacuity guard that fails if `check` is
+  gutted). Two `test_scaffold.py` assertions were reading the *developer's* real
+  `~/.claude/agents`; both now scope to schema conformance.
 
 ### Proposed (no code) — [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md): `baron decision`
 

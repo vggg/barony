@@ -40,13 +40,14 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 
 ## Shipped (unreleased) — P2.3 `baron validate` spec↔runtime drift
 
-`barony` **0.7.0**. A persona declared in `manifest.personas` with no agent registered in the
-runtime's registry is now a validate-time **error** — the gap that let a cron run under the
-wrong persona on the pilot (`terrence`/`carson` declared, never registered). Three states so
-CI stays green without a registry: registered / missing (error) / unverifiable (warn). Only
-runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts out;
-`baron init` skips it for its own self-check (a fresh scaffold has no registered agents by
-design — ADR-006 §3). Verified against the real pilot repo.
+`barony` **0.7.0**. `baron validate` compares the personas a project declares against the
+agents its runtime has registered. **The signal is partial registration:** some registered
+and others not is evidence the project hydrates agents here, so the gaps are errors;
+all-or-nothing is silent (correct for Tier-2, Tier-1, and a fresh scaffold, and it sidesteps
+`tier: auto`, which cannot be resolved statically). Explicit `tier: 2` is skipped. Only
+runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts out.
+Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
+a fresh `baron init` scaffold validates clean.
 
 ## Parked after owner review — P2.1 `baron decision` design
 

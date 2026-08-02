@@ -195,13 +195,15 @@ def validate(
     placeholder check only. Exit 0 = no errors (warnings allowed); exit 1 = errors.
 
     SPEC-RUNTIME DRIFT (P2.3): when a directory holding manifest.yaml is
-    validated, each persona declared there is checked against the agent registry
-    of every runtime the manifest declares in `adapters`. A persona with no
-    registered agent is an ERROR — work routed to it runs as some other agent
-    (wrong identity, wrong commit prefix, wrong capabilities), which is how a
-    cron ran under the wrong persona on the pilot. Registries are machine-local,
-    so when none is found the check reports a WARNING, never an error — CI has
-    no registry and must stay green. `--no-runtime-drift` skips it entirely.
+    validated, the personas it declares are compared against the agents actually
+    registered for each runtime the manifest declares in `adapters`. The signal is
+    PARTIAL registration: if some personas are registered and others are not, the
+    project demonstrably hydrates agents here and the gaps are ERRORS — work
+    routed to a missing persona runs as some other agent (wrong identity, wrong
+    commit prefix, wrong capabilities), which is how a cron ran under the wrong
+    persona on the pilot. All-or-nothing is silent: zero registered is the correct
+    state for Tier-1/Tier-2 projects and for a fresh scaffold. An explicit
+    `adapters.claude.tier: 2` is never checked. `--no-runtime-drift` skips it.
     """
     if not path.exists():
         typer.echo(f"error: {path} does not exist", err=True)

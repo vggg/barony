@@ -135,24 +135,40 @@ agent registry of every runtime the manifest declares under `adapters`:
 | `code-puppy` | `.code_puppy/agents/<slug>.json` (note the underscore) |
 | `pydantic-ai`, `generic` | none — hydration is in-process / Tier-1 prose, so there is nothing to inspect |
 
-A declared persona with **no registered agent is an ERROR**: work routed to it
-does not fail loudly, it runs as whatever agent the runtime *does* have — wrong
-identity, wrong commit prefix, wrong capability set. That is how a cron ran under
-the wrong persona on the pilot.
+**The signal is PARTIAL registration, not absence.** If some declared personas
+are registered and others are not, the project demonstrably hydrates agents on
+this runtime, so the gaps are real drift and each is an **ERROR**: work routed to
+a missing persona does not fail loudly — it runs as whatever agent the runtime
+*does* have, with the wrong identity, commit prefix and capability set. That is
+how a cron ran under the wrong persona on the pilot.
 
-Registries are **machine-local** by design (ADR-002 §7), so this one check is
-environment-dependent in a way the rest of validate is not. Three states, never
-two: *registered* (silent), *missing* (error), *unverifiable* — no registry found
-at all — which is a **warning**, never an error, so CI runners without a registry
-stay green. A persona resolving only via the user-level `~/` registry also warns:
-that directory is shared across every project on the machine, so a same-named
-agent from another project would satisfy the check.
+**All-or-nothing is silent**, because zero registered agents is *correct* in three
+legitimate cases: a Tier-2 Claude project (`HYDRATE.md` says at Tier 2 "do NOT
+emit a dead subagent file"), a freshly scaffolded project (Tier-3 hydration is
+conversational — ADR-006 §3), and any Tier-1 runtime. It also sidesteps
+`tier: auto` — the default — which cannot be resolved statically at all. An
+explicit `adapters.claude.tier: 2` is skipped outright.
 
-Only runtimes the manifest **explicitly declares** are checked — baron does not
-guess, so a stray `~/.claude/agents` cannot fail a generic-tier project.
-`--no-runtime-drift` skips it entirely. (`baron init` skips it for its own
-self-check: a fresh scaffold has specs and no registered agents by design, since
-Tier-3 hydration is conversational — ADR-006 §3.)
+Registration is matched by the filename the adapter writes **and** by a `name:`
+frontmatter match, since that is what Claude actually keys a subagent on.
+
+Only runtimes the manifest **explicitly declares** are checked, so a stray
+registry cannot fail a project that does not hydrate agents. A persona resolving
+*only* via the user-level `~/` registry warns: that directory is shared across
+every project on the machine, so a same-named agent from elsewhere would satisfy
+the check.
+
+**Honest limits.** A project with exactly one persona cannot produce a partial
+state, so a single unregistered persona is invisible; and if *every* persona
+drifted at once that reads as "not hydrated" and stays silent. The pilot shape —
+some registered, some not — is what this catches.
+
+**On CI:** the Claude registry is repo-scoped and *travels with the clone*
+(`HYDRATE.md` step 3a), so a committed `.claude/agents/` **is** present in CI —
+by design. A partially-registered project therefore fails CI, which is the
+intended behaviour, not an accident. `--no-runtime-drift` opts out where that is
+unwanted. (`baron init` passes it for its own self-check: init validates the spec
+it wrote, not the environment around it.)
 
 Exit 0 = no errors (warnings allowed) / 1 = errors. `--json` for machines.
 

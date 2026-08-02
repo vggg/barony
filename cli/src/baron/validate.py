@@ -272,14 +272,12 @@ def validate_path(
     for f in files:
         findings.extend(validate_file(f))
     if runtime_drift:
-        findings.extend(_runtime_drift_findings(target, files, home))
+        findings.extend(_runtime_drift_findings(files, home))
     return findings, files, skipped
 
 
-def _runtime_drift_findings(
-    root: Path, files: Iterable[Path], home: Path | None
-) -> list[Finding]:
-    """Run the spec↔runtime drift check for each manifest discovered under ``root``."""
+def _runtime_drift_findings(files: Iterable[Path], home: Path | None) -> list[Finding]:
+    """Run the spec↔runtime drift check for each manifest among ``files``."""
     out: list[Finding] = []
     for path in files:
         if path.name != "manifest.yaml":

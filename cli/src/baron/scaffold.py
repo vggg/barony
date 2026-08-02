@@ -728,14 +728,14 @@ def scaffold(
 
     # Self-check: everything just written must pass `baron validate`.
     #
-    # runtime_drift=False is load-bearing, not a convenience: init emits persona
-    # SPECS, while registering them as runtime agents (Claude subagents,
-    # code-puppy JSON agents) is Tier-3 hydration, which ADR-006 §3 keeps on the
-    # conversational path. So a freshly scaffolded project ALWAYS has declared
-    # personas and no registered agents — that is the correct intermediate state,
-    # not drift. The drift check (P2.3) is for a project that has been hydrated
-    # and has since diverged; running it here would make `baron init` fail its
-    # own output every time.
+    # runtime_drift=False scopes this to the SPEC init actually wrote. The drift
+    # check (P2.3) reads the surrounding environment — registries in sibling repos
+    # and under ~/ — which init neither created nor can fix, so a failure there
+    # would be init blaming itself for someone else's machine. Concretely: a user
+    # whose ~/.claude/agents already holds an agent matching ONE of the new
+    # persona slugs would hit the partial-registration signal and see `baron init`
+    # fail its own output. Init validates what it emitted; `baron validate` (which
+    # init prints as the next step) validates the environment.
     findings, _files, _skipped = validate_mod.validate_path(root, runtime_drift=False)
     errors = [f for f in findings if f.severity == "error"]
     if errors:
