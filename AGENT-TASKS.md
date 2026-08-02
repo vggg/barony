@@ -66,7 +66,7 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   repo (reports terrence + carson) and against a fresh scaffold (clean).)*
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
-- [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
+- [~] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
   wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
   Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
   (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
@@ -78,6 +78,9 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
   steering. Start with a design ADR. Detail: vault
   `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
+  *(Design ADR drafted: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md), status **proposed**.
+  **BLOCKED on owner review** — §8 has five questions; the headline one is that the design DROPS the
+  proposed `_mailbox/` surface because `_handoff/` already is it. No code until answered.)*
 
 ## P3 — Productization + dogfood
 

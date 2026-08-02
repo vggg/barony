@@ -6,7 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Proposed (no code) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
+
+Design proposal for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a
+verdict or handoff lands nothing wakes the responsible persona and a human ends up
+being the message bus. **Awaiting owner review — nothing implemented.**
+
+The survey settles the landscape: **no agent framework wakes a cold headless
+agent** — LangGraph resumes a checkpointed graph, Temporal signals a hosted
+workflow, A2A notifies the dispatching orchestrator and presumes a long-running
+worker. Cold-starting an ephemeral CLI agent from an event belongs to the
+*platform* (GitHub Actions), not to agent frameworks.
+
+**The design departs from its own research on one point:** the research proposed a
+new `_mailbox/<persona>/` delivery surface. This ADR drops it — `_handoff/` is
+already ordered, addressed, durable and swept at session start, and sweep order is
+already expressible (ADR-008 §2). A second inbox would be two surfaces restating
+one contract, and would need ADR-002 §2's "no exceptions" rule to grow an exception
+on day one. So `baron notify` = an ordinary handoff **plus** a
+`repository_dispatch`, with **delivery independent of wake**: if the dispatch
+fails, the message is still a committed file and arrives on the next spawn.
+
+ADR-007 holds — baron writes the file and fires the event; the *spawn* lives in a
+project-owned workflow slot, never in baron. §5 carries loop-safety guards
+(origin-chain depth cap, workflow concurrency group, no automatic repo-event
+triggers at first cut) because a wake mechanism whose failure mode is "spends money
+in a loop" needs its guards in the decision record. §8 lists five blocking
+questions, starting with whether dropping the mailbox is right.
 
 ## [1.9.0] — 2026-08-02
 

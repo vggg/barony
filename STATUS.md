@@ -52,6 +52,16 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Awaiting owner review — P2.5 `baron notify` design
+
+[ADR-010](docs/adr/ADR-010-baron-notify-wake.md) (**proposed**, no code) designs the FM1/FM5
+wake mechanism. Key call: **no new mailbox** — `_handoff/` already is the delivery surface, so
+`baron notify` is an ordinary handoff plus a `repository_dispatch`, with delivery independent of
+wake. ADR-007 boundary held: baron fires the event; the spawn lives in a project-owned workflow
+slot. Loop-safety guards specified up front. **Five open questions in §8 block implementation** —
+chiefly whether dropping the mailbox is right (it departs from the research) and whether this
+outranks P2.2 / P2.4 / P3.1.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
