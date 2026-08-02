@@ -20,19 +20,25 @@ propose to the owner. Full rationale for P1/P2 lives in the vault:
 the badminton pilot's collab repo, so the next scaffold ships WITHOUT it. Until these land, every new
 adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded the July learnings.*
 
-- [ ] **1.1 — Fold `label-is-not-evidence` + the `Decision & ADR intake (record AND reconcile)`
+- [x] **1.1 — Fold `label-is-not-evidence` + the `Decision & ADR intake (record AND reconcile)`
   protocol into the CONVENTIONS template** (`skills/barony/assets/collab-repo/CONVENTIONS.md`). Source
   text: badminton `CONVENTIONS.md` §§ (2026-07-31). DoD: template carries both rules; drift-guard test green.
-- [ ] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
+  *(Shipped: both rules generalized off the pilot text — project-neutral names, pilot evidence kept as
+  rationale; vendored copy re-synced; lint + bi-runtime + 131 CLI tests green. ADR citation backfills in 1.5.)*
+- [x] **1.2 — Fold the FEEDBACK-SWEEP step-0 `reviewed-sha == head` check into the dev persona
   template** (`agents/__DEV__/persona.yaml`). Source: badminton dev `CLAUDE.md` FEEDBACK SWEEP step 0.
-- [ ] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
+- [x] **1.3 — Encode SHA-bound verdict discipline in the reviewer + merger templates**
   (`agents/__REVIEWER__/`, `agents/__MERGER__/persona.yaml`) — verdict = comment bound to a head SHA;
   never GitHub-approve; merger verifies `reviewed-sha == head` before merge.
-- [ ] **1.4 — Ship `strip-stale-verdict` as a scaffolded workflow** in the template (`baron init` emits
+- [x] **1.4 — Ship `strip-stale-verdict` as a scaffolded workflow** in the template (`baron init` emits
   a `.github/workflows/strip-stale-verdict.yml` that removes `reviewed-approved` + `changes-requested`
   on `synchronize`). Reference impl: badminton `fleet-runner/strip-stale-approval.yml`.
-- [ ] **1.5 — ADR "ways-of-working 2026-07-31"** documenting the fold-in (follows ADR-002). One PR can
+- [x] **1.5 — ADR "ways-of-working 2026-07-31"** documenting the fold-in (follows ADR-002). One PR can
   bundle 1.1–1.5 or split; ADR lands with the templates.
+
+> **P1 CLOSED** — 1.1–1.5 shipped as one PR (owner call, 2026-07-31) in the pending
+> **plugin 1.9.0 + CLI 0.6.0** bundle. [ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md)
+> is the record; `STATUS.md` carries the per-item detail. Vault handoff filed at P1 close.
 
 ## P2 — New capabilities surfaced by the pilot (the probe items)
 
@@ -52,6 +58,18 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   cron on the pilot).
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
+- [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
+  wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
+  Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
+  (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
+  **Design — two layers, most designs conflate them:** (a) **delivery** — a git-native mailbox
+  `_mailbox/<persona>/` swept first each loop, can't-miss, survives everything; (b) **wake** — a
+  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. `baron notify
+  <persona> <msg>` writes the mailbox AND fires the event. Laptop-off durable; **retires the wasteful
+  wall-clock cron** the badminton pilot polls on now; no bespoke server; on-brand git-native. Adopt A2A
+  *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
+  steering. Start with a design ADR. Detail: vault
+  `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
 
 ## P3 — Productization + dogfood
 

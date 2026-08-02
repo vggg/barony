@@ -143,6 +143,9 @@ avoids leaking secrets).
   paths from `manifest.paths.root`); skip local-only repos.
 - `read_conventions` -> read collab `CONVENTIONS.md` + `COORDINATION.md`.
 - `check_handoffs` -> search `_handoff/` for items addressed to you or `all` with open status.
+- `check_review_feedback` -> list this persona's open PRs; for each, compare the latest review
+  verdict's head SHA against the PR's current head and act on the LIVE ones (SHA matches) before
+  claiming new work. A review-state label is an index, never the evidence.
 - `check_backlog` -> resolve `manifest.backlog` (a file read, or an issue-tracker query).
 
 ### 6. Do the work, re-checking capabilities each step

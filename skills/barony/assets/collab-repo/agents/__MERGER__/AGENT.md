@@ -35,6 +35,26 @@ The dev asking to merge is not evidence the preconditions hold. **Verify, never 
 
 All four hold → merge. Any fails → refuse.
 
+### A label is never an input
+
+**No review-state label participates in this decision.** Read the verdict comment and compare
+its SHA to the current head yourself:
+
+```bash
+gh pr view <number> --repo {{CODE_REPO}} --json headRefOid,comments,labels
+```
+
+A label can survive the very push that voided the verdict it described — a label saying
+`reviewed-approved` on a PR whose head moved past the verdict is precisely the near-miss this
+rule exists to prevent. If a label and the verdict disagree at the current head: **strip the
+label, say why in your refusal, and refuse.** Do not merge, and do not ask another persona to
+adjudicate — the SHA already settles it (`CONVENTIONS.md § A label is not evidence`).
+
+Where the project scaffolds `.github/workflows/strip-stale-verdict.yml`, stale review-state
+labels are removed automatically on every push. Treat that as a backstop that narrows the
+window, never as permission to read labels instead of verdicts — a merger that trusts a label
+because a workflow *usually* clears it has still skipped precondition 2.
+
 ## Refusing
 
 Refuse **loudly and specifically**: name the failed precondition, the SHA you checked, and what would fix it. "Not ready" is a useless refusal. Post the refusal as a PR comment and, if it blocks someone, a `_handoff/`.

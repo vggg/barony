@@ -28,6 +28,9 @@ Execute `persona.yaml > session_ritual` in order, resolving intent tokens via th
 - `sync_repos` → update every repo in `manifest.repos` (relative paths).
 - `read_conventions` → read collab `CONVENTIONS.md` + `COORDINATION.md`.
 - `check_handoffs` → find open `_handoff/` items for you or `all`.
+- `check_review_feedback` → on your open PRs, compare each latest verdict comment's head SHA to
+  the PR's current head; act on the verdicts that are LIVE (SHA matches) before claiming new
+  work. A label is never the evidence — see `CONVENTIONS.md § A label is not evidence`.
 - `check_backlog` → read `manifest.backlog` (file or tracker).
 
 ### 4. Do the work, within your capabilities

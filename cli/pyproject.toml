@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "barony"
-version = "0.5.6"
+version = "0.6.0"
 description = "Git-native governance for teams of AI coding agents — the baron CLI over Barony's markdown/git collab substrate."
 readme = "README.md"
 requires-python = ">=3.10"

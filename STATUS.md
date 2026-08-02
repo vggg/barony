@@ -4,6 +4,40 @@ Tracks current progress and deferred candidates. Update on every PR that ships a
 `CONTRIBUTING.md`). Full release history lives in `CHANGELOG.md`; the v0→v1 migration story
 lives in [`docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md`](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md).
 
+## P1 — pilot hardening promoted into the canonical templates — COMPLETE (unreleased)
+
+The ordered queue is [`AGENT-TASKS.md`](AGENT-TASKS.md). `baron init` flows one-way
+(Barony → new projects), so hardening that lived only in the pilot's collab repo reached
+no new adopter. Promoted per [ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md),
+the same mechanism ADR-002 used. Ships in the pending **plugin 1.9.0 + CLI 0.6.0** bundle.
+
+- [x] **P1.1 — `CONVENTIONS.md` template: `label-is-not-evidence` + `Decision & ADR
+  intake`.** Label = index, verdict-comment-at-head-SHA = record, checked in *both*
+  directions (approval and block); the Librarian RECORDS **and RECONCILES** the work-pull
+  surfaces a decision contradicts.
+- [x] **P1.2 — `check_review_feedback` session-ritual token** (persona schema v1.2), in the
+  `__DEV__` ritual ordered before `check_backlog`; mapped in the three table-driven adapters
+  **and** the pydantic-ai hydrator (which renders in code), rendered by the `baron init`
+  runtime kits, added to baron's `RITUAL_TOKENS`, with a new drift guard covering the two
+  **code** renderers (the `baron init` kits + the pydantic-ai hydrator). The three adapters'
+  `HYDRATE.md` token tables stay ungated — a recorded gap, not a closed one
+  ([ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md) §2, `docs/BACKLOG.md`). Additive.
+- [x] **P1.3 — Reviewer/Merger templates hardened.** Verdict format as a parsed contract +
+  new-verdict-on-re-review + labels-follow-the-verdict (Reviewer); *a label is never an
+  input to the merge decision* (Merger). `COORDINATION.md § Review and merge` updated.
+- [x] **P1.4 — `.github/workflows/strip-stale-verdict.yml`** emitted by `baron init`
+  alongside `lock-guard.yml`; owner gates excluded; dependency-free; carries the
+  lock-guard-style honest limitation.
+- [x] **P1.5 — [ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md)** recording the
+  fold-in, with the ADR citations backfilled into the templates.
+
+Remaining before release: the vault handoff to Iris, then the release workflow.
+
+> **Release-tagging gap (noticed 2026-07-31, unrelated to P1).** `CHANGELOG.md` and the
+> Shipped table record v1.4.0 → v1.8.x, but the newest tag on `origin` is **v1.3.0** — the
+> tag / `gh release create` steps of the release workflow have not run since. Reconcile
+> before or with the next release, or the tag history stops matching the record.
+
 ## In progress — Phase 2: conventions → mechanisms (baron CLI)
 
 Per [ADR-003](docs/adr/ADR-003-baron-cli.md) / [ADR-004](docs/adr/ADR-004-baron-guard-enforcement.md):

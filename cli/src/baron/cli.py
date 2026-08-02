@@ -110,8 +110,10 @@ def init(
 
     Emits the canonical layout (CONVENTIONS/COORDINATION, manifest.yaml, canon/ +
     adapters/ from the packaged templates, hydrated agents/<slug>/persona.yaml,
-    genesis handoff, ledger index headers, wiki stub, lock-guard CI template) plus
-    a per-persona runtime kit, validates its own output, and git-commits.
+    genesis handoff, ledger index headers, wiki stub, and the lock-guard +
+    strip-stale-verdict CI templates) plus a per-persona runtime kit, validates its
+    own output, and git-commits. NOTE: strip-stale-verdict.yml also belongs in the
+    CODE repo, where most reviewed PRs live — see its header.
     Persona scope prose, AGENT.md manuals, and Tier-3 hydration stay on the
     conversational path (canon/ORCHESTRATE.md).
     """

@@ -156,10 +156,19 @@ _DENY_LINES = {
     "force_push": "Never force-push, ever.",
     "edit_other_personas": "Never edit another persona's spec files.",
 }
+# NOTE: every token in schemas.RITUAL_TOKENS must have a line here — a missing one
+# degrades to the bare token name and the rule silently disappears from this runtime.
+# Guarded by cli/tests/test_schemas.py::test_every_ritual_token_renders_on_every_runtime.
 _RITUAL_LINES = {
     "sync_repos": "Bring every configured repo up to date (pull each repo with a remote).",
     "read_conventions": "Read the collab repo's CONVENTIONS.md and COORDINATION.md.",
     "check_handoffs": "Check _handoff/ for open items addressed to you or `all`.",
+    "check_review_feedback": (
+        "Before claiming new work, sweep your open PRs: compare each latest verdict "
+        "comment's head SHA to the PR's current head, and act on the verdicts that are "
+        "LIVE (SHA matches). A verdict at an older SHA is void and needs a re-review. "
+        "Never treat a review-state label as the evidence."
+    ),
     "check_backlog": "Read the project backlog (source per the manifest).",
 }
 

@@ -8,7 +8,7 @@
 
 **Barony** (repo `vggg/barony`; formerly `agent-project-bootstrap`, renamed per ADR-005) — git-native governance for teams of AI coding agents. The **canonical home** for the `barony` skill, the `baron` CLI, and the sister skill `multi-agent-audit` — the runtime-agnostic spec, adapters, references, tests, and meta-docs all live and evolve here.
 
-Current state: **v1.8.0** — one front door (`SKILL.md` routes everything to `skills/barony/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions — including the deterministic scaffold `baron init` (ADR-006, templates vendored as package data with a CI drift guard); four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
+Current state: **v1.9.0 (pending release)** — one front door (`SKILL.md` routes everything to `skills/barony/assets/collab-repo/START.md`); the legacy v0.3 emit path is quarantined in `legacy/` (deprecated, unmaintained); July-2026 ways-of-working folded in per ADR-002; the `baron` CLI (`cli/`, ADR-003/004) mechanizes the conventions — including the deterministic scaffold `baron init` (ADR-006, templates vendored as package data with a CI drift guard); four runtime adapters (claude, code-puppy, pydantic-ai, generic) with the enforcement-rules artifact (`capability-rules.v1.yaml`) as the single policy source. Track `STATUS.md` for current progress and deferred candidates.
 
 ## Canonicality
 
@@ -183,5 +183,7 @@ See `CONTRIBUTING.md`. Key rule (post-2026-06-03): **documentation lands with co
 - `STATUS.md` — progress tracker + deferred candidates
 - `docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md` — the accepted v1.0 architecture (and the full v0→v1 migration story)
 - `docs/adr/ADR-002-ways-of-working-2026-07.md` — the July-2026 ways-of-working folded in at v1.4
+- `docs/adr/ADR-008-ways-of-working-2026-07-31.md` — the 2026-07-31 pilot hardening folded in at v1.9 (verdict-vs-label; decision reconciliation)
+- `AGENT-TASKS.md` — the ordered work queue (P1 → P2 → P3)
 - `CONTRIBUTING.md` — PR conventions including the docs-with-code rule
 - `README.md` — user-facing description of the skill

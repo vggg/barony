@@ -5,7 +5,8 @@ Formalized from the prose specs in ``skills/barony/references/``:
 - ``capability-vocab.v1.md`` — the FROZEN v1 10-verb vocabulary. Embedded here as
   :data:`CAPABILITY_VERBS`; ``tests/test_schemas.py`` parses the prose spec's verb
   table and asserts it matches (drift guard).
-- ``persona.schema.md`` (v1.1) — :data:`PERSONA_SPEC`.
+- ``persona.schema.md`` (v1.2 — the v1.2 addition is the ``check_review_feedback``
+  ritual token in :data:`RITUAL_TOKENS`) — :data:`PERSONA_SPEC`.
 - ``manifest.schema.md`` (v1.1, plus the v1.2 optional ``workspace`` additions
   documented there) — :data:`MANIFEST_SPEC`.
 
@@ -54,6 +55,7 @@ RITUAL_TOKENS: tuple[str, ...] = (
     "sync_repos",
     "read_conventions",
     "check_handoffs",
+    "check_review_feedback",
     "check_backlog",
 )
 TRIGGERS: tuple[str, ...] = ("interactive", "event", "cron")

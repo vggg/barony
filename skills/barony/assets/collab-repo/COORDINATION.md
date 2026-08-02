@@ -94,7 +94,7 @@ review gate; don't migrate it to CI.
 
 ---
 
-## Review and merge (optional Reviewer/Merger module — ADR-002 §4)
+## Review and merge (optional Reviewer/Merger module — ADR-002 §4, ADR-008 §1/§3)
 
 Projects that adopt the reviewer + merger personas (`agents/__REVIEWER__/`,
 `agents/__MERGER__/` templates) route every code-repo merge through them:
@@ -109,6 +109,18 @@ Projects that adopt the reviewer + merger personas (`agents/__REVIEWER__/`,
    refuses naming the failed precondition: CI green on the *current* head SHA; a REVIEW:PASS
    naming the *current* head SHA; record obligations met (handoffs for material
    findings/decisions); no hot-file collision.
+4. **Dev sweeps feedback before claiming new work** (`check_review_feedback` in the dev
+   ritual): compare each open PR's latest verdict SHA to its current head, and act on the
+   verdicts that are LIVE. A `changes-requested` whose SHA equals your head is a *current*
+   block, not a stale one awaiting re-review.
+
+**Review-state labels are an index, never the record** — in every direction, for every persona
+in this loop. The verdict comment's SHA is the evidence; see `CONVENTIONS.md § A label is not
+evidence`. Projects adopting this module should also scaffold
+`.github/workflows/strip-stale-verdict.yml`, which removes review-state labels on every
+`synchronize` so a label is far less likely to outlive the commit it described. It **narrows
+the window; it does not close it** — the SHA check is still what decides. See
+`CONVENTIONS.md § A label is not evidence` for the failure modes it cannot cover.
 
 Projects without the module: per-project review policy decides, and `merge_pr` typically
 stays with {{OWNER_HANDLE}}.

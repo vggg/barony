@@ -45,6 +45,49 @@ Each persona has a row in this table. The project owner assigns persona slots to
 - Autonomous personas (PR Reviewer, Backtest Runner, Librarian, etc.) **do not have GitHub accounts**. Tag them via the `agent-<persona>` label on the relevant issue or PR. The persona's session-start grep picks it up.
 - Human collaborators **do** have GitHub accounts and can be `@`-tagged. Prefer the label-routing convention for async asks (more durable than @-mentions); reserve `@`-tag for "I need a synchronous response from this specific human."
 
+### A label is not evidence — in either direction (ADR-008 §1)
+
+**Review-state labels are an index, not a record.** The record is the **verdict comment bound to a
+head SHA** (`REVIEW:PASS <sha>` / `REVIEW:FAIL <sha>` — see `COORDINATION.md § Review and merge`). A
+label can be stale, hand-applied, or left behind by a push that landed after the review ran; a
+verdict names the commit it judged and cannot drift.
+
+> **Scope: this rule is about *review-state* labels only** — the ones asserting a verdict
+> (`reviewed-approved`, `changes-requested`, …). Other labels in this project *are* contracts and
+> are unaffected: `lock:*` labels **are** the lock (`COORDINATION.md § Hot files`), routing labels
+> `agent-<persona>` are how work is addressed, and Owner evidence-gate labels like
+> `contract-change` are gates the owner sets and lifts. Those assert a *state someone set
+> deliberately*; a review-state label asserts a *judgement about a commit*, and only the commit
+> can settle whether it still holds.
+
+This binds every persona, in **both** directions:
+
+- **Before acting on an approval label** (`reviewed-approved` or the project's equivalent) — read the
+  latest verdict comment and confirm the SHA it names equals the current head. If they differ, the
+  approval is void: strip the label, say why, and stop. *(The Merger already carries this as a merge
+  precondition; the rule is general.)*
+- **Before concluding a block is stale** (`changes-requested` or the project's equivalent) — the same
+  check on the same evidence. If the verdict names your current head, the block is **current**: the
+  review ran *after* your push, and you are not waiting on another review cycle. Read the verdict and
+  act on it.
+
+**Corollary — green CI is not the gate either.** CI green plus a pushed fix does not clear a block;
+only a verdict at the current head does.
+
+**Prefer removing the ambiguity to adding a referee.** `.github/workflows/strip-stale-verdict.yml`
+(scaffolded with this repo) removes review-state labels on every `synchronize`, so a label is far
+less likely to outlive the commit it described. It **narrows the window; it does not close it** — the
+workflow can be absent from the code repo, be edited, not cover a label this project added, or
+simply not have run yet. The SHA check above is still what decides. Do not resolve a
+label-vs-verdict disagreement by adding another persona to adjudicate it; check the SHA.
+
+> **Why this rule exists (pilot evidence, 2026-07-31).** Both directions failed in production inside
+> 24 hours: a merger nearly merged an unreviewed head off a label that survived a later push, and a
+> dev idled ~40 minutes reporting a *current* block as "stale — the reviewer just hasn't re-run yet"
+> when the verdict named its exact head and predated the report by half an hour. One root cause both
+> times: substituting a cheap signal for the expensive one, because the cheap signal agreed with what
+> the reader wanted.
+
 ---
 
 ## Wikilinks and file references
@@ -111,6 +154,40 @@ numbering is a single-writer surface precisely so collisions have one place to b
 The Librarian still sweeps merged PRs as a **backstop** and logs anything found that had no
 handoff; the net catching something means the handoff was missed, not that the net is the
 mechanism.
+
+### Decision & ADR intake — the Librarian RECORDS **and RECONCILES** (ADR-008 §4)
+
+A decision is durable only when it reaches the surfaces personas pull **work** from — not just the
+record. Appending to `decisions/` is the obvious half; **reconciling the surfaces the decision
+contradicts is the load-bearing half.** Skipping it is why a settled direction gets silently
+re-litigated across sessions: personas re-derive "what to build next" from the direction doc, the
+open epics, and the backlog — never from `decisions/`.
+
+So when a decision or ADR is made or ratified — signalled by a `for: Librarian` handoff whose topic
+starts **`DECISION:`**, or by an owner ratification — the Librarian runs the **full intake**, not a
+`decisions/` append alone:
+
+1. **Record with supersession.** Append to `decisions/` (or the ADR), stating explicitly what it
+   **overrides**, with a back-pointer both ways. Decisions supersede; they do not accumulate
+   silently beside the thing they contradict.
+2. **Reconcile the work-pull surfaces — load-bearing.** Find every open epic, backlog item, ticket,
+   or roadmap line that contradicts the decision and **park or close it** (label + comment pointing
+   at the decision) so no persona can claim the now-wrong work. *A decision that leaves
+   contradicting work claimable will be reverted by the next persona that pulls it.*
+3. **Reconcile the authoritative direction doc.** If it lives in a repo the Librarian cannot write
+   (e.g. the code repo), route a docs ticket to a dev persona — never leave it stale.
+4. **Broadcast.** A `for: all` handoff stating the decision and its per-persona queue impact; update
+   the status board.
+5. **Directional decisions** additionally get hydrated at **session start, before ticket selection** —
+   a direction nobody reads before choosing work is not in force.
+
+Personas making a decision: file the `for: Librarian` `DECISION:` handoff. Do not self-reconcile, and
+do not assume "recorded in a PR body" propagates.
+
+Like every gate here, this is discipline-in-a-doc, not a lock — it depends on the Librarian running
+the intake. (Pilot evidence, 2026-07-31: a ratified direction was recorded but not reconciled, and
+the contradicted epics stayed claimable — so the settled question was re-opened by later sessions
+pulling from the surfaces the decision never touched.)
 
 ---
 

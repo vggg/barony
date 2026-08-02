@@ -89,8 +89,9 @@ templates** (vendored from `skills/barony/assets/collab-repo/` per ADR-006;
 drift-guarded byte-for-byte by `tests/test_template_sync.py`), hydrated
 `agents/<slug>/persona.yaml` (identity `<slug>@<project>.local`, commit prefix,
 routing label; generic edit-me scope), a genesis handoff, `findings/index.md` +
-`decisions/index.md` ledger headers, the wiki stub, the lock-guard CI template,
-and a per-persona **runtime kit** under `agents/<slug>/runtime/`:
+`decisions/index.md` ledger headers, the wiki stub, the lock-guard and
+strip-stale-verdict CI templates, and a per-persona **runtime kit** under
+`agents/<slug>/runtime/`:
 
 | `--runtime` | Kit contents |
 |---|---|
