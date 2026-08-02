@@ -57,9 +57,9 @@ simply not there. Neither path raises.
 
 **Design sketch:** extend `tests/bi_runtime_accept.py` with a second parse pass — it already
 reads the adapters' machine-readable capability maps, so it is the natural home — asserting
-every `RITUAL_TOKENS` entry appears in each table-driven adapter's ritual table. Needs the token
-tables to be machine-readable first (they are markdown tables today, in three different shapes:
-two `|`-tables and one bullet list). Either normalize the three shapes, or give the ritual table
+every `RITUAL_TOKENS` entry appears in each prose-rendered adapter's ritual surface. Needs those
+surfaces to be machine-readable first (they are markdown today, in two shapes: two `|`-tables and
+one bullet list). Either normalize the three shapes, or give the ritual table
 the same explicit machine-readable fence the capability maps use.
 
 **Why deferred:** the acceptance harness is stdlib-only and deliberately parses *declared*

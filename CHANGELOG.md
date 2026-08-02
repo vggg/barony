@@ -51,21 +51,22 @@ in opposite directions, and both answers were wrong.
   baron's `RITUAL_TOKENS`. Additive — a ritual omitting it behaves exactly as
   before, and unknown tokens were already a warning, not an error.
 - **New cross-runtime drift guard** for the ritual vocabulary
-  (`test_every_ritual_token_renders_on_every_runtime`). Both renderers fall back to
-  echoing the raw token, so a missing entry does not crash — the rule silently
-  vanishes from that runtime's persona body. `bi_runtime_accept.py` never gated this
-  (it parses capability maps, not ritual tokens). Every `RITUAL_TOKENS` entry must
-  now render real prose on both **code** renderers (`scaffold._ritual_lines` and
-  `runtimes.pydantic_ai._RITUAL_LINES`). The three table-driven adapters' `HYDRATE.md`
-  token tables remain **ungated** — a known, recorded gap (ADR-008 §2, `docs/BACKLOG.md`).
+  (`test_every_ritual_token_renders_on_every_runtime`). Both **code** renderers
+  fall back to echoing the raw token, so a missing entry does not crash — the
+  rule silently vanishes from that runtime's persona body.
+  `bi_runtime_accept.py` never gated this (it parses capability maps, not ritual
+  tokens). Every `RITUAL_TOKENS` entry must now render real prose on both code
+  renderers (`scaffold._ritual_lines` and `runtimes.pydantic_ai._RITUAL_LINES`).
+  The other three adapters' `HYDRATE.md` prose surfaces remain **ungated** — a
+  known, recorded gap (ADR-008 §2, `docs/BACKLOG.md`).
 - **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
   `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
   project's reviewer verdict labels and comments that the head moved, so that —
   where it is installed and covers the label — "a review-state label is present"
   means "a verdict exists at *this* head". Owner gates (`needs-human`, `hold`,
   `contract-change`) are explicitly excluded — only the owner lifts those.
-  Dependency-free (bash + `gh`,
-  built-in `GITHUB_TOKEN`), no-ops on fork PRs. Carries the `lock-guard.yml`-style
+  Dependency-free (bash + `gh`, built-in `GITHUB_TOKEN`), no-ops on fork PRs.
+  Carries the `lock-guard.yml`-style
   honest limitation: it removes a misleading label, it cannot stop a persona that
   never reads verdicts — the merge gate still lives in the Merger's preconditions.
   Written into the collab repo (the repo init scaffolds); the header instructs

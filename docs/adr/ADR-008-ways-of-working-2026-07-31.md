@@ -100,8 +100,8 @@ is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
 never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real prose on **both
 code renderers**.
 
-**Honest limit of that guard:** the three table-driven adapters render from prose tables in their
-`HYDRATE.md`, and **no test parses those tables**. A future ritual token can still be added to the
+**Honest limit of that guard:** the other three adapters render from the prose surfaces in their
+`HYDRATE.md`, and **no test parses them**. A future ritual token can still be added to the
 vocabulary and silently miss all three. Closing that needs an acceptance-harness extension
 (`bi_runtime_accept.py` is capability-maps-only by construction) — tracked in `docs/BACKLOG.md`,
 not fixed here, because inventing a token-table parser under review pressure is how the *first*
