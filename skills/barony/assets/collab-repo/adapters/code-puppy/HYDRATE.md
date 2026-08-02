@@ -158,6 +158,12 @@ project's conventions. _handoff/ files may be direct-pushed; substantive changes
 > bake absolute home-dir paths into the agent body — that breaks portability/failover
 > (Phase 2 F7). Resolve `check_backlog` against `manifest.backlog` (Phase 2 F8).
 
+<!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
+     One entry per token in baron.schemas.RITUAL_TOKENS. The parser is shape-tolerant
+     (pipe table OR bullet list) but requires each entry to START its line with `|` or
+     `-` followed immediately by the backticked token. Adding a ritual token without
+     adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
+
 | Token (v1) | Rendered step |
 |---|---|
 | `sync_repos` | for each repo in `manifest.repos` with a `remote`: `git -C <repo.path> pull` (relative path). Local-only repos (no remote): skip. |

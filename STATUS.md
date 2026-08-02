@@ -38,6 +38,14 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — ritual-token coverage guard (plugin 1.10.0)
+
+Closes the `docs/BACKLOG.md` gap from the 1.9.0 cycle: the three prose adapter surfaces now
+carry a `ritual-map:v1` marker and `tests/bi_runtime_accept.py` parses it, so a ritual token
+can no longer reach some runtimes and not others. Token list sourced from the **canon**
+(`persona.schema.md`), not from baron — the harness runs without baron installed. Verified by
+mutation: deleting one token from one adapter fails the harness naming both.
+
 ## Shipped (unreleased) — P2.3 `baron validate` spec↔runtime drift
 
 `barony` **0.7.0**. `baron validate` compares the personas a project declares against the

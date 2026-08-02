@@ -139,6 +139,12 @@ Use `identity.git_name` / `identity.git_email`, and prefix commits with
 avoids leaking secrets).
 
 ### 5. Run the session-start ritual (resolve intent tokens via the manifest)
+<!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
+     One entry per token in baron.schemas.RITUAL_TOKENS. The parser is shape-tolerant
+     (pipe table OR bullet list) but requires each entry to START its line with `|` or
+     `-` followed immediately by the backticked token. Adding a ritual token without
+     adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
+
 - `sync_repos` -> update each repo in `manifest.repos` that has a `remote` (use RELATIVE
   paths from `manifest.paths.root`); skip local-only repos.
 - `read_conventions` -> read collab `CONVENTIONS.md` + `COORDINATION.md`.

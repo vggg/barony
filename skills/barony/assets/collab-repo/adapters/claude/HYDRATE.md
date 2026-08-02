@@ -244,6 +244,12 @@ behavior above — worse-is-visible, never worse-is-broken. Overrides
 ### 4. Render the session ritual (v1 tokens, relative paths)
 Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 
+<!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
+     One entry per token in baron.schemas.RITUAL_TOKENS. The parser is shape-tolerant
+     (pipe table OR bullet list) but requires each entry to START its line with `|` or
+     `-` followed immediately by the backticked token. Adding a ritual token without
+     adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
+
 | Token | Rendered step |
 |---|---|
 | `sync_repos` | `git -C <repo.path> pull` for each repo with a remote (relative paths) |

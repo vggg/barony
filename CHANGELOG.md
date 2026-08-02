@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
+
+Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`
+(ADR-008 §2) shipped to three of four runtimes on its first cut, because each renderer
+keeps its own surface and nothing cross-checked them — and **both renderer styles fail
+silently**: the code renderers echo the raw token, the prose surfaces simply omit the step.
+1.9.0 guarded the two code renderers; the three prose surfaces stayed ungated.
+
+- **`ritual-map:v1` marker** in `adapters/{claude,code-puppy,generic}/HYDRATE.md` — the same
+  convention `capability-map:v1` already established. Adapter authors now maintain a parsed
+  contract, which is why this is a minor bump rather than a patch.
+- **`tests/bi_runtime_accept.py` check (d)** asserts every ritual token is declared in every
+  prose surface, and flags unknown tokens. Token list comes from the **canon**
+  (`persona.schema.md`'s session-ritual table), not from `baron.schemas` — the harness is
+  stdlib-only and runs without baron installed (ADR-006 §2). `cli/tests/test_schemas.py`
+  guards the other direction, so the two meet on the canon.
+- **Shape-tolerant parser** — claude and code-puppy use pipe tables, generic a bullet list;
+  normalising them would be churn for its own sake. An entry must *start* its line with `|`
+  or `-` plus the backticked token, so a token merely mentioned in prose is not miscounted.
+- Verified by mutation: deleting one token from one adapter fails the harness with that
+  adapter and token named. (An earlier cut of the parser stopped at generic's wrapped
+  continuation lines and reported 4 of 5 tokens missing from a surface declaring all 5 —
+  caught by the guard itself before commit.)
+
 _Nothing yet._
 
 ## [1.9.0] — 2026-08-02

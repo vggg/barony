@@ -43,7 +43,7 @@ the *repair* commands that migration showed were needed shipped in **barony 0.5.
 registrations for moved/deleted dirs) and `baron worktree repair [PATH…]` (wraps
 `git worktree repair` — re-registers a moved worktree / main repo). Nothing open.
 
-## Ritual-token coverage in the adapters' HYDRATE.md prose surfaces (post-ADR-008)
+## Ritual-token coverage in the adapters' HYDRATE.md prose surfaces — DONE (plugin 1.10.0)
 
 **What:** `check_review_feedback` (ADR-008 §2) shipped to three of four runtimes on its first
 cut, because each renderer keeps its own ritual-token surface and nothing cross-checked them against
@@ -62,10 +62,14 @@ surfaces to be machine-readable first: they are markdown today, in two shapes �
 (claude, code-puppy) and one bullet list (generic). Either normalize those two shapes, or give
 the ritual surface the same explicit machine-readable fence the capability maps use.
 
-**Why deferred:** the acceptance harness is stdlib-only and deliberately parses *declared*
-contracts, not prose; making the ritual surfaces machine-readable is a small spec change to three
-adapters that deserves its own PR rather than being improvised inside the change that exposed
-the gap.
+**Shipped (plugin 1.10.0):** each prose adapter's ritual surface now carries a
+`ritual-map:v1` marker — the same convention `capability-map:v1` already used — and
+`tests/bi_runtime_accept.py` parses it, sourcing the token list from the canon
+(`persona.schema.md`'s session-ritual table) rather than from baron, since the harness runs
+without baron installed. The parser is deliberately shape-tolerant: claude and code-puppy use
+pipe tables, generic a bullet list, and normalising them would have been churn for its own sake.
+Both directions are now guarded — `cli/tests/test_schemas.py` checks baron's constant against the
+same canon table, so the two meet in the middle. Nothing open.
 
 ## Merger precondition verification (baron, forge-consuming)
 
