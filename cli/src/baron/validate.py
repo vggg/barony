@@ -18,6 +18,7 @@ from typing import Iterable
 
 import yaml
 
+from . import drift
 from .schemas import (
     CAPABILITY_VERBS,
     MANIFEST_SPEC,
@@ -253,15 +254,47 @@ def validate_file(path: Path) -> list[Finding]:
     return out
 
 
-def validate_path(target: Path) -> tuple[list[Finding], list[Path], list[Path]]:
-    """Validate a file or a tree. Returns (findings, files_checked, skipped_templates)."""
+def validate_path(
+    target: Path, *, runtime_drift: bool = True, home: Path | None = None
+) -> tuple[list[Finding], list[Path], list[Path]]:
+    """Validate a file or a tree. Returns (findings, files_checked, skipped_templates).
+
+    When ``target`` is a directory holding a ``manifest.yaml``, also compares the
+    declared personas against each declared runtime's agent registry (P2.3, see
+    :mod:`baron.drift`). Pass ``runtime_drift=False`` to skip that — the rest of
+    validate reads only spec files, while the drift check reads machine-local
+    state, so it is the one part that can legitimately differ between machines.
+    """
     if target.is_file():
         return validate_file(target), [target], []
     files, skipped = discover(target)
     findings: list[Finding] = []
     for f in files:
         findings.extend(validate_file(f))
+    if runtime_drift:
+        findings.extend(_runtime_drift_findings(target, files, home))
     return findings, files, skipped
+
+
+def _runtime_drift_findings(
+    root: Path, files: Iterable[Path], home: Path | None
+) -> list[Finding]:
+    """Run the spec↔runtime drift check for each manifest discovered under ``root``."""
+    out: list[Finding] = []
+    for path in files:
+        if path.name != "manifest.yaml":
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue  # the schema pass already reported this file
+        if not isinstance(data, dict):
+            continue
+        for hit in drift.check(path.parent, data, home=home):
+            out.append(
+                Finding(_posix(path), "manifest", hit.severity, hit.check, hit.message)
+            )
+    return out
 
 
 def has_errors(findings: Iterable[Finding]) -> bool:

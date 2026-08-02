@@ -13,6 +13,44 @@ token and a new emitted workflow; a patch label would have been wrong). The
 CLI ships on its own version track (see `cli/pyproject.toml`), independent of the
 plugin bundle; **0.5.4–0.6.0** are pending.
 
+### Added — `barony` 0.7.0: spec↔runtime drift detection (AGENT-TASKS P2.3)
+
+`baron validate` now compares the personas a project **declares** against the
+agents its runtime has actually **registered**. Owner picked this over P2.1
+(2026-08-02) as the smaller, schema-change-free build.
+
+**The failure it closes** (badminton-analyzer pilot, 2026-07): the collab repo
+declared eight personas; the Claude subagent registry held six. `terrence` and
+`carson` existed only as `persona.yaml`. Routing work to them did not fail
+loudly — it fell through to whatever agent the runtime *did* have, so a cron ran
+under the **wrong persona**: wrong identity, wrong commit prefix, wrong
+capability set. The canon said one thing, the machine did another, and nothing
+compared them. Verified against the real pilot repo: the new check reports
+exactly those two personas.
+
+- **Registries checked** — `claude` (`.claude/agents/<slug>.md`) and `code-puppy`
+  (`.code_puppy/agents/<slug>.json`), searched collab-root → each `repos[].path`
+  → `~/`. `pydantic-ai` and `generic` have no registry to inspect (in-process
+  hydration / Tier-1 prose) and are listed in the code as deliberately excluded.
+- **Three states, not two** (the ADR-009 §4 shape): *registered* silent,
+  *missing* **error**, *unverifiable* — no registry found anywhere — a
+  **warning**. Registries are machine-local (ADR-002 §7), so a CI runner without
+  one must never go red; that constraint drove the design.
+- **Only declared runtimes are checked.** baron does not guess from what happens
+  to be on the laptop, so a stray `~/.claude/agents` cannot fail a generic-tier
+  project.
+- **User-level-only resolution warns** — `~/.claude/agents` is shared across
+  every project on the machine, so a same-named agent from another project would
+  otherwise satisfy the check silently.
+- `--no-runtime-drift` opts out. `baron init` passes it for its own self-check:
+  a fresh scaffold has specs and no registered agents *by design*, since Tier-3
+  hydration is conversational (ADR-006 §3) — running the check there would make
+  init fail its own output every time.
+- **Tests:** `cli/tests/test_drift.py` (8 cases incl. the pilot reproduction).
+  Two pre-existing `test_scaffold.py` assertions were made environment-independent
+  — they called `validate_path()` and so were reading the *developer's* real
+  `~/.claude/agents`; one of them passed for the wrong reason on the first run.
+
 ### Proposed (no code) — [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md): `baron decision`
 
 Design proposal for the FM6/D57 mechanism ADR-008 §4 named but shipped as prose:

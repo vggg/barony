@@ -125,11 +125,41 @@ templates legitimately carry placeholders and often aren't valid YAML at all.
 Fixture paths (`tests/examples/`) are validated but exempt from the placeholder
 check only. An explicitly named file is always validated.
 
+**Spec↔runtime drift (P2.3, since 0.7.0).** When you validate a directory
+holding `manifest.yaml`, baron also compares the declared personas against the
+agent registry of every runtime the manifest declares under `adapters`:
+
+| Runtime | Registry checked |
+|---|---|
+| `claude` | `.claude/agents/<slug>.md` — collab root, each `repos[].path`, then `~/` |
+| `code-puppy` | `.code_puppy/agents/<slug>.json` (note the underscore) |
+| `pydantic-ai`, `generic` | none — hydration is in-process / Tier-1 prose, so there is nothing to inspect |
+
+A declared persona with **no registered agent is an ERROR**: work routed to it
+does not fail loudly, it runs as whatever agent the runtime *does* have — wrong
+identity, wrong commit prefix, wrong capability set. That is how a cron ran under
+the wrong persona on the pilot.
+
+Registries are **machine-local** by design (ADR-002 §7), so this one check is
+environment-dependent in a way the rest of validate is not. Three states, never
+two: *registered* (silent), *missing* (error), *unverifiable* — no registry found
+at all — which is a **warning**, never an error, so CI runners without a registry
+stay green. A persona resolving only via the user-level `~/` registry also warns:
+that directory is shared across every project on the machine, so a same-named
+agent from another project would satisfy the check.
+
+Only runtimes the manifest **explicitly declares** are checked — baron does not
+guess, so a stray `~/.claude/agents` cannot fail a generic-tier project.
+`--no-runtime-drift` skips it entirely. (`baron init` skips it for its own
+self-check: a fresh scaffold has specs and no registered agents by design, since
+Tier-3 hydration is conversational — ADR-006 §3.)
+
 Exit 0 = no errors (warnings allowed) / 1 = errors. `--json` for machines.
 
 ```bash
 baron validate tests/examples/tess/persona.yaml
 baron validate . --json
+baron validate . --no-runtime-drift   # spec conformance only
 ```
 
 ### `baron status [--fetch] [--sla N] [--json]` (M2)

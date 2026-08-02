@@ -727,7 +727,16 @@ def scaffold(
         _emit_runtime_kit(root, persona, ctx, created)
 
     # Self-check: everything just written must pass `baron validate`.
-    findings, _files, _skipped = validate_mod.validate_path(root)
+    #
+    # runtime_drift=False is load-bearing, not a convenience: init emits persona
+    # SPECS, while registering them as runtime agents (Claude subagents,
+    # code-puppy JSON agents) is Tier-3 hydration, which ADR-006 §3 keeps on the
+    # conversational path. So a freshly scaffolded project ALWAYS has declared
+    # personas and no registered agents — that is the correct intermediate state,
+    # not drift. The drift check (P2.3) is for a project that has been hydrated
+    # and has since diverged; running it here would make `baron init` fail its
+    # own output every time.
+    findings, _files, _skipped = validate_mod.validate_path(root, runtime_drift=False)
     errors = [f for f in findings if f.severity == "error"]
     if errors:
         detail = "; ".join(f"{f.file}: {f.message}" for f in errors[:5])

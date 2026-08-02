@@ -56,9 +56,12 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
   identically. Non-deterministic denial is the sharpest enforcement evidence.
-- [ ] **2.3 — `baron validate` spec↔runtime drift** — a persona declared in `persona.yaml` but absent
+- [x] **2.3 — `baron validate` spec↔runtime drift** — a persona declared in `persona.yaml` but absent
   from the registered runtime agents is a validate-time error (this exact gap forced a wrong-persona
   cron on the pilot).
+  *(Shipped in `barony` 0.7.0, owner-prioritised 2026-08-02. `cli/src/baron/drift.py`; claude +
+  code-puppy registries; three-state so CI without a registry stays green; only declared runtimes
+  checked; `--no-runtime-drift` opts out. Reproduced the pilot gap against the real repo.)*
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
 - [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing

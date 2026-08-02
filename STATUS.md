@@ -38,6 +38,16 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — P2.3 `baron validate` spec↔runtime drift
+
+`barony` **0.7.0**. A persona declared in `manifest.personas` with no agent registered in the
+runtime's registry is now a validate-time **error** — the gap that let a cron run under the
+wrong persona on the pilot (`terrence`/`carson` declared, never registered). Three states so
+CI stays green without a registry: registered / missing (error) / unverifiable (warn). Only
+runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts out;
+`baron init` skips it for its own self-check (a fresh scaffold has no registered agents by
+design — ADR-006 §3). Verified against the real pilot repo.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
