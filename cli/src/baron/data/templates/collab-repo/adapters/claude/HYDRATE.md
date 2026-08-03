@@ -245,9 +245,12 @@ behavior above — worse-is-visible, never worse-is-broken. Overrides
 Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 
 <!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
-     One entry per token in baron.schemas.RITUAL_TOKENS. The parser is shape-tolerant
-     (pipe table OR bullet list) but requires each entry to START its line with `|` or
-     `-` followed immediately by the backticked token. Adding a ritual token without
+     One entry per token in the CANON's session-ritual table
+     (references/persona.schema.md). baron.schemas.RITUAL_TOKENS is joined to that
+     table by cli/tests/test_schemas.py::test_ritual_tokens_match_the_canon. The parser is shape-tolerant
+     (pipe table OR bullet list); entries are read ONLY between this marker and the
+     closing fence below, so prose bullets outside it are not miscounted as
+     declarations. Adding a ritual token without
      adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
 
 | Token | Rendered step |
@@ -257,6 +260,8 @@ Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 | `check_handoffs` | `grep -rl "^for: <Persona>\|^for: all" <collab.path>/_handoff/ \| xargs grep -l "^status: open"` |
 | `check_review_feedback` | `gh pr list --author @me --state open --json number,headRefOid`; for each, read the latest verdict comment (`gh pr view <n> --json comments`) and act only where the verdict's SHA == `headRefOid`. Never act on a review-state label alone. |
 | `check_backlog` | resolve `manifest.backlog`: file read, or `gh issue list --label agent-<slug>` |
+
+<!-- /ritual-map:v1 -->
 
 ### 5. Emit the `/vc` command
 Write `.claude/commands/vc.md` mirroring the v0.3.x command: frontmatter

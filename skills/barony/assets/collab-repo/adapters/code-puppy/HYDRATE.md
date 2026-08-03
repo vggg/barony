@@ -159,9 +159,12 @@ project's conventions. _handoff/ files may be direct-pushed; substantive changes
 > (Phase 2 F7). Resolve `check_backlog` against `manifest.backlog` (Phase 2 F8).
 
 <!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
-     One entry per token in baron.schemas.RITUAL_TOKENS. The parser is shape-tolerant
-     (pipe table OR bullet list) but requires each entry to START its line with `|` or
-     `-` followed immediately by the backticked token. Adding a ritual token without
+     One entry per token in the CANON's session-ritual table
+     (references/persona.schema.md). baron.schemas.RITUAL_TOKENS is joined to that
+     table by cli/tests/test_schemas.py::test_ritual_tokens_match_the_canon. The parser is shape-tolerant
+     (pipe table OR bullet list); entries are read ONLY between this marker and the
+     closing fence below, so prose bullets outside it are not miscounted as
+     declarations. Adding a ritual token without
      adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
 
 | Token (v1) | Rendered step |
@@ -171,6 +174,8 @@ project's conventions. _handoff/ files may be direct-pushed; substantive changes
 | `check_handoffs` | `grep -rl "^for: <Persona>\|^for: all" <collab.path>/_handoff/ \| xargs grep -l "^status: open"` |
 | `check_review_feedback` | `gh pr list --author @me --state open --json number,headRefOid` (repo per `manifest.repos`); for each PR read the latest verdict comment and act ONLY where the verdict's SHA == `headRefOid`. A review-state label is an index, not evidence. |
 | `check_backlog` | if `manifest.backlog.source == file`: read `<collab.path>/<backlog.location>`. If `github_issues`: `gh issue list --state open --label <routing_label> --repo <backlog.location>`. If `jira`: query per project config. |
+
+<!-- /ritual-map:v1 -->
 
 > Legacy note: v0 used `pull_both_repos` (transport-coupled, two hardcoded repos). v1 uses
 > `sync_repos` over `manifest.repos` so local-only and N-repo projects both work.

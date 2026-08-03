@@ -45,31 +45,23 @@ registrations for moved/deleted dirs) and `baron worktree repair [PATH…]` (wra
 
 ## Ritual-token coverage in the adapters' HYDRATE.md prose surfaces — DONE (plugin 1.10.0)
 
-**What:** `check_review_feedback` (ADR-008 §2) shipped to three of four runtimes on its first
-cut, because each renderer keeps its own ritual-token surface and nothing cross-checked them against
-`schemas.RITUAL_TOKENS`. Caught in review. The fix that landed guards the two **code**
-renderers (`scaffold._ritual_lines`, `runtimes.pydantic_ai._RITUAL_LINES`); the claude /
-code-puppy / generic adapters render from **prose in their `HYDRATE.md`** (two pipe tables and
-one bullet list), and no test parses those. A future token can still be added to the vocabulary
-and miss all three silently — and silently in two different ways: the code renderers fall back
-to echoing the raw token, while the prose surfaces have no fallback at all, so an absent row is
-simply not there. Neither path raises.
+**Shipped.** Each prose adapter's ritual surface is now delimited by a `ritual-map:v1` fence
+(open + close markers) and parsed by `tests/bi_runtime_accept.py` check (d). The token list comes
+from the canon (`persona.schema.md`'s session-ritual table), and
+`cli/tests/test_schemas.py::test_ritual_tokens_match_the_canon` joins `baron.schemas.RITUAL_TOKENS`
+to that same table.
 
-**Design sketch:** extend `tests/bi_runtime_accept.py` with a second parse pass — it already
-reads the adapters' machine-readable capability maps, so it is the natural home — asserting
-every `RITUAL_TOKENS` entry appears in each prose-rendered adapter's ritual surface. Needs those
-surfaces to be machine-readable first: they are markdown today, in two shapes — two `|`-tables
-(claude, code-puppy) and one bullet list (generic). Either normalize those two shapes, or give
-the ritual surface the same explicit machine-readable fence the capability maps use.
+The join is the part that matters, and the first cut shipped without it: adding a token to
+`RITUAL_TOKENS` plus both code renderers, without touching the canon, left all three prose
+adapters uncovered while every suite stayed green — the guard was wired to one end of a contract
+whose other end nothing checked. Caught in review. The chain now runs **code renderers ←
+`RITUAL_TOKENS` ← canon → adapters** with no unjoined end.
 
-**Shipped (plugin 1.10.0):** each prose adapter's ritual surface now carries a
-`ritual-map:v1` marker — the same convention `capability-map:v1` already used — and
-`tests/bi_runtime_accept.py` parses it, sourcing the token list from the canon
-(`persona.schema.md`'s session-ritual table) rather than from baron, since the harness runs
-without baron installed. The parser is deliberately shape-tolerant: claude and code-puppy use
-pipe tables, generic a bullet list, and normalising them would have been churn for its own sake.
-Both directions are now guarded — `cli/tests/test_schemas.py` checks baron's constant against the
-same canon table, so the two meet in the middle. Nothing open.
+The fence (rather than "scan to the next heading") is also load-bearing: without it, a prose
+bullet mentioning a token *after* the surface was miscounted as a declaration, so a deleted entry
+could be masked by a passing mention. Both failure modes are covered by mutation tests.
+
+Nothing open.
 
 ## Merger precondition verification (baron, forge-consuming)
 

@@ -20,8 +20,16 @@ silently**: the code renderers echo the raw token, the prose surfaces simply omi
 - **`tests/bi_runtime_accept.py` check (d)** asserts every ritual token is declared in every
   prose surface, and flags unknown tokens. Token list comes from the **canon**
   (`persona.schema.md`'s session-ritual table), not from `baron.schemas` — the harness is
-  stdlib-only and runs without baron installed (ADR-006 §2). `cli/tests/test_schemas.py`
-  guards the other direction, so the two meet on the canon.
+  stdlib-only and runs without baron installed (ADR-006 §2).
+- **`test_ritual_tokens_match_the_canon`** — the JOIN, and the reason the rest is worth
+  anything. Review of the first cut proved that adding a token to `RITUAL_TOKENS` plus both
+  code renderers, without touching the canon, left all three prose adapters uncovered with
+  every suite green: the guard was wired to one end of a contract whose other end nothing
+  checked. The chain now runs **code renderers ← `RITUAL_TOKENS` ← canon → adapters**.
+- **A closed fence, not a scan-to-next-heading.** Entries are read only between
+  `ritual-map:v1` and its closing marker, because a prose bullet mentioning a token *after*
+  the surface was otherwise miscounted as a declaration — a deleted entry could be masked by
+  a passing mention. Both failure modes have mutation tests.
 - **Shape-tolerant parser** — claude and code-puppy use pipe tables, generic a bullet list;
   normalising them would be churn for its own sake. An entry must *start* its line with `|`
   or `-` plus the backticked token, so a token merely mentioned in prose is not miscounted.

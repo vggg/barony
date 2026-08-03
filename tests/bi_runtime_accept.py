@@ -41,6 +41,7 @@ ADAPTERS = ["claude", "code-puppy", "generic", "pydantic-ai"]
 TIER3_ADAPTERS = {"claude", "code-puppy", "pydantic-ai"}
 MARKER = "capability-map:v1"
 RITUAL_MARKER = "ritual-map:v1"
+RITUAL_MARKER_END = "/ritual-map:v1"
 # The three adapters that render ritual tokens from PROSE. pydantic-ai renders in
 # code (baron.runtimes.pydantic_ai._RITUAL_LINES) and has no prose surface to parse;
 # cli/tests/test_schemas.py guards that side.
@@ -226,14 +227,16 @@ def parse_ritual_surface(path):
     pos = text.find(RITUAL_MARKER)
     if pos == -1:
         raise ValueError(f"no {RITUAL_MARKER} marker in {path}")
+    end = text.find(RITUAL_MARKER_END, pos + len(RITUAL_MARKER))
+    if end == -1:
+        raise ValueError(f"no closing <!-- {RITUAL_MARKER_END} --> fence in {path}")
     tokens = set()
-    for ln in text[pos:].splitlines():
-        # A new markdown heading ends the surface. Anything else is skipped rather
-        # than treated as a terminator: generic's bullet entries WRAP onto indented
-        # continuation lines, and an earlier cut of this parser stopped at the first
-        # one — reporting 4 of 5 tokens missing from a surface that declares all 5.
-        if ln.startswith("#"):
-            break
+    for ln in text[pos:end].splitlines():
+        # Entries are read ONLY inside the fence. An earlier cut scanned forward to
+        # the next heading, which miscounted PROSE bullets after the surface as
+        # declarations — the surface claimed a protection it did not have. The fence
+        # also survives generic's wrapped continuation lines, which broke the cut
+        # before that (it stopped at the first one and reported 4 of 5 missing).
         m = re.match(r"^\s*[|-]\s*`([a-z_]+)`", ln)
         if m:
             tokens.add(m.group(1))
