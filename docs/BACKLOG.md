@@ -183,3 +183,73 @@ Positioning note: this is Phase-3/4 territory and overlaps the per-agent Memory
 capability some runtimes ship (e.g. pydantic-ai-harness) — but those are
 in-process/per-agent/private; Barony's differentiator is shared, human-legible,
 git-audited memory. Build only on real demand.
+
+## From the 2026-08-02 scope + product-vision synthesis
+
+Five independent reviews (research/architect/PM scope-discipline pass + architect/PM product-vision
+pass — vault `projects/AgentBootstrapNasikoMix/2026-08-02-synthesis-plan.md`) added the entries
+below. Actionable near-term items went to `AGENT-TASKS.md` P2 (2.0, 2.7, 2.8) instead of here; what
+follows is genuinely build-gated or paid-tier.
+
+### Verified per-persona identity + `baron join`
+
+**What:** per-persona GitHub App installation / bot-account provisioning in `init`/`join`,
+attributable commits and PRs, signed commits as the light path. Unlocks `AGENT-TASKS.md` 2.2's
+credential half (branch protection only binds if personas hold distinct credentials) and provable
+two-party review (an App cannot approve its own PR — verified live on the pilot: "Can not approve
+your own pull request").
+
+**Build vs integrate:** integrate GitHub Apps + git signing; do **not** build a credential
+issuance/attestation service. Adopt A2A Agent-Card vocabulary as the naming north star only.
+
+**Why deferred:** genuinely disputed sequencing, not merely low priority — see the open-decision
+callout at the end of `AGENT-TASKS.md` P2. The architect review wants this built first; the PM
+review wants it design-only until a real second operator exists. It sits here, not in the ordered
+queue, until the owner resolves the fork; the design is ready to pick up cold either way.
+
+### Delivered-value ledger (PM product-vision D3 — novel, no market equivalent)
+
+**What:** track shipped capabilities as first-class ledger objects ("what exists and works"),
+hydrated at session start alongside direction, so fleets stop rebuilding what already shipped.
+
+**Evidence:** the pilot's D56/D57 root cause — "shipped wins generate no tickets," so a dozen PRs
+rebuilt a parked path while an already-shipped capability (the VLM path) sat invisible. Named by
+neither scope review nor the original competitive study; the PM's read is that no product in any
+adjacent segment addresses it.
+
+**Build:** thin — a `delivered/` ledger plus `status` surfacing, the same mechanism family as
+`baron decision` (`AGENT-TASKS.md` 2.1). Sequence as v2 of decision durability, after 2.1 ships.
+
+### Ledger search / retrieval at scale
+
+**What:** `baron search` over findings/decisions/handoffs/wiki — structured grep + frontmatter
+filters first; embeddings only on demand.
+
+**Why deferred:** retrieval today is grep plus a hand-curated `wiki/`, and it works at 57 findings
+because the librarian is diligent — not a scalable property, but not needed for adopter #1 either.
+Build before the 10-team stage, not before. **Overlaps `AGENT-TASKS.md` 3.3/3.4** (governed-memory
+evaluation harness, pluggable knowledge substrate), which were added to the roadmap after this
+synthesis — reconcile the two rather than building both.
+
+### Hosted fleet dashboard (the paid anchor)
+
+**What:** a hosted **read-only cache** over N collab repos — intervention-tax and
+operational-fidelity trends, drift scorecards, and the attention view as a product screen ("60 open
+handoffs, oldest 17d, 3 personas stalled"). Rebuildable from clones (never a store); integrate
+Langfuse/Phoenix for the trace layer and own only the git + review-event metrics no tracer sees.
+
+**Why deferred:** demand-gated by design — paid tier, build when an org buyer asks the cross-team
+question. Depends on verified identity (above) and a remote sweep in `status` (today it reads local
+git state only, plus `--fetch`).
+
+### Compliance-grade audit export (paid tier, not a rules engine)
+
+**What:** export the ledger and audit scores as an evidence pack, mapped where honest to EU-AI-Act
+Art. 12 and SOC-2 change-management *evidence categories* — "your repo is the evidence," not a
+citation engine painted onto `capability-rules.v1.yaml`.
+
+**Where this differs from the original competitive study:** the study recommended leaning into
+OWASP/CWE/EU-AI-Act rule citations now. Both the PM and architect scope reviews reject that — on a
+solo, zero-adopter project it "reads as costume" and enters the GRC/Credo category Barony should
+cede outright. This entry replaces that recommendation: a paid export artifact, sold only once a
+real org buyer exists, never a rules/citation feature shipped speculatively.
