@@ -106,6 +106,16 @@ mode is "no wake" rather than "empty wake".
 
 `--no-wake` skips step 3 and keeps the command useful with no `gh` at all (ADR-003 §2.3).
 
+**`--from` is required when a wake is requested.** It is optional only under `--no-wake`, where it
+defaults to the git identity as `baron handoff create` already does. Since `--from` is what the
+allowlist and `wake_origin:` key on, an omitted value under a fail-closed gate would otherwise be
+an unspecified security decision — refuse rather than guess.
+
+**Push semantics:** `git push` of the current branch to its tracking remote, matching
+`ledger.py`'s existing behaviour. A non-fast-forward rejection is **not** retried and **not**
+forced — it aborts before the dispatch, reports, and leaves the handoff committed locally. A
+collab dir that is not a git repo, or has no remote, means no wake: deliver and say so.
+
 **Prerequisite this exposes.** `handoff.create` names files `YYYY-MM-DD-<slug>.md`, but the
 emitted `CONVENTIONS.md` documents `YYYY-MM-DD-HHMM-<from>-<topic-slug>.md`. Code and template
 already disagree; rev. 1 then described the surface as "ordered (timestamped filenames)", which
@@ -127,9 +137,11 @@ The split:
 | Receive the event, spawn a persona | **the project's workflow, not baron** |
 | Run the agent loop | **the runtime** |
 
-Barony emits `.github/workflows/baron-notify.yml` as a **template with the spawn command left as
-an explicitly-marked project-owned slot** — the same shape as `lock-guard.yml` and
-`strip-stale-verdict.yml`. Barony ships the event and the seam; it never ships `claude -p`.
+Barony emits `.github/workflows/baron-notify.yml` into the **collab repo** as a **template whose
+`spawn` job is an explicitly-marked project-owned slot** — the same shape as `lock-guard.yml`.
+(It does NOT follow `strip-stale-verdict.yml` to the code repo: the gate must read
+`manifest.yaml`, which lives here — see §5.5.) Barony ships the event, the gate and the seam; it
+never ships `claude -p`.
 
 That keeps ADR-007 intact: baron makes no model calls, drives no loop, and is runtime-neutral.
 It fires an event; what the project does with it is the project's.
@@ -148,12 +160,25 @@ Rev. 1 put `depth` in the dispatch payload. That has **no channel**: each spawne
 re-invokes the CLI fresh, and ADR-003 §2.2 forbids sidecar state, so the next `baron notify`
 starts at zero and the cap can never trip.
 
-The fix uses the substrate that already carries everything else. The **handoff frontmatter**
-records `wake_depth:` and `wake_origin:`. `baron notify --in-reply-to <stem>` reads the handoff
-being answered, increments its depth, and **refuses to wake** past `--max-depth` (proposed
-default **2**) — delivering the message regardless, and saying why the wake was suppressed. The
-chain is durable, auditable in git, and legible to a human reading `_handoff/`, which is the
-same argument ADR-003 §2.2 makes for every other piece of baron state.
+The fix uses the substrate that already carries everything else. Every handoff `baron notify`
+creates carries two frontmatter fields:
+
+| Field | Meaning |
+|---|---|
+| `wake_depth:` | hops from the originating human/external trigger. A notify with no `--in-reply-to` writes **0**. |
+| `wake_origin:` | the slug that started this chain — copied unchanged from the parent, or set to `--from` when depth is 0. Diagnostic: it answers "who set this off" without walking the chain. |
+
+`baron notify --in-reply-to <stem>` reads the parent handoff, and **writes `wake_depth: parent+1`
+into the new handoff** — the increment is persisted, not computed and discarded. (An earlier
+revision specified the read and the check but not the write, which breaks the chain at hop 2:
+every handoff would carry depth 0 or 1 forever.) It **refuses to wake** past `--max-depth`
+(default **2**), delivering the message regardless and saying why the wake was suppressed.
+
+Because §3 step 2 pushes before dispatching, the workflow's gate job reads the same
+`wake_depth:` from the same committed file — which is what makes §8 Q3's "enforced in both" a
+mechanism rather than an aspiration. The chain is durable, auditable in git, and legible to a
+human reading `_handoff/`: the same argument ADR-003 §2.2 makes for every other piece of baron
+state.
 
 Honest limit: this binds only when the caller passes `--in-reply-to`. An agent that notifies
 "fresh" restarts the chain. That is a real hole, and it is why 5.3 matters.
@@ -177,26 +202,79 @@ supply a PAT, and until it does, chained notifies no-op with no error. The emitt
 template must say so, and `baron notify` should detect the no-op case and report it rather than
 appearing to succeed.
 
-### 5.5 — Who may fire a wake: an explicit manifest allowlist (owner decision)
+### 5.5 — Who may fire a wake: gated in the WORKFLOW, against committed evidence
 
 A wake spends the owner's Actions minutes, making `notify` the first baron command with a direct
 cost side effect. It is still **not** a capability verb — the frozen v1 vocabulary holds, per
-ADR-007 (commands are not permissions) — but the spend is gated by configuration:
+ADR-007 (commands are not permissions). The spend is gated by configuration:
+
+**Schema:** additive, optional, and it takes the **next available minor**. ADR-009 §3.2 also
+targets the next minor for `backlog.park_label`; the two must be sequenced rather than both
+assuming v1.3. Whichever implementation lands first takes it — this ADR deliberately does not
+pin a number.
 
 ```yaml
-# manifest.yaml (additive, optional; schema v1.4)
+# manifest.yaml (additive, optional; collab repo)
 notify:
-  wake_allowed: [librarian, reviewer]   # personas that may fire a repository_dispatch
+  wake_allowed: [librarian, reviewer]   # personas whose handoffs may trigger a spawn
 ```
 
-- **Absent key → nobody may wake.** Fail-closed, matching `baron guard`'s posture (ADR-004 §2.3):
-  a project that has not thought about who may spend money does not spend money. `--no-wake`
-  delivery keeps working regardless, so the command is never useless.
-- `baron notify --from <slug>` checks the caller against the list and refuses the wake — not the
-  delivery — when the persona is not listed, naming the manifest key.
-- This is **instructed, not enforced**: a persona could pass a `--from` that is not its own. It
-  bounds honest mistakes and makes intent auditable, which is the same class of protection every
-  other non-guard mechanism here provides. Saying so plainly matters more than the gate itself.
+**The check lives in the workflow, not only in the CLI** (owner decision, 2026-08-04). A
+CLI-side check gates the *command*; the **dispatch** is what costs, and `gh api …/dispatches`
+reaches it without baron ever running. Gating only in `baron notify` would be fail-closed at the
+CLI and wide open at the spend point.
+
+#### The payload is a claim; the committed handoff is the record
+
+The workflow **must not** read the acting persona from `client_payload`. Whoever fires the
+dispatch writes the payload, so a bypass simply asserts an allowed persona. Nor can it use
+`github.actor`: under the single-account constraint (ADR-002 §1) every persona is the same GitHub
+account, and the platform genuinely cannot tell them apart.
+
+What it can trust is the handoff §3 step 2 **pushed before dispatching** — a git object with an
+author identity and a commit prefix. So the gate:
+
+1. takes the handoff **stem** from the payload — a pointer, not an assertion;
+2. resolves it under `_handoff/` (and `_handoff/archive/`);
+3. reads `from:` from the **committed frontmatter**, cross-checked against the commit's author /
+   `commit_prefix`;
+4. looks it up in `notify.wake_allowed`, and reads `wake_depth:` from the same trusted source.
+
+A forged payload naming an allowed persona now fails: there is no handoff committed by that
+persona to back it. **This is the same rule ADR-008 §1 already enforces for verdicts** — the
+label is an index, the SHA-bound record is the evidence. Here the payload is the index and the
+committed handoff is the record.
+
+*(An earlier revision justified fail-closed by citing ADR-004 §2.3. That citation was wrong and
+is withdrawn: ADR-004 §2.2 says in terms that guard "is a capability gate, **not an allowlist**"
+and passes unknown input. §5.5 is an allowlist, which is a different mechanism; the ADR-008
+parallel above is the one that actually holds.)*
+
+#### Two jobs, so a refusal is cheap
+
+A job-level `if:` cannot help — it evaluates before checkout and cannot see repo files. So:
+
+```yaml
+jobs:
+  gate:    # ~seconds: resolve the handoff, read manifest + wake_depth, emit allowed=true/false
+  spawn:   # needs: gate — if: needs.gate.outputs.allowed == 'true'   ← the project-owned slot
+```
+
+A skipped job consumes nothing, so an unauthorized wake costs **one short gate job** rather than a
+full agent run with model calls. **Honest limit: this bounds the blast radius, not the trigger.**
+Anyone who can push to the repo can still cause a gate job to run. The CLI-side check is retained
+as well — not as security, but so the honest case fails before any spend at all.
+
+#### Placement: the workflow lives in the COLLAB repo
+
+`manifest.yaml` is in the collab repo, so the gate reads its own data locally with no cross-repo
+token — the reason for this choice (owner, 2026-08-04) over the `strip-stale-verdict` precedent of
+living beside the reviewed PRs. Where the spawned persona then operates in the code repo, that is
+the project-owned `spawn` job's business, using whatever credential the project already gives it.
+
+**Absent `notify.wake_allowed` → nobody may wake.** Fail-closed: a project that has not decided
+who may spend money does not spend money. `--no-wake` delivery is unaffected, so the command is
+never useless.
 
 ### 5.4 — No automatic repo-event triggers at first cut
 
@@ -207,8 +285,15 @@ field evidence.
 ## 6. Forge Protocol extension (additive)
 
 One method: `dispatch_event(repo, *, event_type, payload)`. Added additively, as ADR-003 §5.1
-added `create_branch`/`close_pr` for `baron lock`. A `baron.forges` plugin implementing only the
-older surface loses `notify --wake` and nothing else; `--no-wake` keeps working everywhere.
+added `create_branch`/`close_pr` for `baron lock`.
+
+**It joins the `@runtime_checkable` Protocol, and that is what "additive" has to mean here.**
+`runtime_checkable` `isinstance` checks only method *presence*, so an older plugin would fail the
+check once the method is declared. Therefore `get_forge()` must resolve a plugin lacking it as
+usable-but-degraded — raising `ForgeUnavailable` **only when a wake is actually requested**, with
+a message naming the plugin and the missing method. Silently importing an older plugin and then
+`AttributeError`-ing at dispatch time is the failure this spells out to prevent.
+`--no-wake` keeps working everywhere.
 
 ## 7. Honest limits
 
@@ -253,7 +338,10 @@ older surface loses `notify --wake` and nothing else; `--no-wake` keeps working 
    this ADR; fixing it here would smuggle an unrelated behaviour change into a wake feature.
 7. ~~**Duplicate-notify policy.**~~ — **reuse the existing handoff and wake only.** Today's
    raise-on-duplicate yields neither delivery nor wake on the repeated-nudge case, which is this
-   command's most likely use.
+   command's most likely use. Specifics an implementer would otherwise guess: a `--body-file` on a
+   reuse is **appended** as a dated note, never overwriting what is there (append-only, ADR-002
+   §2); and a same-day handoff already `git mv`'d to `_handoff/archive/` is **not** reused — it is
+   closed, so a new one is created. Reuse means "still open and addressed to the same persona".
 8. ~~**Capability-gating.**~~ — **GATE VIA MANIFEST CONFIG** (owner's call; §5.5 below). Not a new
    capability verb: the frozen 10-verb vocabulary stays frozen, per ADR-007's rule that commands
    are not permissions. Instead an explicit allowlist in `manifest.yaml` names which personas may

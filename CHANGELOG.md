@@ -123,7 +123,7 @@ those two.
 
 Design proposal for the FM6/D57 mechanism ADR-008 §4 named but shipped as prose:
 a ratified decision must reach the surfaces personas pull *work* from, not just
-`decisions/`. **Awaiting owner review — nothing implemented.**
+`decisions/`. **Accepted with changes (Vikram, 2026-08-02 / 2026-08-04) — not yet implemented.**
 
 Load-bearing boundary: **baron never determines what a decision contradicts** —
 inferring it needs a model call (crossing ADR-007's line) and its worst failure
