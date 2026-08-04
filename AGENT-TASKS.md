@@ -78,6 +78,16 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
   steering. Start with a design ADR. Detail: vault
   `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
+- [ ] **2.6 — Governed vault propagation** — mechanize the current project-level handoff convention
+  without giving a runtime hook arbitrary cross-repository write authority. Proposed seam:
+  `baron vault propose --input <event.json> --json` classifies/normalizes a candidate; `baron vault
+  publish <proposal> --json` validates an allowlisted target repo/branch/path, schema/frontmatter,
+  source path+SHA, idempotent event ID, and fast-forward safety, then emits a receipt linking source
+  evidence to the vault commit. Claude `Stop` hook is the first adapter, rolled out shadow → draft →
+  automatic FYI milestones; decisions/direction changes retain owner confirmation. DoD: release or
+  accepted ADR produces exactly one valid handoff; routine commits produce none; duplicate hook calls
+  are idempotent; failed publication cannot report success. **Start with a design ADR**; preserve
+  ADR-007's boundary — the runtime owns the agent loop, Barony owns governed bookkeeping/evidence.
 
 ## P3 — Productization + dogfood
 
@@ -87,6 +97,25 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   (mutation-kill rate, claim-drift/PR with direction, **reviewer escape rate**, intervention tax) →
   the Workstream-D paid observability anchor. Reference impl: badminton `fleet-runner/` (metrics-report,
   detect_stalls).
+- [ ] **3.3 — Governed-memory evaluation harness** — establish labeled fixtures and a reproducible
+  baseline before selecting a semantic-memory backend. Cover propagation precision/recall, duplicate
+  suppression, schema/path/status accuracy, retrieval Recall@k/MRR, source-citation accuracy,
+  freshness/supersession, and human intervention tax. Compare: git+markdown baseline; hook-assisted
+  propagation; semantic retrieval; hooks+semantic retrieval. Include routine commit, release,
+  accepted/proposed/parked/superseded ADR, thesis-changing finding, duplicate event, and bad/missing
+  source-SHA cases. Separate from 3.2: fleet health measures the team; this measures durable project
+  knowledge.
+- [ ] **3.4 — Pluggable knowledge substrate + Cognee spike** — define the backend contract first,
+  then evaluate Cognee both as (a) a rebuildable semantic projection over git+markdown and (b) a
+  candidate authoritative knowledge source where its durability, concurrency, provenance, export,
+  and recovery properties meet Barony's governance requirements. The contract must cover stable IDs,
+  append/update/supersede, queries, citations to original evidence, transactions/idempotency,
+  namespace isolation, export/rebuild, retention, and health. Initial adapter is read-only indexing of
+  ADRs/decisions/findings/handoffs/curated status; exclude raw transcripts. **Default remains
+  git+markdown until 3.3 shows material retrieval or scale benefit and the Cognee-authoritative mode
+  proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
+  retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
+  classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.
