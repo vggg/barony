@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `barony` 0.8.0: `baron decision reconcile` / `check` (P2.1, ADR-009 — `park` only)
+
+The FM6 mechanism. A ratified decision was recorded in `decisions/` and still
+silently re-litigated for days on the pilot, because the epic encoding the
+superseded direction sat **open, generating tickets**. Agents do not re-read
+`decisions/` when choosing work — they re-derive it from the backlog.
+**`decisions/` is a record; the backlog is a control.**
+
+Scope is `park` alone (owner decision, 2026-08-02) — the obligation that
+demonstrably caused FM6. `supersedes` / `broadcast` / `direction_doc` stay designed
+in ADR-009 §3 and unbuilt.
+
+- **`baron decision reconcile <N> --park <item>`** records what a decision
+  supersedes, in a marker-delimited block **inside that decision's own
+  `decisions/index.md` entry** (ADR-003 §2.2 — no second store). Idempotent.
+  baron never infers *what* a decision contradicts: the items are declared input.
+- **`baron decision check [N] [--fetch]`** verifies discharge. Exit 1 on
+  outstanding, CI-usable.
+- **The discharge condition is the whole feature.** A park is discharged only when
+  an agent's backlog query stops returning the item — **closed/absent**, or
+  **labelled AND declared** via the new `manifest.backlog.park_label` (schema
+  **v1.3**, additive). "Labelled and commented" is *not* enough: that is exactly
+  the state D57 recorded for epic #214, which it left open. Without `park_label`
+  declared the only discharge is closing it — the default fails toward the strong
+  condition.
+- **Three states, never two** — discharged / outstanding / **unverifiable**. A
+  github_issues backlog without `--fetch`, an unreachable forge, or a `jira`
+  backlog reports unverifiable and is scored as neither.
+- **`check_backlog` now excludes parked items** in all five renderers (the two
+  code renderers + the three prose adapter surfaces), which is what makes the
+  `filtered` discharge real rather than notional.
+- **Authored data, not a derived view.** Unlike the handoff index this block cannot
+  be regenerated, so reconcile only ever appends or updates its own region, never
+  rebuilds it, and a malformed block is **reported, never silently rewritten**
+  (ADR-003 §2.6 precedent) — with a test asserting the file is left byte-identical.
+
+**Forge Protocol lesson, recorded because it bit during the build:** `get_issue`
+was first declared on the `@runtime_checkable` `Forge` Protocol — and immediately
+broke `test_lock.py`'s recorded fake, because those `isinstance` checks test method
+**presence**. Adding a method to the Protocol retroactively invalidates every
+implementation that predates it: the opposite of additive, and it would have broken
+any third-party `baron.forges` plugin the same way. Optional capabilities now live
+**outside** the Protocol as a documented duck-typed contract detected with
+`forge.base.supports()`, degrading to `unverifiable`. A regression test pins it.
+
 ### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
 
 Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`

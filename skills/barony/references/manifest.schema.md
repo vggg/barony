@@ -18,6 +18,7 @@
 | `paths.root` | no | str | anchor for relative resolution; default = collab repo root |
 | `backlog.source` | yes | enum | `file` or `github_issues` or `jira` (resolves F8) |
 | `backlog.location` | yes | str | path (for `file`) or repo/project ref (for trackers) |
+| `backlog.park_label` | no | str | **v1.3.** Label marking an item as parked, so the rendered `check_backlog` query EXCLUDES it. Declaring it is what lets `baron decision check` discharge a park obligation on a still-open item; without it the only discharge is closing/removing the item (ADR-009 §3.2) |
 | `personas` | yes | list | roster: each entry points at a `persona.yaml` |
 | `adapters` | no | map | per-runtime adapter overrides (project defaults); runtime-neutral envelope — see below |
 | `workspace` | no | map | where persona working copies live locally (v1.2, optional) — see below |
@@ -98,6 +99,7 @@ repos:
 backlog:
   source: file                # F8: not hardcoded to GitHub
   location: backlog.md        # lives in the collab repo
+  # park_label: parked        # v1.3, optional — see ADR-009 §3.2
 personas:
   - slug: tess
     spec: agents/tess/persona.yaml
@@ -117,6 +119,10 @@ adapters:                     # optional; runtime-neutral envelope
   at `paths.root`; discovery and relative paths resolve from there.
 
 ## Changelog
+
+- **v1.3** (ADR-009 §3.2): added optional `backlog.park_label`. Additive — a manifest
+  without it validates unchanged, and `baron decision check` simply falls back to the
+  stronger discharge condition (the item must be closed or absent, not merely labelled).
 
 - **v1** (Phase 3): new, derived from the Phase 2 dogfood. Encodes location & transport
   independence (relative paths, configurable backlog source) to fix F1/F7/F8.

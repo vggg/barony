@@ -173,7 +173,7 @@ project's conventions. _handoff/ files may be direct-pushed; substantive changes
 | `read_conventions` | Read `<collab.path>/CONVENTIONS.md` and `<collab.path>/COORDINATION.md` |
 | `check_handoffs` | `grep -rl "^for: <Persona>\|^for: all" <collab.path>/_handoff/ \| xargs grep -l "^status: open"` |
 | `check_review_feedback` | `gh pr list --author @me --state open --json number,headRefOid` (repo per `manifest.repos`); for each PR read the latest verdict comment and act ONLY where the verdict's SHA == `headRefOid`. A review-state label is an index, not evidence. |
-| `check_backlog` | if `manifest.backlog.source == file`: read `<collab.path>/<backlog.location>`. If `github_issues`: `gh issue list --state open --label <routing_label> --repo <backlog.location>`. If `jira`: query per project config. |
+| `check_backlog` | if `manifest.backlog.source == file`: read `<collab.path>/<backlog.location>`. If `github_issues`: `gh issue list --state open --label <routing_label> --repo <backlog.location>`. If `jira`: query per project config. When `manifest.backlog.park_label` is declared, EXCLUDE items carrying it (ADR-009 §3.2 — a parked item is superseded work). |
 
 <!-- /ritual-map:v1 -->
 
