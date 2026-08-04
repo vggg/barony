@@ -59,6 +59,26 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Awaiting owner review — P2.9 agent identity at spawn
+
+[ADR-011](docs/adr/ADR-011-agent-identity-at-spawn.md) (**proposed**, no code) designs verifiable
+per-persona identity without a PKI: an SSH signing key generated at spawn, enrolled once into an
+in-repo `.barony/allowed_signers`, signing every commit and handoff, verified offline with
+`git verify-commit`. The registry is a file in the repo, so verification needs a `git clone` and
+nothing else — the one surveyed option that does not break "the repo is the only source of truth."
+
+Driver: on 2026-08-04 an un-onboarded agent committed directly to `main` under the owner's git
+identity and could not be distinguished from the owner afterwards. Branch protection was enabled the
+same day as the immediate stopgap. The unlocking finding is that **GitHub imposes no limit on signing
+keys per account and records which key signed each commit**, so per-persona attribution works on the
+single shared account — this is orthogonal to, and cheaper than, the per-persona GitHub App work, and
+does not require that sequencing fork to be settled.
+
+Honest bound carried in the ADR: enrollment is **not** self-authenticating — a one-time
+human-approved PR to `allowed_signers` is the trust root, and the scheme is only as strong as that
+gate. **Five open questions in §9 block implementation**, chiefly whether that manual step is
+acceptable.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
