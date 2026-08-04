@@ -45,45 +45,17 @@ adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded th
 *Each is a candidate net-new differentiator — several may be things no competitor has. Probe/scope
 with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
 
-> **2026-08-02 — reconciled against five independent reviews** (research/architect/PM scope-
-> discipline pass + architect/PM product-vision pass, vault
-> `projects/AgentBootstrapNasikoMix/2026-08-02-synthesis-plan.md`). Two changes below (2.2 reframed,
-> 2.4 demoted); one new top-priority item (2.0); three new items (2.6–2.8); one open decision logged,
-> not resolved (identity sequencing, see the callout after 2.8).
-
-- [ ] **2.0 — Guard self-test: fail LOUD when the hook/executable is missing.** Converged
-  highest-priority item across all five 2026-08-01 reviews ("highest-value item in the whole
-  roadmap" — PM; "do immediately, no dependencies" — architect). Closes the real residual of FM4:
-  the guard itself is a real deterministic block for recognized ops, but its *absence* is silent —
-  that's how ~15 PRs merged past a denied `merge_pr`. Ship alongside: enforcement-strength labels
-  (`enforced` / `enforced-with-baron` / `instructed`) surfaced in every generated persona + audit
-  report, and an explicit fail-open/fail-closed policy (currently undefined). Detail: roadmap.md
-  § `baron guard` hardening.
 - [~] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
   work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
   *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
-  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. P2.3 shipped 0.7.0 —
-  this is now unblocked. Q1/Q3/Q4 still open — pick this up next. **2026-08-02: the PM product-vision
-  review independently promotes this from "wedge item #6" to mandatory/signature — no competitor in
-  any segment has decision durability, and D57 is "the pilot's most expensive failure." Bound the
-  mutation half per the architect review (F5): prefer reporting the reconciliation obligation over
-  actively mutating the backlog; do GitHub honestly, report other trackers `unverifiable` rather than
-  building a multi-backend adapter matrix.**)*
-- [ ] **2.2 — Platform-enforced merge gate** (reframed 2026-08-02 — was "Deterministic enforcement").
-  **Cut the "make the denied call impossible / generalize the interceptor across the vocab" ambition**
-  — converged finding across research + architect scope reviews: that is the sandbox/authorization
-  category `baron guard`'s own positioning disclaims ("not a security boundary"), a static shell
-  parser can't win that arms race (`bash -c` bypass, documented in `guard.py`'s own docstring), and
-  OS/container sandboxing + GitHub branch protection already own hard denial for free. **What survives:**
-  `baron platform apply` provisions branch-protection rulesets + required checks from the manifest; a
-  `signet-verify` Action re-derives the reviewer's SHA-bound verdict as a required status; the merger
-  persona's `merge_pr` becomes real because *only its App credential can merge*. This closes the
-  enforcement story honestly — `guard` stays the cooperating-agent nudge, the platform gate is where
-  anything irreversible actually gets stopped. **Depends on identity** (see the open-decision callout
-  below) for the credential half; the ruleset-generator + verify-Action half can be designed now.
-  FM4 stays the driver evidence.
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. Q1/Q3/Q4 still open —
+  pick this up after P2.3 lands.)*
+- [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
+  per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
+  Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
+  identically. Non-deterministic denial is the sharpest enforcement evidence.
 - [x] **2.3 — `baron validate` spec↔runtime drift** — a persona declared in `persona.yaml` but absent
   from the registered runtime agents is a validate-time error (this exact gap forced a wrong-persona
   cron on the pilot).
@@ -92,52 +64,37 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   Signal is **partial registration**, so Tier-1/Tier-2/fresh-scaffold projects stay silent;
   claude + code-puppy registries; `--no-runtime-drift` opts out. Verified against the real pilot
   repo (reports terrence + carson) and against a fresh scaffold (clean).)*
-- [ ] **2.4 — `baron promote`** — **demote from product roadmap (2026-08-02).** Both the research
-  scope-review (#9) and the PM scope-review (finding #3) independently conclude this solves the
-  *maintainer's own* template-sync chore, not an adopter's problem — "internal tooling wearing a
-  product-feature costume." Keep as a script/Makefile target; do not build it as a governed `baron`
-  subcommand or keep it on the public roadmap. (P1 remains the manual precedent for the fold-in
-  itself, which stays real and necessary — only the mechanized-command *product feature* is cut.)
+- [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
+  of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
 - [~] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
   wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
   Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
   (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
-  **Design — two layers, most designs conflate them:** (a) **delivery** — a git-native mailbox
-  `_mailbox/<persona>/` swept first each loop, can't-miss, survives everything; (b) **wake** — a
-  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. `baron notify
-  <persona> <msg>` writes the mailbox AND fires the event. Laptop-off durable; **retires the wasteful
-  wall-clock cron** the badminton pilot polls on now; no bespoke server; on-brand git-native. Adopt A2A
-  *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
-  steering. Start with a design ADR. Detail: vault
+  **Design — two layers, most designs conflate them:** (a) **delivery** and (b) **wake** — a
+  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. Laptop-off
+  durable; no bespoke server; on-brand git-native. Adopt A2A *vocabulary* as the interop north-star
+  only; reserve Temporal signals for true sub-second mid-run steering. Detail: vault
   `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
-  *(Design ADR drafted: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md), status **proposed**.
-  **BLOCKED on owner review** — §8 has five questions; the headline one is that the design DROPS the
-  proposed `_mailbox/` surface because `_handoff/` already is it. No code until answered.)*
-- [ ] **2.6 — Handoff lifecycle under pressure** (new 2026-08-02, PM product-vision M5). Wire the
-  archive tier into `handoff close` by default — the pilot's 156-file flat `_handoff/` dir with 0
-  archived shows the lifecycle mechanism exists but exerts no pressure to use it. Add SLA autotriage
-  to `baron status` (overdue-open counts already exist; add a "stale-open → propose-close" batch
-  helper). `baron index` stays the generated view. Small, on shipped `handoff`/`status`. Evidence:
-  60/156 open in the pilot, 38%, triage currently a manual ~20-item librarian sweep.
-- [ ] **2.7 — `baron merge-check`** (new 2026-08-02, PM product-vision M6). CLI/CI-level precondition
-  verification: confirm a SHA-bound `REVIEW:PASS <sha>` comment exists **at the current head** and CI
-  is green, before the merger persona may merge — refuse naming the failed precondition, never treat a
-  label as an input. This is the mechanism half of 2.2 that needs no identity work and composes
-  directly with the shipped `strip-stale-verdict` Action (P1.4) and signets; ship it independently of
-  the identity fork below. Converts "the merger *verifying* the verdict is discipline" into "is
-  mechanism" — the exact gap class Barony exists to close (the launch FAQ already concedes it's open).
-
-> **Open decision — identity sequencing (2026-08-02, not resolved, needs the owner's call).**
-> Verified per-persona identity (GitHub App per persona + signed commits; unlocks 2.2's credential
-> half, `baron join`, and provable two-party review) has two competing sequencing recommendations
-> from the 2026-08-01 product-vision reviews: the **architect** says pull it to *first*, ahead of even
-> 2.0 — it's the precondition that converts branch protection, signets, and the audit's attribution
-> claim from convention to fact. The **PM** says *design now, build the day adopter #1 adds a second
-> operator* — zero external adopters today, so building identity infra ahead of proven need is
-> speculative platform work, and it isn't on the critical path for 2.0/2.1/2.6/2.7. Full argument on
-> both sides: vault `projects/AgentBootstrapNasikoMix/2026-08-02-synthesis-plan.md` §4. **Not
-> self-decided** per this file's own rule — propose to the owner before starting build (design work is
-> fine either way).
+  *(Design ADR: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md) — **ACCEPTED with changes, Vikram
+  2026-08-02**; all eight §8 questions answered and recorded verbatim in the ADR. Unblocked: build.
+  The headline change is that the design **drops the proposed `_mailbox/<persona>/` surface** —
+  `_handoff/` already is the delivery layer, and adversarial review supplied the stronger argument
+  (it already carries `priority:`). Other owner answers: the pilot's 15-minute cron drops to
+  hourly/daily as a **slow backstop** rather than being retired, because §5.3's silent-no-op paths
+  (missing PAT, missing workflow, rate limit) are real and something must still catch a wake that
+  never fired; `--max-depth 2` enforced in **both** CLI and workflow; repo-event triggers are **out**
+  of the first cut; the handoff-filename disagreement is **its own change**, not smuggled in here;
+  duplicate-notify **reuses the existing handoff and wakes only**.)*
+- [ ] **2.6 — Governed vault propagation** — mechanize the current project-level handoff convention
+  without giving a runtime hook arbitrary cross-repository write authority. Proposed seam:
+  `baron vault propose --input <event.json> --json` classifies/normalizes a candidate; `baron vault
+  publish <proposal> --json` validates an allowlisted target repo/branch/path, schema/frontmatter,
+  source path+SHA, idempotent event ID, and fast-forward safety, then emits a receipt linking source
+  evidence to the vault commit. Claude `Stop` hook is the first adapter, rolled out shadow → draft →
+  automatic FYI milestones; decisions/direction changes retain owner confirmation. DoD: release or
+  accepted ADR produces exactly one valid handoff; routine commits produce none; duplicate hook calls
+  are idempotent; failed publication cannot report success. **Start with a design ADR**; preserve
+  ADR-007's boundary — the runtime owns the agent loop, Barony owns governed bookkeeping/evidence.
 
 ## P3 — Productization + dogfood
 
@@ -147,6 +104,25 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   (mutation-kill rate, claim-drift/PR with direction, **reviewer escape rate**, intervention tax) →
   the Workstream-D paid observability anchor. Reference impl: badminton `fleet-runner/` (metrics-report,
   detect_stalls).
+- [ ] **3.3 — Governed-memory evaluation harness** — establish labeled fixtures and a reproducible
+  baseline before selecting a semantic-memory backend. Cover propagation precision/recall, duplicate
+  suppression, schema/path/status accuracy, retrieval Recall@k/MRR, source-citation accuracy,
+  freshness/supersession, and human intervention tax. Compare: git+markdown baseline; hook-assisted
+  propagation; semantic retrieval; hooks+semantic retrieval. Include routine commit, release,
+  accepted/proposed/parked/superseded ADR, thesis-changing finding, duplicate event, and bad/missing
+  source-SHA cases. Separate from 3.2: fleet health measures the team; this measures durable project
+  knowledge.
+- [ ] **3.4 — Pluggable knowledge substrate + Cognee spike** — define the backend contract first,
+  then evaluate Cognee both as (a) a rebuildable semantic projection over git+markdown and (b) a
+  candidate authoritative knowledge source where its durability, concurrency, provenance, export,
+  and recovery properties meet Barony's governance requirements. The contract must cover stable IDs,
+  append/update/supersede, queries, citations to original evidence, transactions/idempotency,
+  namespace isolation, export/rebuild, retention, and health. Initial adapter is read-only indexing of
+  ADRs/decisions/findings/handoffs/curated status; exclude raw transcripts. **Default remains
+  git+markdown until 3.3 shows material retrieval or scale benefit and the Cognee-authoritative mode
+  proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
+  retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
+  classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.

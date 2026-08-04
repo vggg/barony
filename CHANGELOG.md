@@ -6,11 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Proposed (no code) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
+### Accepted design (no code yet) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
 
-Design proposal for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a
-verdict or handoff lands nothing wakes the responsible persona and a human ends up
-being the message bus. **Awaiting owner review — nothing implemented.**
+Design for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a verdict or
+handoff lands nothing wakes the responsible persona and a human ends up being the
+message bus. **Accepted with changes (Vikram, 2026-08-02) — all eight §8 questions
+answered; implementation unblocked but not yet started.** Owner's substantive
+departures from the draft: the poll cron drops to a **slow backstop** rather than
+being retired, and a **manifest allowlist** gates who may fire a wake.
 
 The survey settles the landscape: **no agent framework wakes a cold headless
 agent** — LangGraph resumes a checkpointed graph, Temporal signals a hosted

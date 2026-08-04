@@ -14,7 +14,7 @@ related:
   - "[[docs/adr/ADR-009-baron-decision-reconciliation]]"
 ---
 
-# ADR-010 (PROPOSED): `baron notify` — waking an idle persona without owning the loop
+# ADR-010 (ACCEPTED): `baron notify` — waking an idle persona without owning the loop
 
 | Field | Value |
 |---|---|
