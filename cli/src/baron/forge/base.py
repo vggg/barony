@@ -76,7 +76,7 @@ class Forge(Protocol):
 # detected with hasattr at the call site and degraded to `unverifiable` when absent
 # (ADR-009 §4's three states). ADR-003 §5.1's "additive" promise only holds this way.
 #
-#   get_issue(repo: Path, number: int) -> dict
+#   get_issue(repo: Path, number: int, *, target_repo: str | None = None) -> dict
 #       One issue, normalized: {number, state, labels (list of names), title, url}.
 #       Consumed by `baron decision check` for github_issues backlogs.
 

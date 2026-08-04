@@ -33,7 +33,20 @@ in ADR-009 §3 and unbuilt.
   condition.
 - **Three states, never two** — discharged / outstanding / **unverifiable**. A
   github_issues backlog without `--fetch`, an unreachable forge, or a `jira`
-  backlog reports unverifiable and is scored as neither.
+  backlog reports unverifiable and is scored as neither. A **malformed block is
+  OUTSTANDING**, not unverifiable: corrupting it must not be the easiest way to
+  turn the gate green.
+- **Matching is token-bounded, never substring.** Review constructed three
+  independent false DISCHARGEDs against the first cut: `unparked` satisfied a
+  `parked` label; `--park #214` against a line reading `issue 214 …` reported
+  **absent** — the *strong* discharge — while the item sat there active; and
+  `--park 214` was discharged by an unrelated `SHU-2140`. A false discharge prints
+  green on exactly the FM6 state this exists to catch, so ids are normalized
+  (`#214` ≡ `214`) and both ids and labels match on `[\w-]` boundaries.
+- **Forge queries target the declared repo.** Without `--repo`, `gh` runs against
+  the collab checkout and answers the *collab* repo's same-numbered issue. A park
+  naming a repo baron cannot resolve reports unverifiable rather than querying the
+  wrong one.
 - **`check_backlog` now excludes parked items** in all five renderers (the two
   code renderers + the three prose adapter surfaces), which is what makes the
   `filtered` discharge real rather than notional.

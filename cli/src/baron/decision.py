@@ -89,11 +89,20 @@ def _entry_span(text: str, n: int) -> tuple[int, int]:
     """(start, end) character offsets of the ``### D<n>`` entry in ``text``.
 
     The entry ends at the next ``### `` heading or EOF — the same shape ledger.py
-    writes.
+    writes. ``\b`` keeps ``### D5`` from matching ``### D57``.
     """
-    m = re.search(rf"^### D{n}\b.*$", text, re.M)
-    if not m:
+    hits = list(re.finditer(rf"^### D{n}\b.*$", text, re.M))
+    if not hits:
         raise DecisionError(f"no `### D{n}` entry found in the decisions index")
+    if len(hits) > 1:
+        # Refuse rather than pick one: writing into the first would silently orphan
+        # the second's obligations, and this is authored data (ADR-009 §3.1).
+        raise DecisionError(
+            f"`### D{n}` appears {len(hits)} times in the decisions index — a duplicate "
+            f"number. baron will not guess which entry owns the obligations; fix the "
+            f"index by hand (`baron index` reports duplicates as errors)."
+        )
+    m = hits[0]
     nxt = re.search(r"^### ", text[m.end():], re.M)
     return m.start(), (m.end() + nxt.start()) if nxt else len(text)
 
@@ -152,6 +161,35 @@ def upsert_block(text: str, n: int, block: dict) -> str:
     return text[:start] + new_entry + text[end:]
 
 
+# --- matching: token boundaries, never bare substrings ------------------------------------
+#
+# Substring matching produced THREE independent false DISCHARGEDs, all found in review:
+#   * `unparked` contains `parked`, so the negation of the park label discharged the park;
+#   * `--park #214` against a line reading `issue 214 ...` matched nothing and was
+#     reported ABSENT — the STRONG discharge — while the item sat there, active;
+#   * `--park 214` was discharged by an unrelated `SHU-2140`.
+# A false DISCHARGED is the one failure that makes this feature worse than nothing: it
+# prints green on exactly the FM6 state it exists to catch.
+
+def _issue_core(issue: str) -> str:
+    """Canonical form of an issue reference: `#214`, `214` and ` #214 ` all -> `214`."""
+    return issue.strip().lstrip("#").strip()
+
+
+def _issue_pattern(issue: str) -> re.Pattern[str]:
+    """Match the id as a whole token, with or without a leading `#`.
+
+    Boundaries are `[\w-]` on both sides so `SHU-2140` does not match `214`, and
+    `#21` does not match `#214`.
+    """
+    return re.compile(rf"(?<![\w-])#?{re.escape(_issue_core(issue))}(?![\w-])")
+
+
+def _label_pattern(label: str) -> re.Pattern[str]:
+    """Match the label as a whole token, so `unparked` does not satisfy `parked`."""
+    return re.compile(rf"(?<![\w-]){re.escape(label.strip())}(?![\w-])")
+
+
 # --- discharge --------------------------------------------------------------------------
 
 def _park_label(manifest: dict) -> str | None:
@@ -182,11 +220,13 @@ def check_park_file(
     if not path.is_file():
         return Finding(decision, "park", park.issue, UNVERIFIABLE,
                        f"backlog file {loc} not found")
-    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if park.issue in ln]
+    id_re = _issue_pattern(park.issue)
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if id_re.search(ln)]
     if not lines:
         return Finding(decision, "park", park.issue, DISCHARGED,
                        f"absent from {loc} — no query returns it")
-    if label and all(label in ln for ln in lines):
+    label_re = _label_pattern(label) if label else None
+    if label_re and all(label_re.search(ln) for ln in lines):
         return Finding(decision, "park", park.issue, DISCHARGED,
                        f"marked `{label}` in {loc}, which backlog.park_label declares excluded")
     if label:
@@ -198,11 +238,41 @@ def check_park_file(
                    f"only discharge is removing it (ADR-009 §3.2)")
 
 
+def _issue_repo(manifest: dict, park: Park) -> str | None:
+    """Which forge repo owns this issue.
+
+    Without it, `gh` runs with cwd=collab and no --repo, so a park on a CODE-repo
+    issue is answered by the collab repo's same-numbered issue — a wrong answer that
+    looks authoritative. `park.repo` names a manifest repos[].id; otherwise a
+    github_issues `backlog.location` of the form owner/name is the target.
+    """
+    if park.repo:
+        for r in manifest.get("repos") or []:
+            if isinstance(r, dict) and r.get("id") == park.repo:
+                remote = r.get("remote")
+                if isinstance(remote, str) and "/" in remote:
+                    slug = remote.rstrip("/").removesuffix(".git")
+                    parts = slug.replace(":", "/").split("/")
+                    if len(parts) >= 2:
+                        return "/".join(parts[-2:])
+        return None
+    backlog = manifest.get("backlog") or {}
+    loc = backlog.get("location")
+    if backlog.get("source") == "github_issues" and isinstance(loc, str) and "/" in loc:
+        return loc
+    return None
+
+
 def check_park_forge(
     forge, repo: Path, manifest: dict, park: Park, decision: int
 ) -> Finding:
     """`github_issues`: closed, or labelled AND declared-excluded."""
     label = _park_label(manifest)
+    target = _issue_repo(manifest, park)
+    if park.repo and target is None:
+        return Finding(decision, "park", park.issue, UNVERIFIABLE,
+                       f"park declares repo `{park.repo}` but the manifest has no such repo "
+                       f"with a resolvable remote — refusing to query a different repo")
     from .forge.base import supports
 
     if not supports(forge, "get_issue"):
@@ -210,7 +280,7 @@ def check_park_forge(
                        f"this forge ({forge.__class__.__name__}) does not implement the optional "
                        f"get_issue extension, so an issue-tracker park cannot be verified")
     try:
-        issue = forge.get_issue(repo, int(park.issue))
+        issue = forge.get_issue(repo, int(_issue_core(park.issue)), target_repo=target)
     except (ValueError, TypeError):
         return Finding(decision, "park", park.issue, UNVERIFIABLE,
                        f"{park.issue!r} is not a numeric issue reference")
@@ -284,15 +354,23 @@ def check(
     source = _backlog_source(manifest)
     findings: list[Finding] = []
 
+    seen_numbers: set[int] = set()
     for m in re.finditer(r"^### D(\d+)\b", text, re.M):
         n = int(m.group(1))
         if only is not None and n != only:
             continue
+        if n in seen_numbers:
+            continue  # duplicate heading: reported once by _entry_span below
+        seen_numbers.add(n)
         start, end = _entry_span(text, n)
         try:
             block = parse_block(text[start:end], where=f"D{n}")
         except DecisionError as exc:
-            findings.append(Finding(n, "park", "-", UNVERIFIABLE, str(exc)))
+            # OUTSTANDING, not UNVERIFIABLE: corrupting the block would otherwise be
+            # the easiest way to turn the gate green, and a parse error is not the
+            # "could not reach the forge" condition ADR-009 §4 defines as unverifiable.
+            findings.append(Finding(n, "park", "-", OUTSTANDING,
+                                    f"reconcile block cannot be read: {exc}"))
             continue
         for park in parks_of(block):
             if source == "github_issues":

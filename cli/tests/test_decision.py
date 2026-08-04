@@ -152,7 +152,7 @@ def test_unsupported_backlog_source_is_unverifiable(tmp_path: Path) -> None:
 
 def test_forge_park_open_and_unlabelled_is_the_fm6_state(tmp_path: Path) -> None:
     class Forge:
-        def get_issue(self, repo, number):
+        def get_issue(self, repo, number, *, target_repo=None):
             return {"number": number, "state": "OPEN", "labels": ["epic"]}
 
     root, m = _collab(tmp_path, source="github_issues", park_label="parked")
@@ -164,11 +164,11 @@ def test_forge_park_open_and_unlabelled_is_the_fm6_state(tmp_path: Path) -> None
 
 def test_forge_park_closed_or_labelled_discharges(tmp_path: Path) -> None:
     class Closed:
-        def get_issue(self, repo, number):
+        def get_issue(self, repo, number, *, target_repo=None):
             return {"state": "CLOSED", "labels": []}
 
     class Labelled:
-        def get_issue(self, repo, number):
+        def get_issue(self, repo, number, *, target_repo=None):
             return {"state": "OPEN", "labels": ["parked"]}
 
     root, m = _collab(tmp_path, source="github_issues", park_label="parked")
@@ -233,3 +233,89 @@ def test_optional_forge_extension_is_not_in_the_protocol(tmp_path: Path) -> None
     findings = decision.check(root, m, forge=old, repo=root)
     assert findings[0].state == decision.UNVERIFIABLE
     assert "get_issue" in findings[0].message
+
+
+# --- regressions for the three FALSE DISCHARGEDs found in review -------------------------
+
+@pytest.mark.parametrize("backlog,why", [
+    ("- SHU-1 epic #214 unparked and active\n", "the NEGATION of the park label"),
+    ("- SHU-1 epic #214 in unparkedland\n", "the label inside a longer word"),
+])
+def test_park_label_must_match_as_a_token_not_a_substring(tmp_path, backlog, why) -> None:
+    """`unparked` contains `parked`. Substring matching discharged the park on the
+    negation of its own label."""
+    root, m = _collab(tmp_path, park_label="parked", backlog=backlog)
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.OUTSTANDING, why
+
+
+def test_issue_id_format_mismatch_is_not_reported_absent(tmp_path) -> None:
+    """The worst of the three: `--park #214` against a line reading `issue 214 ...`
+    matched nothing and was reported ABSENT — the STRONG discharge — while the item
+    sat in the backlog, active."""
+    root, m = _collab(tmp_path, backlog="- issue 214 Epic ACTIVE\n")
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.OUTSTANDING
+    assert "absent" not in findings[0].message
+
+
+def test_issue_id_does_not_match_a_longer_id(tmp_path) -> None:
+    """`--park 214` was discharged by an unrelated `SHU-2140`."""
+    root, m = _collab(tmp_path, backlog="- SHU-2140 an unrelated item\n")
+    decision.reconcile(root, 57, parks=[decision.Park("214")], commit=False)
+    # 214 genuinely absent here -> discharged is CORRECT; the bug was matching 2140.
+    assert decision.check(root, m)[0].state == decision.DISCHARGED
+    # ...and when the real one IS present alongside, it must be found.
+    (root / "backlog.md").write_text("- SHU-2140 unrelated\n- epic 214 active\n", encoding="utf-8")
+    assert decision.check(root, m)[0].state == decision.OUTSTANDING
+
+
+def test_malformed_block_is_outstanding_not_green(tmp_path) -> None:
+    """Corrupting the block must not be the easiest way to turn the gate green."""
+    root, m = _collab(tmp_path)
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    p = root / "decisions/index.md"
+    p.write_text(p.read_text(encoding="utf-8").replace(decision.END_MARKER, ""), encoding="utf-8")
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.OUTSTANDING
+    assert decision.has_outstanding(findings)
+
+
+def test_duplicate_decision_headings_refuse(tmp_path) -> None:
+    """Writing into the first would silently orphan the second's obligations."""
+    root, _ = _collab(tmp_path)
+    p = root / "decisions/index.md"
+    p.write_text(p.read_text(encoding="utf-8") + "\n### D57 — a duplicate (2026-08-04, x)\n",
+                 encoding="utf-8")
+    with pytest.raises(decision.DecisionError, match="appears 2 times"):
+        decision.reconcile(root, 57, parks=[decision.Park("1")], commit=False)
+
+
+def test_forge_park_targets_the_declared_repo(tmp_path) -> None:
+    """Without --repo, gh answers the COLLAB repo's same-numbered issue."""
+    seen = {}
+
+    class Forge:
+        def get_issue(self, repo, number, *, target_repo=None):
+            seen["target"] = target_repo
+            return {"state": "OPEN", "labels": ["parked"]}
+
+    root, m = _collab(tmp_path, source="github_issues", park_label="parked")
+    m["backlog"]["location"] = "vggg/badminton-analyzer"
+    decision.reconcile(root, 57, parks=[decision.Park("214")], commit=False)
+    decision.check(root, m, forge=Forge(), repo=root)
+    assert seen["target"] == "vggg/badminton-analyzer"
+
+
+def test_unresolvable_park_repo_refuses_rather_than_querying_the_wrong_one(tmp_path) -> None:
+    class Forge:
+        def get_issue(self, repo, number, *, target_repo=None):
+            raise AssertionError("must not query when the repo cannot be resolved")
+
+    root, m = _collab(tmp_path, source="github_issues")
+    decision.reconcile(root, 57, parks=[decision.Park("214", repo="code")], commit=False)
+    findings = decision.check(root, m, forge=Forge(), repo=root)
+    assert findings[0].state == decision.UNVERIFIABLE
+    assert "refusing to query a different repo" in findings[0].message

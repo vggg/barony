@@ -400,10 +400,16 @@ def decision_check(
         try:
             from .forge import get_forge
 
-            forge = get_forge(manifest)
+            # get_forge takes a forge NAME (default "github"); passing the manifest
+            # raised TypeError: unhashable type: 'dict' — and it escaped the except
+            # below, so the ONLY path that verifies a github_issues backlog crashed.
+            forge = get_forge(str(manifest.get("forge", "github")))
             repo = collab
-        except (ForgeError, ForgeUnavailable) as exc:
-            typer.echo(f"note: forge unavailable ({exc}) — forge-backed checks report unverifiable")
+        except (ForgeError, ForgeUnavailable, TypeError, KeyError) as exc:
+            typer.echo(
+                f"note: forge unavailable ({exc.__class__.__name__}: {exc}) — "
+                f"forge-backed checks report unverifiable"
+            )
     try:
         findings = decision_mod.check(collab, manifest, only=number, forge=forge, repo=repo)
     except decision_mod.DecisionError as exc:

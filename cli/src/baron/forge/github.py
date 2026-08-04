@@ -84,12 +84,19 @@ class GitHubForge:
         loaded = json.loads(out or "[]")
         return loaded if isinstance(loaded, list) else []
 
-    def get_issue(self, repo: Path, number: int) -> dict[str, object]:
-        """One issue, normalized: labels flattened to a list of names."""
-        out = self._gh(
-            repo, "issue", "view", str(number),
-            "--json", "number,state,labels,title,url",
-        )
+    def get_issue(
+        self, repo: Path, number: int, *, target_repo: str | None = None
+    ) -> dict[str, object]:
+        """One issue, normalized: labels flattened to a list of names.
+
+        ``target_repo`` (owner/name) selects the repo explicitly; without it `gh`
+        resolves from ``repo``'s remote, which answers the WRONG repo when the park
+        is on a code-repo issue and baron is running in the collab repo.
+        """
+        args = ["issue", "view", str(number), "--json", "number,state,labels,title,url"]
+        if target_repo:
+            args += ["--repo", target_repo]
+        out = self._gh(repo, *args)
         data = json.loads(out or "{}")
         if not isinstance(data, dict):
             return {}
