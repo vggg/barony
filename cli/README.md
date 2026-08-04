@@ -479,9 +479,10 @@ uv run --project cli pytest cli/tests    # from the repo root
 ```
 
 The suite includes the capability-vocabulary drift guard, the ritual-token
-cross-renderer guard (every `RITUAL_TOKENS` entry must render real prose in BOTH
-code renderers — the `baron init` kits and the pydantic-ai hydrator; the three
-adapters' `HYDRATE.md` prose surfaces stay ungated, see `../docs/BACKLOG.md`), a
+cross-renderer guard (every `RITUAL_TOKENS` entry renders real prose in both code
+renderers, `RITUAL_TOKENS` equals the canon's session-ritual table, and
+`tests/bi_runtime_accept.py` gates the three adapters' fenced `ritual-map:v1`
+surfaces against that same canon — no unjoined end), a
 synthetic divergent git topology reproducing the 2026-07-22 triple-stranding
 incident classes, the ledger push-rejection race test, subprocess-driven guard
 hook tests (synthetic PreToolUse JSON on stdin), a recorded fake forge for the

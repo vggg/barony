@@ -100,12 +100,13 @@ is enforcement). `tests/bi_runtime_accept.py` did not catch it because it parses
 never ritual tokens. A test now asserts every `RITUAL_TOKENS` entry renders real prose on **both
 code renderers**.
 
-**Honest limit of that guard:** the other three adapters render from the prose surfaces in their
-`HYDRATE.md`, and **no test parses them**. A future ritual token can still be added to the
-vocabulary and silently miss all three. Closing that needs an acceptance-harness extension
-(`bi_runtime_accept.py` is capability-maps-only by construction) — tracked in `docs/BACKLOG.md`,
-not fixed here, because inventing a ritual-surface parser under review pressure is how the *first*
-version of this change went wrong.
+**Closed in plugin 1.10.0.** At the time of this ADR the three prose surfaces were ungated and a
+future token could silently miss all three. `bi_runtime_accept.py` now parses a fenced
+`ritual-map:v1` surface in each, and `test_schemas.py` joins `baron.schemas.RITUAL_TOKENS` to the
+canon's session-ritual table — so the chain runs code renderers ← `RITUAL_TOKENS` ← canon →
+adapters, with no unjoined end. (The first attempt at that closure shipped with the join missing:
+adding a token to `RITUAL_TOKENS` alone left every prose adapter uncovered with all suites green.
+Caught in review.)
 
 **Rationale / evidence.** The dev-side half of §1 needs a *place to happen*. A rule in
 `CONVENTIONS.md` that no ritual step executes is exactly the enforcement theater

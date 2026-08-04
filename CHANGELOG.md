@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
+
+Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`
+(ADR-008 §2) shipped to three of four runtimes on its first cut, because each renderer
+keeps its own surface and nothing cross-checked them — and **both renderer styles fail
+silently**: the code renderers echo the raw token, the prose surfaces simply omit the step.
+1.9.0 guarded the two code renderers; the three prose surfaces stayed ungated.
+
+- **`ritual-map:v1` marker** in `adapters/{claude,code-puppy,generic}/HYDRATE.md` — the same
+  convention `capability-map:v1` already established. Adapter authors now maintain a parsed
+  contract, which is why this is a minor bump rather than a patch.
+- **`tests/bi_runtime_accept.py` check (d)** asserts every ritual token is declared in every
+  prose surface, and flags unknown tokens. Token list comes from the **canon**
+  (`persona.schema.md`'s session-ritual table), not from `baron.schemas` — the harness is
+  stdlib-only and runs without baron installed (ADR-006 §2).
+- **`test_ritual_tokens_match_the_canon`** — the JOIN, and the reason the rest is worth
+  anything. Review of the first cut proved that adding a token to `RITUAL_TOKENS` plus both
+  code renderers, without touching the canon, left all three prose adapters uncovered with
+  every suite green: the guard was wired to one end of a contract whose other end nothing
+  checked. The chain now runs **code renderers ← `RITUAL_TOKENS` ← canon → adapters**.
+- **A closed fence, not a scan-to-next-heading.** Entries are read only between
+  `ritual-map:v1` and its closing marker, because a prose bullet mentioning a token *after*
+  the surface was otherwise miscounted as a declaration — a deleted entry could be masked by
+  a passing mention. Both failure modes have mutation tests.
+- **Shape-tolerant parser** — claude and code-puppy use pipe tables, generic a bullet list;
+  normalising them would be churn for its own sake. An entry must *start* its line with `|`
+  or `-` plus the backticked token, so a token merely mentioned in prose is not miscounted.
+- Verified by mutation: deleting one token from one adapter fails the harness with that
+  adapter and token named. (An earlier cut of the parser stopped at generic's wrapped
+  continuation lines and reported 4 of 5 tokens missing from a surface declaring all 5 —
+  caught by the guard itself before commit.)
+
 _Nothing yet._
 
 ## [1.9.0] — 2026-08-02
@@ -151,8 +183,8 @@ in opposite directions, and both answers were wrong.
   `bi_runtime_accept.py` never gated this (it parses capability maps, not ritual
   tokens). Every `RITUAL_TOKENS` entry must now render real prose on both code
   renderers (`scaffold._ritual_lines` and `runtimes.pydantic_ai._RITUAL_LINES`).
-  The other three adapters' `HYDRATE.md` prose surfaces remain **ungated** — a
-  known, recorded gap (ADR-008 §2, `docs/BACKLOG.md`).
+  The other three adapters' `HYDRATE.md` prose surfaces remained **ungated** at
+  this version — a known, recorded gap, **closed in 1.10.0** (above).
 - **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
   `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
   project's reviewer verdict labels and comments that the head moved, so that —

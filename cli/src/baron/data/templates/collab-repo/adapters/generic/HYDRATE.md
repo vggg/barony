@@ -139,6 +139,15 @@ Use `identity.git_name` / `identity.git_email`, and prefix commits with
 avoids leaking secrets).
 
 ### 5. Run the session-start ritual (resolve intent tokens via the manifest)
+<!-- ritual-map:v1 — machine-readable; parsed by tests/bi_runtime_accept.py.
+     One entry per token in the CANON's session-ritual table
+     (references/persona.schema.md). baron.schemas.RITUAL_TOKENS is joined to that
+     table by cli/tests/test_schemas.py::test_ritual_tokens_match_the_canon. The parser is shape-tolerant
+     (pipe table OR bullet list); entries are read ONLY between this marker and the
+     closing fence below, so prose bullets outside it are not miscounted as
+     declarations. Adding a ritual token without
+     adding it here fails the acceptance harness — that gap shipped once (ADR-008 §2). -->
+
 - `sync_repos` -> update each repo in `manifest.repos` that has a `remote` (use RELATIVE
   paths from `manifest.paths.root`); skip local-only repos.
 - `read_conventions` -> read collab `CONVENTIONS.md` + `COORDINATION.md`.
@@ -147,6 +156,8 @@ avoids leaking secrets).
   verdict's head SHA against the PR's current head and act on the LIVE ones (SHA matches) before
   claiming new work. A review-state label is an index, never the evidence.
 - `check_backlog` -> resolve `manifest.backlog` (a file read, or an issue-tracker query).
+
+<!-- /ritual-map:v1 -->
 
 ### 6. Do the work, re-checking capabilities each step
 Claim a backlog item -> branch -> work -> report to the allowed write scope (e.g. findings/)

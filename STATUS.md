@@ -18,10 +18,9 @@ the same mechanism ADR-002 used. Ships in the pending **plugin 1.9.0 + CLI 0.6.0
 - [x] **P1.2 — `check_review_feedback` session-ritual token** (persona schema v1.2), in the
   `__DEV__` ritual ordered before `check_backlog`; mapped in the three prose-rendered adapters
   **and** the pydantic-ai hydrator (which renders in code), rendered by the `baron init`
-  runtime kits, added to baron's `RITUAL_TOKENS`, with a new drift guard covering the two
-  **code** renderers (the `baron init` kits + the pydantic-ai hydrator). The three adapters'
-  `HYDRATE.md` prose surfaces stay ungated — a recorded gap, not a closed one
-  ([ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md) §2, `docs/BACKLOG.md`). Additive.
+  runtime kits, added to baron's `RITUAL_TOKENS`, with a drift guard covering the two **code**
+  renderers (the `baron init` kits + the pydantic-ai hydrator). Additive. *(At 1.9.0 the three
+  adapters' prose surfaces were still ungated; that gap closed in **1.10.0** — see below.)*
 - [x] **P1.3 — Reviewer/Merger templates hardened.** Verdict format as a parsed contract +
   new-verdict-on-re-review + labels-follow-the-verdict (Reviewer); *a label is never an
   input to the merge decision* (Merger). `COORDINATION.md § Review and merge` updated.
@@ -37,6 +36,14 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > Shipped table record v1.4.0 → v1.8.x, but the newest tag on `origin` is **v1.3.0** — the
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
+
+## Shipped (unreleased) — ritual-token coverage guard (plugin 1.10.0)
+
+Closes the `docs/BACKLOG.md` gap from the 1.9.0 cycle: the three prose adapter surfaces now
+carry a `ritual-map:v1` marker and `tests/bi_runtime_accept.py` parses it, so a ritual token
+can no longer reach some runtimes and not others. Token list sourced from the **canon**
+(`persona.schema.md`), not from baron — the harness runs without baron installed. Verified by
+mutation: deleting one token from one adapter fails the harness naming both.
 
 ## Shipped (unreleased) — P2.3 `baron validate` spec↔runtime drift
 
