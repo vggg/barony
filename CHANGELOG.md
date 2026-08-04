@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Proposed (no code) — [ADR-011](docs/adr/ADR-011-agent-identity-at-spawn.md): agent identity at spawn
+
+Design proposal for verifiable per-persona identity without a PKI. Every persona
+generates an SSH signing key at spawn, is enrolled once into an in-repo
+`.barony/allowed_signers`, signs every commit and handoff, and is verified offline
+with `git verify-commit`. **Awaiting owner review — nothing implemented.**
+
+Driver: on 2026-08-04 an un-onboarded agent committed directly to `main` under the
+owner's git identity and was unattributable from the repo alone; `from:` in handoff
+frontmatter was already known-forgeable. Attribution is the product's core noun and
+rested entirely on convention.
+
+The finding that makes a cheap version possible: **GitHub imposes no limit on signing
+keys per account and records which key signed each commit** — so per-persona
+attribution works on the single shared account, with no bot accounts or GitHub Apps.
+That makes this orthogonal to, and cheaper than, the per-persona credential work, and
+it does not require that sequencing debate to be resolved first.
+
+The gate is a three-way cross-check in CI — **signature ↔ registry entry ↔ claimed
+persona** — which closes the misattribution class (a real key labelled as the wrong
+persona), not merely the anonymous-commit class.
+
+Honest bound, stated in the ADR in ADR-004's voice: this establishes attribution among
+**cooperating** agents and is not a security boundary; and key *enrollment* is not
+self-authenticating — the one-time human-approved PR is the trust root. Surveyed and
+rejected with reasons: gitsign/Sigstore (inherits the shared-account problem, renders
+Unverified on GitHub), SPIFFE (no lightweight profile), DIDs (vocabulary, not
+mechanism), A2A Agent Cards (discovery, not provenance), NANDA and OWASP ANS (both
+require the always-on registry the source-of-truth invariant forbids).
+
 ### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
 
 Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`

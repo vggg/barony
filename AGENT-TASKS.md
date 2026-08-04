@@ -88,6 +88,19 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   accepted ADR produces exactly one valid handoff; routine commits produce none; duplicate hook calls
   are idempotent; failed publication cannot report success. **Start with a design ADR**; preserve
   ADR-007's boundary — the runtime owns the agent loop, Barony owns governed bookkeeping/evidence.
+- [~] **2.9 — Agent identity at spawn** — every persona generates an SSH signing key at spawn, is
+  enrolled once into an in-repo `.barony/allowed_signers`, signs every commit and handoff, and is
+  verified offline at the gate with `git verify-commit`. Driver: the 2026-08-04 incident — an
+  un-onboarded agent committed to `main` under the owner's git identity and was unattributable from
+  the repo alone; `from:` was already known-forgeable (a stand-in wrote `from: Iris` on 2026-08-01).
+  The three-way CI cross-check — **signature ↔ registry entry ↔ claimed persona** — closes the
+  misattribution class, not just the anonymous-commit class. Deliberately **orthogonal to and cheaper
+  than** the per-persona GitHub App debate, so it does not need that fork resolved: GitHub allows
+  unlimited signing keys per account and records which key signed each commit, so per-persona
+  attribution works today on one account.
+  *(Design ADR: [ADR-011](docs/adr/ADR-011-agent-identity-at-spawn.md), status **proposed**.
+  **BLOCKED on owner review** — §9 has five questions, chiefly whether the one-time human-approved
+  enrollment PR is acceptable as the trust root. No code until answered.)*
 
 ## P3 — Productization + dogfood
 
