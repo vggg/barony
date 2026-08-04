@@ -287,12 +287,17 @@ field evidence.
 One method: `dispatch_event(repo, *, event_type, payload)`. Added additively, as ADR-003 §5.1
 added `create_branch`/`close_pr` for `baron lock`.
 
-**It joins the `@runtime_checkable` Protocol, and that is what "additive" has to mean here.**
-`runtime_checkable` `isinstance` checks only method *presence*, so an older plugin would fail the
-check once the method is declared. Therefore `get_forge()` must resolve a plugin lacking it as
-usable-but-degraded — raising `ForgeUnavailable` **only when a wake is actually requested**, with
-a message naming the plugin and the missing method. Silently importing an older plugin and then
-`AttributeError`-ing at dispatch time is the failure this spells out to prevent.
+**It must NOT join the `@runtime_checkable` Protocol** — an earlier revision of this ADR said it
+should, and building P2.1 proved that wrong. Declaring `get_issue` on the Protocol there instantly
+broke a recorded fake forge in the existing test suite, because `runtime_checkable` `isinstance`
+checks test method **presence**: adding a method retroactively invalidates every implementation
+that predates it, which is the opposite of additive and would break any third-party
+`baron.forges` plugin identically.
+
+So `dispatch_event` follows the pattern P2.1 established: an **optional extension declared outside
+the Protocol**, documented as a duck-typed contract and detected with `forge.base.supports()` at
+the call site. A forge without it degrades — `notify` reports that the wake could not be fired and
+names the missing capability — rather than `AttributeError`-ing at dispatch time.
 `--no-wake` keeps working everywhere.
 
 ## 7. Honest limits
