@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
+_Nothing yet._
+
+## [1.10.0] — 2026-08-04
+
+### Added — ritual-token coverage is now gated in the adapters
 
 Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`
 (ADR-008 §2) shipped to three of four runtimes on its first cut, because each renderer
