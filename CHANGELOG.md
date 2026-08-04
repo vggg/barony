@@ -183,8 +183,8 @@ in opposite directions, and both answers were wrong.
   `bi_runtime_accept.py` never gated this (it parses capability maps, not ritual
   tokens). Every `RITUAL_TOKENS` entry must now render real prose on both code
   renderers (`scaffold._ritual_lines` and `runtimes.pydantic_ai._RITUAL_LINES`).
-  The other three adapters' `HYDRATE.md` prose surfaces remain **ungated** — a
-  known, recorded gap (ADR-008 §2, `docs/BACKLOG.md`).
+  The other three adapters' `HYDRATE.md` prose surfaces remained **ungated** at
+  this version — a known, recorded gap, **closed in 1.10.0** (above).
 - **`.github/workflows/strip-stale-verdict.yml`** (ADR-008 §3) — emitted by
   `baron init` alongside `lock-guard.yml`: on every `synchronize`, removes the
   project's reviewer verdict labels and comments that the head moved, so that —

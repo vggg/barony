@@ -224,12 +224,24 @@ def parse_ritual_surface(path):
     """
     with open(path, encoding="utf-8") as f:
         text = f.read()
-    pos = text.find(RITUAL_MARKER)
+    # Anchor on the COMMENT OPENER, not the bare string: a stray prose mention of
+    # the marker name above the real fence would otherwise widen the window and
+    # let a prose bullet mask a deleted entry again (the B3 failure, latent form).
+    pos = text.find("<!-- " + RITUAL_MARKER)
     if pos == -1:
-        raise ValueError(f"no {RITUAL_MARKER} marker in {path}")
-    end = text.find(RITUAL_MARKER_END, pos + len(RITUAL_MARKER))
+        raise ValueError(f"no <!-- {RITUAL_MARKER} comment marker in {path}")
+    end = text.find("<!-- " + RITUAL_MARKER_END, pos)
     if end == -1:
         raise ValueError(f"no closing <!-- {RITUAL_MARKER_END} --> fence in {path}")
+    # Quoting the closing marker INSIDE the opening comment collapses the window to
+    # zero and would report every token missing — a false result. Caught once during
+    # development; made an explicit error rather than a silent wrong answer.
+    open_comment_end = text.find("-->", pos)
+    if open_comment_end != -1 and end < open_comment_end:
+        raise ValueError(
+            f"{path}: the closing {RITUAL_MARKER_END} fence appears INSIDE the opening "
+            f"comment — reword it (do not quote the closing marker literally there)"
+        )
     tokens = set()
     for ln in text[pos:end].splitlines():
         # Entries are read ONLY inside the fence. An earlier cut scanned forward to
@@ -251,6 +263,7 @@ def check_ritual_coverage(ritual_tokens):
     Both renderer styles fail SILENTLY — the code renderers echo the raw token, the prose
     surfaces simply omit the step — so nothing raised.
     """
+    before = len(FAILURES)  # report success for THIS check, not the whole run
     print("(d) ritual-token coverage across the prose adapter surfaces")
     for adapter in PROSE_RITUAL_ADAPTERS:
         path = os.path.join(ADAPTERS_DIR, adapter, "HYDRATE.md")
@@ -265,7 +278,7 @@ def check_ritual_coverage(ritual_tokens):
         extra = sorted(declared - ritual_tokens)
         if extra:
             fail(f"[ritual] {adapter} declares unknown ritual token(s): {extra}")
-    if not FAILURES:
+    if len(FAILURES) == before:
         print(f"  all {len(ritual_tokens)} ritual token(s) declared in "
               f"{len(PROSE_RITUAL_ADAPTERS)} prose adapter(s)")
 
