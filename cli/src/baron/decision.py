@@ -186,8 +186,19 @@ def _issue_pattern(issue: str) -> re.Pattern[str]:
 
 
 def _label_pattern(label: str) -> re.Pattern[str]:
-    """Match the label as a whole token, so `unparked` does not satisfy `parked`."""
-    return re.compile(rf"(?<![\w-]){re.escape(label.strip())}(?![\w-])")
+    """Match the park label only as a DELIMITED MARKER — `[parked]` or `(parked)`.
+
+    A bare token anywhere on the line is not enough: `- #214 Epic — was parked,
+    REOPENED, ACTIVE` discharged the park under that rule, because the word appears
+    in prose describing the item's HISTORY. Requiring a delimiter makes the marker a
+    deliberate act rather than an accident of wording.
+
+    This is also the honest analogue of what the renderers do for a tracker backlog
+    (`--search "-label:<park_label>"` against a real label FIELD). A markdown file has
+    no label field, so baron specifies one; `manifest.schema.md` documents it.
+    """
+    lab = re.escape(label.strip())
+    return re.compile(rf"\[{lab}\]|\({lab}\)")
 
 
 # --- discharge --------------------------------------------------------------------------
@@ -218,20 +229,32 @@ def check_park_file(
                        "backlog.location is not set, so the backlog file cannot be read")
     path = collab / loc
     if not path.is_file():
-        return Finding(decision, "park", park.issue, UNVERIFIABLE,
-                       f"backlog file {loc} not found")
+        # OUTSTANDING, not unverifiable: the manifest DECLARES this file, so its
+        # absence is a project misconfiguration, not an unreachable network — and
+        # unverifiable exits 0, which would make deleting the backlog a way to go green.
+        return Finding(decision, "park", park.issue, OUTSTANDING,
+                       f"backlog file {loc} is declared in the manifest but missing — "
+                       f"the park cannot be verified and must not be assumed discharged")
     id_re = _issue_pattern(park.issue)
     lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if id_re.search(ln)]
     if not lines:
-        return Finding(decision, "park", park.issue, DISCHARGED,
-                       f"absent from {loc} — no query returns it")
+        # ABSENCE IS NOT PROOF. An earlier cut discharged here, and review showed the
+        # id simply failing to match — `--park 214` against `GH-214 … ACTIVE` — was
+        # indistinguishable from genuine removal. That handed out the STRONG discharge
+        # on an epic that was live, and made any typo a permanently green obligation.
+        # baron cannot tell "removed" from "never matched", so it says so.
+        return Finding(decision, "park", park.issue, UNVERIFIABLE,
+                       f"no line in {loc} references `{park.issue}` — baron cannot "
+                       f"distinguish 'removed' from 'never matched' (id-format mismatch, "
+                       f"e.g. GH-214 vs 214). Confirm removal by hand, or record the id "
+                       f"exactly as the backlog writes it")
     label_re = _label_pattern(label) if label else None
     if label_re and all(label_re.search(ln) for ln in lines):
         return Finding(decision, "park", park.issue, DISCHARGED,
-                       f"marked `{label}` in {loc}, which backlog.park_label declares excluded")
+                       f"marked `[{label}]` in {loc}, which backlog.park_label declares excluded")
     if label:
         return Finding(decision, "park", park.issue, OUTSTANDING,
-                       f"still listed in {loc} without the `{label}` marker — an agent "
+                       f"still listed in {loc} without a `[{label}]` marker — an agent "
                        f"reading the backlog will still be offered this work")
     return Finding(decision, "park", park.issue, OUTSTANDING,
                    f"still listed in {loc}, and backlog.park_label is not declared, so the "
@@ -280,7 +303,18 @@ def check_park_forge(
                        f"this forge ({forge.__class__.__name__}) does not implement the optional "
                        f"get_issue extension, so an issue-tracker park cannot be verified")
     try:
-        issue = forge.get_issue(repo, int(_issue_core(park.issue)), target_repo=target)
+        n_issue = int(_issue_core(park.issue))
+        try:
+            issue = forge.get_issue(repo, n_issue, target_repo=target)
+        except TypeError:
+            # An older plugin predates the target_repo kwarg. Adding it is the same
+            # retroactive-invalidation this PR's own forge lesson is about — so fall
+            # back rather than misreport, and refuse when a specific repo was required.
+            if target is not None:
+                return Finding(decision, "park", park.issue, UNVERIFIABLE,
+                               f"this forge does not accept target_repo, so the query would "
+                               f"hit the wrong repo — refusing rather than answering wrongly")
+            issue = forge.get_issue(repo, n_issue)
     except (ValueError, TypeError):
         return Finding(decision, "park", park.issue, UNVERIFIABLE,
                        f"{park.issue!r} is not a numeric issue reference")
@@ -311,6 +345,24 @@ def _index_path(collab: Path) -> Path:
     if not p.is_file():
         raise DecisionError(f"no decisions/index.md under {collab}")
     return p
+
+
+def unresolved_parks(collab: Path, manifest: dict, parks: list[Park]) -> list[Park]:
+    """Parks whose id matches nothing in a `file` backlog, at RECORD time.
+
+    Recording an id the backlog never uses creates an obligation that can never be
+    discharged — `check` will report unverifiable forever, because absence is no
+    longer treated as proof. Catching the typo when it is typed is far cheaper than
+    discovering it as permanent amber. Only meaningful for `file` backlogs; a tracker
+    is queried at check time.
+    """
+    if _backlog_source(manifest) != "file":
+        return []
+    loc = (manifest.get("backlog") or {}).get("location")
+    if not isinstance(loc, str) or not (collab / loc).is_file():
+        return []
+    text = (collab / loc).read_text(encoding="utf-8")
+    return [p for p in parks if not _issue_pattern(p.issue).search(text)]
 
 
 def reconcile(

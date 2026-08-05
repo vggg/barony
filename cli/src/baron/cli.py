@@ -362,11 +362,15 @@ def decision_reconcile(
     baron does NOT infer what a decision contradicts — the items are declared
     input. It records them, and `baron decision check` verifies discharge.
     """
+    requested = [decision_mod.Park(p) for p in park]
     try:
+        try:
+            manifest = status_mod.load_manifest(collab)
+        except Exception:
+            manifest = {}
+        unresolved = decision_mod.unresolved_parks(collab, manifest, requested)
         merged = decision_mod.reconcile(
-            collab, number,
-            parks=[decision_mod.Park(p) for p in park],
-            commit=not no_commit,
+            collab, number, parks=requested, commit=not no_commit,
         )
     except decision_mod.DecisionError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -374,6 +378,13 @@ def decision_reconcile(
     typer.echo(f"D{number}: {len(merged)} park obligation(s) recorded")
     for p in merged:
         typer.echo(f"  park {p.issue}")
+    for p in unresolved:
+        typer.echo(
+            f"WARNING: `{p.issue}` matches nothing in the backlog. `check` will report "
+            f"it unverifiable forever, since absence is not treated as proof. Record "
+            f"the id exactly as the backlog writes it (e.g. GH-214, not 214).",
+            err=True,
+        )
     typer.echo("\nrun `baron decision check` to verify discharge; recording is not reconciling.")
 
 

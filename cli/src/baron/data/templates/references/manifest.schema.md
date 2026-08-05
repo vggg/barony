@@ -18,7 +18,7 @@
 | `paths.root` | no | str | anchor for relative resolution; default = collab repo root |
 | `backlog.source` | yes | enum | `file` or `github_issues` or `jira` (resolves F8) |
 | `backlog.location` | yes | str | path (for `file`) or repo/project ref (for trackers) |
-| `backlog.park_label` | no | str | **v1.3.** Label marking an item as parked, so the rendered `check_backlog` query EXCLUDES it. Declaring it is what lets `baron decision check` discharge a park obligation on a still-open item; without it the only discharge is closing/removing the item (ADR-009 §3.2) |
+| `backlog.park_label` | no | str | **v1.3.** Label marking an item as parked, so the rendered `check_backlog` query EXCLUDES it. Declaring it is what lets `baron decision check` discharge a park obligation on a still-open item. **For a `file` backlog the label must appear as a DELIMITED marker — `[parked]` or `(parked)` — on the item's line**, because a markdown file has no label field and a bare word matches prose about the item's history (`"was parked, REOPENED"`). A tracker backlog uses its real label field. See ADR-009 §3.2 |
 | `personas` | yes | list | roster: each entry points at a `persona.yaml` |
 | `adapters` | no | map | per-runtime adapter overrides (project defaults); runtime-neutral envelope — see below |
 | `workspace` | no | map | where persona working copies live locally (v1.2, optional) — see below |

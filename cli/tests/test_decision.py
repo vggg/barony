@@ -122,10 +122,50 @@ def test_declared_label_discharges(tmp_path: Path) -> None:
     assert [f.state for f in findings] == [decision.DISCHARGED]
 
 
-def test_absent_from_backlog_discharges(tmp_path: Path) -> None:
+def test_absence_is_never_proof_of_discharge(tmp_path: Path) -> None:
+    """ABSENCE IS NOT PROOF — the correction that mattered most.
+
+    An earlier cut discharged when the id matched no line. Review showed that is
+    indistinguishable from the id simply failing to match: `--park 214` against
+    `GH-214 ... ACTIVE` handed out the STRONG discharge on a live epic, and any typo
+    became a permanently green obligation. baron cannot tell 'removed' from 'never
+    matched', so it must say so rather than guess in the unsafe direction.
+    """
     root, m = _collab(tmp_path, backlog="- SHU-2 something else\n")
     decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
-    assert [f.state for f in decision.check(root, m)] == [decision.DISCHARGED]
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.UNVERIFIABLE
+    assert "cannot distinguish" in findings[0].message
+
+
+def test_prefixed_id_mismatch_does_not_discharge(tmp_path: Path) -> None:
+    """`--park 214` vs `GH-214 ... ACTIVE` — the second false DISCHARGED found."""
+    root, m = _collab(tmp_path, backlog="- [ ] GH-214 Epic: storage rewrite — ACTIVE\n")
+    decision.reconcile(root, 57, parks=[decision.Park("214")], commit=False)
+    assert decision.check(root, m)[0].state != decision.DISCHARGED
+
+
+def test_park_label_must_be_a_delimited_marker_not_prose(tmp_path: Path) -> None:
+    """`- #214 Epic — was parked, REOPENED, ACTIVE` discharged under a bare-token
+    rule, because the word appears in prose describing the item's HISTORY."""
+    root, m = _collab(
+        tmp_path, park_label="parked",
+        backlog="- [ ] #214 Epic — was parked, REOPENED, ACTIVE\n",
+    )
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.OUTSTANDING
+    assert "without a `[parked]` marker" in findings[0].message
+
+
+def test_missing_backlog_file_is_outstanding_not_green(tmp_path: Path) -> None:
+    """Deleting the declared backlog must not be a way to turn the gate green."""
+    root, m = _collab(tmp_path)
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    (root / "backlog.md").unlink()
+    findings = decision.check(root, m)
+    assert findings[0].state == decision.OUTSTANDING
+    assert decision.has_outstanding(findings)
 
 
 def test_declared_label_but_item_unmarked_is_outstanding(tmp_path: Path) -> None:
@@ -265,8 +305,9 @@ def test_issue_id_does_not_match_a_longer_id(tmp_path) -> None:
     """`--park 214` was discharged by an unrelated `SHU-2140`."""
     root, m = _collab(tmp_path, backlog="- SHU-2140 an unrelated item\n")
     decision.reconcile(root, 57, parks=[decision.Park("214")], commit=False)
-    # 214 genuinely absent here -> discharged is CORRECT; the bug was matching 2140.
-    assert decision.check(root, m)[0].state == decision.DISCHARGED
+    # 2140 must NOT satisfy 214 — and with no real match the answer is unverifiable,
+    # never discharged (see test_absence_is_never_proof_of_discharge).
+    assert decision.check(root, m)[0].state == decision.UNVERIFIABLE
     # ...and when the real one IS present alongside, it must be found.
     (root / "backlog.md").write_text("- SHU-2140 unrelated\n- epic 214 active\n", encoding="utf-8")
     assert decision.check(root, m)[0].state == decision.OUTSTANDING

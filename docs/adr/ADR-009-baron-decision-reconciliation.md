@@ -126,8 +126,10 @@ The fix: **a park is discharged only when an agent's own backlog query stops ret
 The `filtered` route needs a real spec change — the honest cost of doing this properly:
 
 - `manifest.backlog` gains an optional **`park_label`** (additive; schema v1.3).
-- The `check_backlog` renderers — the two code renderers and the three adapter prose surfaces
-  (ADR-008 §2's list) — emit a query that **excludes** `park_label` when declared.
+- The `check_backlog` renderers emit a query that **excludes** `park_label` when declared.
+  There are **seven**, not the five ADR-008 §2 enumerates: two code renderers, the three
+  adapter prose surfaces, plus `PARTICIPATE.md` and `persona.schema.md`'s token table — the
+  last two found only when a reviewer counted them.
 - `check` verifies the declaration and the label; it cannot verify that a hand-written agent
   honoured the query. That residue is instructed, and §7 says so.
 
