@@ -59,7 +59,19 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
-## Parked after owner review — P2.1 `baron decision` design
+## Shipped (unreleased) — P2.1 `baron decision` (park only, CLI 0.8.0)
+
+`baron decision reconcile --park` / `baron decision check`, per
+[ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) with the owner's scope call
+(2026-08-02: `park` alone — the obligation that caused FM6). Obligations live in a
+marker-delimited block inside the decision's own `decisions/index.md` entry; a park discharges
+only when an agent's backlog query stops returning the item (closed/absent, or labelled **and**
+declared via the new `manifest.backlog.park_label`, schema v1.3). "Labelled and commented" is
+explicitly not enough — that is the state D57 recorded for the epic it left open. All five
+`check_backlog` renderers now exclude parked items. `supersedes` / `broadcast` /
+`direction_doc` remain designed and unbuilt.
+
+## Superseded by the above — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
 FM6/D57 mechanism ADR-008 §4 named: a ratified decision must reach the work-pull surfaces, not

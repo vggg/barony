@@ -259,7 +259,7 @@ Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 | `read_conventions` | Read `<collab.path>/CONVENTIONS.md` + `COORDINATION.md` |
 | `check_handoffs` | `grep -rl "^for: <Persona>\|^for: all" <collab.path>/_handoff/ \| xargs grep -l "^status: open"` |
 | `check_review_feedback` | `gh pr list --author @me --state open --json number,headRefOid`; for each, read the latest verdict comment (`gh pr view <n> --json comments`) and act only where the verdict's SHA == `headRefOid`. Never act on a review-state label alone. |
-| `check_backlog` | resolve `manifest.backlog`: file read, or `gh issue list --label agent-<slug>` |
+| `check_backlog` | resolve `manifest.backlog`: file read, or `gh issue list --label agent-<slug>`. When `manifest.backlog.park_label` is declared, EXCLUDE items carrying it (`--search "-label:<park_label>"`) — a parked item is superseded work (ADR-009 §3.2). |
 
 <!-- /ritual-map:v1 -->
 

@@ -1,8 +1,9 @@
 ---
 created: 2026-08-01
+accepted: 2026-08-02
 type: decision
-status: proposed
-decided_by: Vikram (pending)
+status: accepted
+decided_by: Vikram
 adr: 009
 project: barony
 related:
@@ -15,7 +16,7 @@ related:
 
 | Field | Value |
 |---|---|
-| **Status** | **Proposed / parked** — design only; Q2 + Q5 answered 2026-08-02; build order: after P2.3 |
+| **Status** | **Accepted with changes** (Vikram, 2026-08-02) — `park` obligation IMPLEMENTED in CLI 0.8.0; the other three remain designed and unbuilt |
 | **Date** | 2026-08-01 (rev. 2, after adversarial design review) |
 | **Authors** | Claude (design proposal for Vikram) |
 | **Supersedes** | — (mechanizes [ADR-008](ADR-008-ways-of-working-2026-07-31.md) §4) |
@@ -125,8 +126,10 @@ The fix: **a park is discharged only when an agent's own backlog query stops ret
 The `filtered` route needs a real spec change — the honest cost of doing this properly:
 
 - `manifest.backlog` gains an optional **`park_label`** (additive; schema v1.3).
-- The `check_backlog` renderers — the two code renderers and the three adapter prose surfaces
-  (ADR-008 §2's list) — emit a query that **excludes** `park_label` when declared.
+- The `check_backlog` renderers emit a query that **excludes** `park_label` when declared.
+  There are **seven**, not the five ADR-008 §2 enumerates: two code renderers, the three
+  adapter prose surfaces, plus `PARTICIPATE.md` and `persona.schema.md`'s token table — the
+  last two found only when a reviewer counted them.
 - `check` verifies the declaration and the label; it cannot verify that a hand-written agent
   honoured the query. That residue is instructed, and §7 says so.
 
@@ -241,17 +244,18 @@ you forget.
 
 ## 10. Open questions for the owner (blocking implementation)
 
-1. **Scope for a first cut.** `park` alone — demonstrably the obligation that caused FM6 — or all
-   four? `park` alone is the smallest thing that addresses the incident, but it is also the one
-   that now carries a schema change (§3.2).
+1. ~~**Scope for a first cut.**~~ — **ANSWERED (Vikram, 2026-08-02): `park` alone**, and shipped
+   in CLI 0.8.0. `supersedes` / `broadcast` / `direction_doc` remain designed here and unbuilt.
 2. ~~**Is the `park_label` read-side change acceptable?**~~ — **ANSWERED (Vikram, 2026-08-02):
    yes.** §3.2 stands as designed: `park` discharges on *closed* **or** *filtered via a declared
    `manifest.backlog.park_label`*. The schema change (v1.3) and the five `check_backlog` renderers
    are in scope when this is built.
-3. **Who may run `reconcile`?** ADR-008 §4 makes intake the Librarian's surface. Capability-gate to
-   the librarian archetype, or leave it to convention?
-4. **Retrofit and supersession.** Block-less legacy decisions: green (opt-in) or warn? And is
-   hand-waiving a superseded decision's obligations acceptable for a first cut (§8)?
+3. ~~**Who may run `reconcile`?**~~ — **left to convention** (proposed default, unopposed). A
+   bookkeeping command is not a permission (ADR-007), and gating it would mean growing the frozen
+   10-verb vocabulary for a clerk's task.
+4. ~~**Retrofit and supersession.**~~ — **block-less legacy decisions are GREEN** (opt-in), and a
+   superseded decision's obligations are hand-waived at this cut. Warning on every pre-existing
+   decision would make `baron status` noisy on day one, which teaches people to ignore it.
 5. ~~**Is this the right next build at all**~~ — **ANSWERED (Vikram, 2026-08-02): P2.3 first.**
    `baron validate` spec↔runtime drift is smaller and carries no schema change; this design is
    **parked, not rejected**, and is picked up after P2.3 lands. Q1, Q3 and Q4 stay open until then.
@@ -259,11 +263,11 @@ you forget.
 ## 11. Decision record
 
 - [ ] Approved as written
-- [ ] Approved with changes
+- [x] **Approved with changes** (Vikram, 2026-08-02)
 - [ ] Needs revision
 - [ ] Rejected
 
-**Status: PARKED after partial owner review (2026-08-02).** Q2 answered (the `park_label`
-read-side change is accepted, so §3.2 stands); Q5 answered (**P2.3 is built first**). Q1 (first-cut
-scope), Q3 (who may run `reconcile`) and Q4 (retrofit + supersession) remain open. No
-implementation until they are.
+**Implemented (`park` only) in CLI 0.8.0.** Superseded status note below, kept for the record: all five questions are answered inline in §10 —
+`park_label` accepted, P2.3 built first, scope is `park` alone, `reconcile` ungated, legacy
+decisions green. The `park` obligation ships in CLI 0.8.0; the other three obligations stay
+designed and unbuilt until there is a forcing function.
