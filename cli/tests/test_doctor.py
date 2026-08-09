@@ -9,7 +9,9 @@ doctor names it, with a remedy, at nonzero exit.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 from pathlib import Path
 
 import pytest
@@ -21,6 +23,22 @@ from baron.cli import app
 runner = CliRunner()
 
 PERSONAS = "dev:carson,librarian:iris"
+
+
+def _hook_command(dest: Path, command: str) -> None:
+    """Rewrite the project's PreToolUse guard command."""
+    path = dest / ".claude" / "settings.json"
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"] = command
+    path.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _script(path: Path, body: str) -> Path:
+    """Write an executable POSIX shell script (a stand-in for an installed CLI)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("#!/bin/sh\n" + body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return path
 
 
 def _scaffold(tmp_path: Path) -> Path:
@@ -78,6 +96,9 @@ def test_caveat_is_printed(tmp_path: Path) -> None:
     result = _run(dest)
     assert "verifies WIRING, not invocation" in result.output
     assert "CANNOT observe whether" in result.output
+    # Both narrower bounds are stated too, not just the headline one.
+    assert "measure the executable the hook NAMES" in result.output
+    assert "DOCTOR's PATH, not the runtime's" in result.output
 
 
 def test_json_is_machine_readable(tmp_path: Path) -> None:
@@ -272,40 +293,115 @@ def test_no_persona_anywhere_is_unknown(tmp_path: Path) -> None:
 
 
 # --- check 6: the enforcement path is really exercised -------------------------------------
+#
+# The load-bearing property, and the one a previous revision got wrong: checks 6
+# and 7 must measure THE EXECUTABLE THE HOOK NAMES, not the `baron` package that
+# happens to be importable in doctor's own interpreter. A project can be wired to
+# a stale, shadowed or hand-rolled `baron` — that is the badminton shape — and an
+# in-process probe is structurally blind to it, because it exercises the same
+# object the bug assumes is fine.
 
 
-def test_enforcement_check_fails_when_the_deny_path_stops_denying(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The load-bearing assertion: check 6 is not decorative.
+def test_probe_runs_the_hooks_own_executable_by_default(tmp_path: Path) -> None:
+    dest = _scaffold(tmp_path)
+    payload = json.loads(
+        runner.invoke(app, ["doctor", "--dir", str(dest), "--json"]).stdout
+    )
+    assert payload["probe_mode"] == "subprocess"
+    assert payload["probe_argv"], payload
+    assert Path(payload["probe_argv"][0]).name in ("baron", "baron.exe")
+    detail = {c["id"]: c for c in payload["checks"]}["enforcement-path"]["detail"]
+    assert "the command Claude Code would start does block" in detail
 
-    Monkeypatching guard.process to wave everything through must turn
-    enforcement-path (and fail-closed) FAIL. If this test can be deleted without
-    breaking anything, check 6 is theatre.
+
+def test_a_fake_baron_that_allows_everything_is_caught(tmp_path: Path) -> None:
+    """THE regression test.
+
+    A hook wired to a `baron` that answers `--version` happily but exits 0 on
+    `guard` is a project that is INSTRUCTED while reporting itself enforced. No
+    monkeypatch can catch this — patching `baron.guard.process` patches the very
+    module the in-process probe would use. Only spawning the hook's own command
+    sees it.
     """
     dest = _scaffold(tmp_path)
-    monkeypatch.setattr(guard_mod, "process", lambda *_a, **_k: (0, ""))
+    fake = _script(
+        tmp_path / "fakebin" / "baron",
+        'case "$1" in\n'
+        '  --version) echo "baron, version 9.9.9"; exit 0 ;;\n'
+        "  guard)     cat >/dev/null; exit 0 ;;\n"  # allows everything, silently
+        "esac\n"
+        "exit 0\n",
+    )
+    persona = dest / "agents" / "carson" / "persona.yaml"
+    _hook_command(dest, f"{fake} guard --persona-file {persona}")
+
     result = _run(dest)
     assert result.exit_code == 1, result.output
     checks = _by_id(dest)
-    assert checks["enforcement-path"]["status"] == doctor_mod.FAIL
-    assert "does NOT block" in checks["enforcement-path"]["detail"]
+    # The executable itself looks fine — that is exactly why this is dangerous.
+    assert checks["cli-on-path"]["status"] == doctor_mod.PASS
+    assert checks["hook-configured"]["status"] == doctor_mod.PASS
+    enforcement = checks["enforcement-path"]
+    assert enforcement["status"] == doctor_mod.FAIL
+    assert "does NOT block" in enforcement["detail"]
+    assert str(fake) in enforcement["detail"]
+    assert enforcement["remedy"]
     assert checks["fail-closed"]["status"] == doctor_mod.FAIL
 
 
-def test_enforcement_check_rejects_a_deny_that_is_really_a_crash(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_fake_baron_that_blocks_without_a_guard_reason_is_caught(
+    tmp_path: Path,
 ) -> None:
+    """Exit 2 with no `baron guard:` stderr is not the guard blocking."""
+    dest = _scaffold(tmp_path)
+    fake = _script(
+        tmp_path / "fakebin" / "baron",
+        'case "$1" in\n'
+        "  --version) echo v; exit 0 ;;\n"
+        "esac\n"
+        "cat >/dev/null\n"
+        "exit 2\n",
+    )
+    _hook_command(dest, f"{fake} guard --persona-file x.yaml")
+    checks = _by_id(dest)
+    assert checks["enforcement-path"]["status"] == doctor_mod.FAIL
+    assert "no `baron guard:` reason" in checks["enforcement-path"]["detail"]
+
+
+def test_a_fake_baron_that_crash_denies_is_caught(tmp_path: Path) -> None:
     """Exit 2 via the internal-error path is an outage, not enforcement."""
     dest = _scaffold(tmp_path)
-    monkeypatch.setattr(
-        guard_mod,
-        "process",
-        lambda *_a, **_k: (2, "baron guard: DENY (internal error, fail closed) — boom"),
+    fake = _script(
+        tmp_path / "fakebin" / "baron",
+        'case "$1" in\n'
+        "  --version) echo v; exit 0 ;;\n"
+        "esac\n"
+        "cat >/dev/null\n"
+        'echo "baron guard: DENY (internal error, fail closed) — boom" >&2\n'
+        "exit 2\n",
     )
+    _hook_command(dest, f"{fake} guard --persona-file x.yaml")
     checks = _by_id(dest)
     assert checks["enforcement-path"]["status"] == doctor_mod.FAIL
     assert "internal-error fail-closed path" in checks["enforcement-path"]["detail"]
+
+
+def test_a_fake_baron_that_errors_out_is_caught(tmp_path: Path) -> None:
+    """Any non-2 exit is 'no objection' to Claude Code — so it is a FAIL."""
+    dest = _scaffold(tmp_path)
+    fake = _script(
+        tmp_path / "fakebin" / "baron",
+        'case "$1" in\n'
+        "  --version) echo v; exit 0 ;;\n"
+        "esac\n"
+        "cat >/dev/null\n"
+        'echo "ImportError: no module named baron" >&2\n'
+        "exit 1\n",
+    )
+    _hook_command(dest, f"{fake} guard --persona-file x.yaml")
+    checks = _by_id(dest)
+    assert checks["enforcement-path"]["status"] == doctor_mod.FAIL
+    assert "not 2" in checks["enforcement-path"]["detail"]
 
 
 def test_enforcement_probe_is_independent_of_project_personas(tmp_path: Path) -> None:
@@ -315,6 +411,123 @@ def test_enforcement_probe_is_independent_of_project_personas(tmp_path: Path) ->
     text = persona.read_text(encoding="utf-8")
     assert "write_code" in text  # the scaffolded dev can write code
     assert _by_id(dest)["enforcement-path"]["status"] == doctor_mod.PASS
+
+
+# --- the in-process fallback, and its admitted bound ----------------------------------------
+
+
+def _force_in_process(dest: Path) -> None:
+    """No resolvable hook executable -> checks 6/7 fall back to the module."""
+    _hook_command(dest, "/nonexistent/bin/baron guard --persona-file p.yaml")
+
+
+def test_fallback_is_in_process_and_says_so(tmp_path: Path) -> None:
+    dest = _scaffold(tmp_path)
+    _force_in_process(dest)
+    payload = json.loads(
+        runner.invoke(app, ["doctor", "--dir", str(dest), "--json"]).stdout
+    )
+    assert payload["probe_mode"] == "in-process"
+    assert payload["probe_argv"] == []
+    checks = {c["id"]: c for c in payload["checks"]}
+    detail = checks["enforcement-path"]["detail"]
+    assert "in-process `baron.guard` module ONLY" in detail
+    assert "nothing about the command the hook would run" in detail
+    # ...and it must not claim the hook's command blocks.
+    assert "the command Claude Code would start does block" not in detail
+    # The render also announces the degraded mode.
+    assert "in-process" in _run(dest).output
+
+
+def test_in_process_fallback_still_catches_a_broken_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fallback is not decorative either — it just measures less."""
+    dest = _scaffold(tmp_path)
+    _force_in_process(dest)
+    monkeypatch.setattr(guard_mod, "process", lambda *_a, **_k: (0, ""))
+    result = _run(dest)
+    assert result.exit_code == 1, result.output
+    checks = _by_id(dest)
+    assert checks["enforcement-path"]["status"] == doctor_mod.FAIL
+    assert "does NOT block" in checks["enforcement-path"]["detail"]
+    assert checks["fail-closed"]["status"] == doctor_mod.FAIL
+
+
+# --- wrapper hook commands (`uv run baron guard …`) -----------------------------------------
+
+
+def test_wrapper_command_resolves_the_launcher_not_bare_baron(tmp_path: Path) -> None:
+    """`uv run baron` must resolve `uv`, not `baron`.
+
+    Resolving the `baron` token directly is a false FAIL on a correctly-wired
+    project: `baron` may exist only inside the environment `uv run` creates.
+    """
+    wiring = doctor_mod.HookWiring(
+        None, (), "uv run baron guard --persona-file p.yaml", ("Bash",), None
+    )
+    exe = doctor_mod.resolve_hook_exe(wiring, tmp_path)
+    assert exe.argv == ("uv", "run", "baron")
+    assert exe.launcher == "uv"
+    assert exe.wrapper == "uv"
+    assert exe.prefixed is True
+
+
+def test_wrapper_command_is_probed_end_to_end(tmp_path: Path) -> None:
+    dest = _scaffold(tmp_path)
+    persona = dest / "agents" / "carson" / "persona.yaml"
+    # A stand-in `uv` that drops its "run" argument and execs the rest.
+    fake_uv = _script(tmp_path / "fakebin" / "uv", 'shift\nexec "$@"\n')
+    _hook_command(dest, f"{fake_uv} run baron guard --persona-file {persona}")
+
+    result = _run(dest)
+    assert result.exit_code == 0, result.output
+    checks = _by_id(dest)
+    assert checks["cli-on-path"]["status"] == doctor_mod.PASS
+    assert "'uv' wrapper" in checks["cli-on-path"]["detail"]
+    assert checks["enforcement-path"]["status"] == doctor_mod.PASS
+    assert "run baron guard" in checks["enforcement-path"]["detail"]
+
+
+def test_wrapper_that_cannot_produce_a_version_is_unknown_not_fail(
+    tmp_path: Path,
+) -> None:
+    """Doctor's value depends on people believing it when it shouts (ADR-017 §3.6).
+
+    A resolvable wrapper that will not answer `--version` here may be a broken
+    hook or an environment doctor cannot materialise. It will not guess FAIL.
+    """
+    dest = _scaffold(tmp_path)
+    fake_uv = _script(
+        tmp_path / "fakebin" / "uv",
+        'echo "error: no `uv.lock` found" >&2\nexit 2\n',
+    )
+    _hook_command(dest, f"{fake_uv} run baron guard --persona-file p.yaml")
+    cli_check = _by_id(dest)["cli-on-path"]
+    assert cli_check["status"] == doctor_mod.UNKNOWN
+    assert "could not get a version out of it here" in cli_check["detail"]
+    assert cli_check["remedy"]
+
+
+def test_unrecognised_prefix_is_not_treated_as_a_wrapper(tmp_path: Path) -> None:
+    wiring = doctor_mod.HookWiring(
+        None, (), "timeout 5 baron guard --persona-file p.yaml", ("Bash",), None
+    )
+    exe = doctor_mod.resolve_hook_exe(wiring, tmp_path)
+    assert exe.wrapper is None
+    assert exe.prefixed is True
+    assert "unrecognised prefix" in exe.source
+
+
+def test_project_dir_token_is_expanded_in_the_executable(tmp_path: Path) -> None:
+    dest = _scaffold(tmp_path)
+    fake = _script(dest / "bin" / "baron", "echo v\nexit 0\n")
+    wiring = doctor_mod.HookWiring(
+        None, (), '${CLAUDE_PROJECT_DIR}/bin/baron guard --persona-file p', ("Bash",), None
+    )
+    exe = doctor_mod.resolve_hook_exe(wiring, dest)
+    assert exe.resolved == str(fake)
+    assert exe.which_used is False
 
 
 # --- ADR-004 §2.3: the fail-closed policy, pinned ------------------------------------------
@@ -360,8 +573,6 @@ def test_override_env_is_restored_after_the_probe(
     dest = _scaffold(tmp_path)
     monkeypatch.setenv(guard_mod.OVERRIDE_ENV, "sentinel")
     doctor_mod.run(dest)
-    import os
-
     assert os.environ[guard_mod.OVERRIDE_ENV] == "sentinel"
 
 

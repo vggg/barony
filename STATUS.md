@@ -44,8 +44,8 @@ Closes the first and highest-value checkbox of the `baron guard` hardening list 
 persona denied `merge_pr`, and nothing had failed — the hook had never been wired into
 `.claude/settings.json`, so the denial degraded to persona text **silently**. `baron doctor`
 runs nine read-only checks (executable resolves · PreToolUse hook present · matcher covers
-every governed tool · persona parses · rules artifact loads · **a synthetic denial really
-exits 2 in this install** · malformed stdin fails closed per ADR-004 §2.3 ·
+every governed tool · persona parses · rules artifact loads · **a synthetic denial fed to the
+executable the hook names really exits 2** · malformed stdin fails closed per ADR-004 §2.3 ·
 `BARON_GUARD_OVERRIDE` not exported · override log writable, INFO-only) and **exits 1 on any
 FAIL**, each with a remedy line. `--json` for CI and audit reports.
 
@@ -57,6 +57,16 @@ non-goals, both deliberate: evidence checks are INFO and never FAIL (enforcement
 fail-closed, evidence is fail-open), and only project-level settings are read — a hook wired
 in `~/.claude/settings.json` reads as FAIL, because a verdict that depends on the developer's
 home directory is not a property of the repo.
+
+**Two narrower bounds, also in the output** (ADR-017 §3.2a, §3.5). Checks 6–7 *spawn the
+hook's own command* — `uv run`-style wrapper prefixes included — instead of calling the
+`baron` module doctor imported: a project wired to a stale or hand-rolled `baron` is the
+badminton shape, and an in-process probe is blind to it by construction. Where the hook names
+no resolvable executable doctor falls back in-process and says so, and that PASS is scoped to
+the library rather than to the hook's command (`probe_mode` in `--json`). And a *bare*
+executable name is resolved against **doctor's** PATH, not the runtime's, so `cli-on-path`
+for that shape is a property of the invoking shell — the same non-reproducibility that keeps
+`~/.claude/settings.json` out of scope.
 
 ## Documented (unreleased) — 2026-08-08 evaluation close-out, no code change
 

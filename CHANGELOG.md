@@ -19,9 +19,16 @@ guard and a guard that never had to fire produce identical evidence: nothing.
   project `.claude/settings.json` wires a `baron guard` PreToolUse hook; its matcher
   covers every governed tool (`Bash`, `Edit`, `Write`, `NotebookEdit`); the named persona
   parses; `capability-rules.v1.yaml` loads at a supported `rules_version`; **a synthetic
-  denial really returns exit 2 in this install**; malformed stdin also returns exit 2
-  (ADR-004 §2.3); `BARON_GUARD_OVERRIDE` is not sitting exported; and the override log is
-  writable (INFO).
+  denial fed to the executable the hook actually names really returns exit 2**; malformed
+  stdin also returns exit 2 (ADR-004 §2.3); `BARON_GUARD_OVERRIDE` is not sitting exported;
+  and the override log is writable (INFO).
+- **Checks 6 and 7 spawn the hook's own command** (`<exe> guard --persona-file <probe>`,
+  wrapper prefixes such as `uv run` included), not the `baron` package that happens to be
+  importable in doctor's interpreter. A project wired to a stale, shadowed or hand-rolled
+  `baron` *is* the badminton shape, and an in-process probe is structurally blind to it —
+  it exercises the very module the bug assumes is fine. Where the hook names no resolvable
+  executable, doctor falls back in-process and the check detail says so in those words: a
+  PASS there is about the library, not about the command the hook would run.
 - **The caveat ships with the command, not just the docs.** Doctor verifies WIRING, not
   invocation — it proves the install *can* enforce and cannot observe whether Claude Code
   actually ran the hook, because nothing outside the runtime can. That sentence prints on
@@ -43,11 +50,22 @@ guard and a guard that never had to fire produce identical evidence: nothing.
 - **Un-copied runtime kits get a named remedy** — when there is no hook but
   `agents/<slug>/runtime/.claude/settings.json` exists, the remedy names the kit path, the
   incident, and the `cp -R`. That gap *is* the badminton shape.
+- **Wrapper hook commands are understood.** `uv run baron guard …` / `poetry run baron
+  guard …` resolve the *launcher*, not the bare `baron` token, which may exist only inside
+  the environment the launcher materialises; resolving it directly produced a false FAIL on
+  a correctly-wired project. A resolvable launcher that will not answer `--version` here is
+  reported UNKNOWN, not FAIL — doctor's value depends on people believing it when it shouts.
+- **Two bounds are stated in the output, not just the docs**: which binary was measured
+  (above), and that a bare executable name is resolved with `shutil.which` against
+  **doctor's** PATH rather than the runtime's — the same non-reproducibility that keeps
+  `~/.claude/settings.json` out of scope.
 - `baron init`'s next-steps now has an explicit INSTALL-the-kit step followed by
   `baron doctor`, and both READMEs' quickstarts do the same (verified as written).
-- Tests: `cli/tests/test_doctor.py` — mostly mutation tests (delete the settings file,
-  corrupt the persona, narrow the matcher, break the executable path, monkeypatch the deny
-  path to return 0) each asserting doctor names the break at nonzero exit.
+- Tests: `cli/tests/test_doctor.py` — mostly mutation tests, each asserting doctor names the
+  break at nonzero exit. Delete the settings file; corrupt the persona; narrow the matcher;
+  break the executable path; and — the one no monkeypatch can express — point the hook at a
+  shell-script `baron` that answers `--version` but exits 0 on `guard`, or exits 2 with no
+  `baron guard:` reason, or crash-denies.
 
 ### Documented — two evaluation gaps that were already decided
 

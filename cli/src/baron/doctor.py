@@ -20,9 +20,10 @@ comfortable nothing:
 4. ``persona-file``      — the persona the hook names exists and parses.
 5. ``rules-artifact``    — ``capability-rules.v1.yaml`` loads at a supported
                            ``rules_version``.
-6. ``enforcement-path``  — a synthetic denial fed through :func:`baron.guard.process`
-                           really returns exit 2 *in this install*.
-7. ``fail-closed``       — malformed hook stdin also returns exit 2 (ADR-004 §2.3).
+6. ``enforcement-path``  — a synthetic denial fed to **the executable the hook
+                           actually names** really returns exit 2.
+7. ``fail-closed``       — malformed hook stdin also returns exit 2 (ADR-004 §2.3),
+                           measured against that same executable.
 8. ``override-env``      — ``BARON_GUARD_OVERRIDE`` is not sitting set in this
                            environment (if it is, every denial is being allowed).
 9. ``override-log``      — INFO only: the evidence sink is writable. Evidence is
@@ -36,6 +37,23 @@ nothing outside the runtime can see that. A green doctor means "correctly
 wired", never "enforcement happened". Implying otherwise would reproduce the
 exact failure this command exists to catch, so the caveat is printed on every
 run and is part of the machine-readable output too.
+
+Two further bounds, both stated in the output rather than only here:
+
+- **Which binary was measured.** Checks 6 and 7 run the *hook's own command*
+  (``<exe> guard --persona-file <probe>``, wrapper prefixes like ``uv run``
+  included) as a subprocess whenever that command names a resolvable
+  executable. Only when it does not — no hook, or an executable that will not
+  resolve — do they fall back to the in-process :func:`baron.guard.process`,
+  and the check detail then says so explicitly. The fallback measures the
+  ``baron`` package doctor itself imported, which is *not necessarily* the one
+  the hook would run; claiming enforcement from it would be the project's own
+  automatic-FAIL condition.
+- **Whose PATH.** A bare (unqualified) executable name in the hook command is
+  resolved with :func:`shutil.which`, i.e. against **doctor's** ``PATH``, not
+  the runtime's. For that case ``cli-on-path`` is a property of the invoking
+  shell — the same non-reproducibility that keeps ``~/.claude/settings.json``
+  out of scope. An absolute path in the hook command removes the ambiguity.
 
 Scope note: only PROJECT-level settings are inspected
 (``<dir>/.claude/settings.json`` and ``.claude/settings.local.json``). A hook
@@ -77,13 +95,49 @@ SETTINGS_FILES: tuple[str, ...] = (
 #: Placeholder Claude Code expands to the project root inside a hook command.
 PROJECT_DIR_TOKENS: tuple[str, ...] = ("${CLAUDE_PROJECT_DIR}", "$CLAUDE_PROJECT_DIR")
 
+#: Launchers commonly placed in FRONT of `baron` in a hook command
+#: (``uv run baron guard …``). The interesting token for resolution is then the
+#: launcher, not `baron` — `baron` may exist only inside the environment the
+#: launcher materialises, and resolving it directly produces a false FAIL on a
+#: correctly-wired project.
+KNOWN_WRAPPERS: frozenset[str] = frozenset(
+    {
+        "uv",
+        "uvx",
+        "poetry",
+        "pipx",
+        "pipenv",
+        "pdm",
+        "hatch",
+        "rye",
+        "conda",
+        "mamba",
+        "micromamba",
+        "nix-shell",
+        "env",
+    }
+)
+
+#: How long doctor waits on a probe subprocess. Generous: a wrapper such as
+#: ``uv run`` may have to materialise an environment on first use.
+PROBE_TIMEOUT_S = 60
+
+#: Every guard stderr line — both DENY paths — carries this prefix. Its absence
+#: on an exit-2 means the 2 came from something other than the guard.
+GUARD_STDERR_MARKER = "baron guard:"
+
 CAVEAT = (
     "NOTE: doctor verifies WIRING, not invocation. It proves this install CAN "
-    "enforce — baron resolves, the hook is configured, the persona and rules "
-    "parse, and a synthetic denial really exits 2. It CANNOT observe whether "
-    "Claude Code actually ran the hook on a real tool call; nothing outside the "
-    "runtime can. Read a green doctor as 'correctly wired', never as "
-    "'enforcement happened'."
+    "enforce — the hook's executable resolves, the hook is configured, the "
+    "persona and rules parse, and a synthetic denial fed to that executable "
+    "really exits 2. It CANNOT observe whether Claude Code actually ran the "
+    "hook on a real tool call; nothing outside the runtime can. Read a green "
+    "doctor as 'correctly wired', never as 'enforcement happened'. Two further "
+    "bounds: (a) checks 6-7 measure the executable the hook NAMES; where no "
+    "resolvable executable is named they fall back to the in-process baron "
+    "package and the check detail says so — a PASS there is about the library, "
+    "not about the command the hook would run; (b) a bare executable name is "
+    "resolved against DOCTOR's PATH, not the runtime's."
 )
 
 
@@ -104,6 +158,11 @@ class Check:
 class Report:
     dir: Path
     checks: list[Check] = field(default_factory=list)
+    #: "subprocess" when checks 6-7 exercised the hook's own executable,
+    #: "in-process" when they fell back to the imported guard module.
+    probe_mode: str = ""
+    #: The argv actually used for the subprocess probe, if any.
+    probe_argv: tuple[str, ...] = ()
 
     @property
     def failures(self) -> list[Check]:
@@ -121,6 +180,8 @@ class Report:
             "dir": self.dir.as_posix(),
             "verifies": "wiring",
             "caveat": CAVEAT,
+            "probe_mode": self.probe_mode,
+            "probe_argv": list(self.probe_argv),
             "checks": [c.to_dict() for c in self.checks],
             "summary": {
                 "pass": counts.get(PASS, 0),
@@ -249,6 +310,93 @@ def _uncovered_tools(matchers: tuple[str, ...]) -> list[str]:
     return missing
 
 
+@dataclass(frozen=True)
+class HookExe:
+    """The command prefix that reaches the ``baron`` CLI, as the hook writes it.
+
+    For ``baron guard --persona-file X`` that is ``("baron",)``; for
+    ``uv run baron guard --persona-file X`` it is ``("uv", "run", "baron")``.
+    Sub-commands are appended to :attr:`probe_argv`, so doctor's probes run the
+    *same* program Claude Code would.
+    """
+
+    argv: tuple[str, ...]  # invocation prefix, ${CLAUDE_PROJECT_DIR}-expanded
+    resolved: str | None  # absolute path argv[0] resolves to, if any
+    source: str  # human description of where argv came from
+    wrapper: str | None  # recognised launcher in front of `baron`, if any
+    prefixed: bool  # True when anything precedes the `baron` token
+    which_used: bool  # True when resolution went through doctor's PATH
+    named_by_hook: bool  # False when there is no hook command and this is a guess
+
+    @property
+    def launcher(self) -> str:
+        return self.argv[0]
+
+    @property
+    def probe_argv(self) -> tuple[str, ...] | None:
+        """argv to run, with the launcher replaced by its resolved path."""
+        if self.resolved is None:
+            return None
+        return (self.resolved, *self.argv[1:])
+
+    @property
+    def shown(self) -> str:
+        return " ".join(self.argv)
+
+
+#: Appended to any verdict that depended on ``shutil.which``. The verdict is
+#: then a property of the shell doctor ran in, not of the repo — the same
+#: non-reproducibility that keeps ``~/.claude/settings.json`` out of scope
+#: (ADR-017 §3.5).
+_WHICH_BOUND = (
+    " [bound: a bare executable name is resolved against DOCTOR's PATH, not "
+    "the runtime's; an absolute path in the hook command removes the ambiguity]"
+)
+
+
+def _resolve_exe(token: str) -> str | None:
+    if os.sep in token or (os.altsep and os.altsep in token):
+        return token if Path(token).is_file() else None
+    return shutil.which(token)
+
+
+def resolve_hook_exe(wiring: HookWiring, project_dir: Path) -> HookExe:
+    """Work out which program the hook would actually start."""
+    if not wiring.command:
+        exe = "baron"
+        return HookExe(
+            (exe,),
+            _resolve_exe(exe),
+            "the default `baron` on PATH — no hook command names one",
+            None,
+            False,
+            True,
+            False,
+        )
+    try:
+        tokens = shlex.split(wiring.command)
+    except ValueError:
+        tokens = wiring.command.split()
+    idx = _guard_exe_index(tokens)
+    if idx is None:  # pragma: no cover - wiring.command implies a guard token
+        idx = 0
+    argv = tuple(_expand(t, project_dir) for t in tokens[: idx + 1])
+    prefixed = idx > 0
+    wrapper = PurePosixPath(argv[0]).name if prefixed else None
+    if wrapper is not None and wrapper not in KNOWN_WRAPPERS:
+        wrapper = None
+    launcher = argv[0]
+    source = "named by the hook command"
+    if prefixed:
+        source += (
+            f" via the {wrapper!r} wrapper"
+            if wrapper
+            else f" behind the unrecognised prefix {launcher!r}"
+        )
+    bare = os.sep not in launcher and not (os.altsep and os.altsep in launcher)
+    return HookExe(argv, _resolve_exe(launcher), source, wrapper, prefixed, bare, True)
+
+
 def _kit_settings(project_dir: Path) -> list[Path]:
     """Un-copied `baron init` runtime kits holding a settings.json.
 
@@ -261,53 +409,69 @@ def _kit_settings(project_dir: Path) -> list[Path]:
 # --- individual checks ------------------------------------------------------------------
 
 
-def _check_cli_on_path(wiring: HookWiring, project_dir: Path) -> Check:
-    exe = "baron"
-    source = "default"
-    if wiring.command:
-        try:
-            tokens = shlex.split(wiring.command)
-        except ValueError:
-            tokens = wiring.command.split()
-        idx = _guard_exe_index(tokens)
-        if idx is not None:
-            exe = _expand(tokens[idx], project_dir)
-            source = "named by the hook command"
-    resolved = shutil.which(exe) if os.sep not in exe else (exe if Path(exe).is_file() else None)
-    if resolved is None:
+def _check_cli_on_path(hook_exe: HookExe, project_dir: Path) -> Check:
+    bound = _WHICH_BOUND if hook_exe.which_used else ""
+    if hook_exe.resolved is None:
         return Check(
             "cli-on-path",
             FAIL,
-            f"`{exe}` ({source}) does not resolve to an executable — the hook "
-            "would fail to start, and Claude Code treats a non-blocking hook "
-            "error as no objection: every denial silently becomes allowed",
+            f"`{hook_exe.launcher}` ({hook_exe.source}) does not resolve to an "
+            "executable — the hook would fail to start, and Claude Code treats "
+            "a non-blocking hook error as no objection: every denial silently "
+            "becomes allowed" + bound,
             "Install baron where the runtime's PATH can see it "
             "(`pip install barony` / `uv tool install barony`), or make the "
             "hook command an absolute path to the executable.",
         )
+    argv = list(hook_exe.probe_argv or ()) + ["--version"]
     try:
         proc = subprocess.run(
-            [resolved, "--version"], capture_output=True, text=True, timeout=30
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            cwd=project_dir,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return Check(
             "cli-on-path",
-            FAIL,
-            f"`{resolved} --version` could not be run: {exc}",
+            FAIL if not hook_exe.prefixed else UNKNOWN,
+            f"`{' '.join(argv)}` could not be run: {exc}",
             "Reinstall barony, or point the hook command at a working executable.",
         )
     if proc.returncode != 0:
+        blurb = (proc.stderr or proc.stdout).strip()[:200]
+        if hook_exe.prefixed:
+            # The launcher resolves but would not produce a version here. That
+            # can be a broken hook OR an environment doctor cannot materialise
+            # offline; doctor will not shout when it cannot tell the two apart.
+            return Check(
+                "cli-on-path",
+                UNKNOWN,
+                f"`{' '.join(argv)}` exited {proc.returncode} — the "
+                f"{hook_exe.wrapper or 'prefix'} launcher resolves "
+                f"({hook_exe.resolved}) but doctor could not get a version out "
+                f"of it here: {blurb}",
+                "Run the hook command by hand from this directory. If it works "
+                "for you, this is an environment doctor could not reproduce; if "
+                "it does not, the hook cannot start and every denial is allowed.",
+            )
         return Check(
             "cli-on-path",
             FAIL,
-            f"`{resolved} --version` exited {proc.returncode}: "
-            f"{(proc.stderr or proc.stdout).strip()[:200]}",
+            f"`{' '.join(argv)}` exited {proc.returncode}: {blurb}",
             "Reinstall barony — the installed executable is broken.",
         )
+    where = (
+        hook_exe.resolved
+        if hook_exe.shown == hook_exe.resolved
+        else f"{hook_exe.shown} -> {hook_exe.resolved}"
+    )
     return Check(
         "cli-on-path",
         PASS,
-        f"{resolved} — {proc.stdout.strip() or '(no version line)'} ({source})",
+        f"{where} — {proc.stdout.strip() or '(no version line)'} "
+        f"({hook_exe.source})" + bound,
     )
 
 
@@ -469,23 +633,96 @@ capabilities:
 """
 
 
-def _probe(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
-    """Run one guard evaluation with the override env neutralised.
+@dataclass(frozen=True)
+class ProbeResult:
+    code: int
+    stderr: str
+    mode: str  # "subprocess" | "in-process"
+    #: Sentence naming exactly what was measured. Goes into the check detail so
+    #: a PASS can never be read as broader than the thing it exercised.
+    scope: str
+    error: str | None = None  # the probe itself could not be run
+
+
+def _probe_env() -> dict[str, str]:
+    """Environment for a probe: the escape hatch and ambient persona removed.
 
     ``BARON_GUARD_OVERRIDE`` turns every denial into an allow; leaving it set
     during the probe would measure the escape hatch instead of the mechanism.
     (That the variable is set at all is reported by its own check.)
     """
+    env = dict(os.environ)
+    env.pop(guard.OVERRIDE_ENV, None)
+    env.pop(guard.PERSONA_ENV, None)
+    return env
+
+
+def _probe(
+    hook_exe: HookExe,
+    stdin_text: str,
+    persona_file: Path | None,
+    project_dir: Path,
+) -> ProbeResult:
+    """Run one guard evaluation — through the hook's own binary where possible.
+
+    This is the difference between measuring *an* install of baron and measuring
+    *the* program Claude Code would start. A project whose hook points at a
+    stale, shadowed or hand-rolled `baron` is precisely the badminton shape, and
+    an in-process probe cannot see it: it would exercise the very module that
+    already lives in doctor's interpreter.
+    """
+    argv = hook_exe.probe_argv
+    if argv is not None:
+        scope = f"`{' '.join(argv)} guard` ({hook_exe.source})"
+        cmd = [*argv, "guard"]
+        if persona_file is not None:
+            cmd += ["--persona-file", str(persona_file)]
+        try:
+            proc = subprocess.run(
+                cmd,
+                input=stdin_text,
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT_S,
+                cwd=project_dir,
+                env=_probe_env(),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return ProbeResult(
+                -1, "", "subprocess", scope, error=f"{type(exc).__name__}: {exc}"
+            )
+        return ProbeResult(proc.returncode, proc.stderr or "", "subprocess", scope)
+
+    reason = (
+        f"the executable the hook names (`{hook_exe.launcher}`) does not resolve"
+        if hook_exe.named_by_hook
+        else "no PreToolUse hook names an executable"
+    )
     saved = os.environ.pop(guard.OVERRIDE_ENV, None)
     try:
-        return guard.process(stdin_text, persona_file)
+        code, stderr_text = guard.process(stdin_text, persona_file)
+    except Exception as exc:  # pragma: no cover - process() is itself fail-closed
+        return ProbeResult(
+            -1,
+            "",
+            "in-process",
+            "the in-process `baron.guard` module",
+            error=f"{type(exc).__name__}: {exc}",
+        )
     finally:
         if saved is not None:
             os.environ[guard.OVERRIDE_ENV] = saved
+    return ProbeResult(
+        code,
+        stderr_text,
+        "in-process",
+        f"the in-process `baron.guard` module ONLY — {reason}, so this says "
+        "nothing about the command the hook would run",
+    )
 
 
-def _check_enforcement_path() -> Check:
-    """End-to-end proof that a denial really blocks IN THIS INSTALL."""
+def _check_enforcement_path(hook_exe: HookExe, project_dir: Path) -> Check:
+    """Proof that a denial really blocks — in the binary the hook names."""
     with tempfile.TemporaryDirectory(prefix="baron-doctor-") as tmp:
         root = Path(tmp)
         persona_file = root / "probe-persona.yaml"
@@ -498,63 +735,98 @@ def _check_enforcement_path() -> Check:
                 "cwd": root.as_posix(),
             }
         )
-        try:
-            code, stderr_text = _probe(payload, persona_file)
-        except Exception as exc:  # pragma: no cover - process() is itself fail-closed
-            return Check(
-                "enforcement-path",
-                FAIL,
-                f"the guard evaluation raised out of process(): "
-                f"{type(exc).__name__}: {exc}",
-                "This is a baron bug — report it. Enforcement cannot be trusted "
-                "in this install.",
-            )
-    if code != 2:
+        result = _probe(hook_exe, payload, persona_file, project_dir)
+
+    if result.error is not None:
         return Check(
             "enforcement-path",
             FAIL,
-            f"a synthetic denial returned exit {code}, not 2 — the enforcement "
-            "path in this install does NOT block. Every capability denial here "
-            "is instruction-only, whatever the persona says.",
-            "Reinstall barony from a known-good release and re-run "
-            "`baron doctor`; if it still fails, the install is broken — do not "
-            "describe this project as enforced.",
+            f"the guard probe could not be completed against {result.scope}: "
+            f"{result.error}",
+            "Run the hook command by hand with a PreToolUse payload on stdin. "
+            "Until it can be run, do not describe this project as enforced.",
         )
-    if "internal error" in stderr_text:
+    if result.code == 0:
+        return Check(
+            "enforcement-path",
+            FAIL,
+            f"a synthetic denial returned exit 0 from {result.scope} — that "
+            "command does NOT block. Every capability denial in this project is "
+            "instruction-only, whatever the persona says.",
+            "Point the hook at a real `baron` (`uv tool install barony`, or an "
+            "absolute path to the installed executable) and re-run "
+            "`baron doctor`. Do not describe this project as enforced until "
+            "this check passes.",
+        )
+    if result.code != 2:
+        return Check(
+            "enforcement-path",
+            FAIL,
+            f"a synthetic denial returned exit {result.code}, not 2, from "
+            f"{result.scope}"
+            + (f": {result.stderr.strip().splitlines()[0][:200]}" if result.stderr.strip() else "")
+            + " — Claude Code treats any non-2 hook exit as no objection, so the "
+            "denial would be allowed through.",
+            "Reinstall barony from a known-good release and re-run "
+            "`baron doctor`; if it still fails, the install (or the wrapper the "
+            "hook goes through) is broken — do not describe this project as "
+            "enforced.",
+        )
+    if GUARD_STDERR_MARKER not in result.stderr:
+        return Check(
+            "enforcement-path",
+            FAIL,
+            f"{result.scope} exited 2 but produced no `{GUARD_STDERR_MARKER}` "
+            "reason on stderr — the block did not come from the guard, and the "
+            "model would be handed no capability explanation",
+            "The hook command is not reaching `baron guard`. Check for a "
+            "shim/wrapper script shadowing the real executable.",
+        )
+    if "internal error" in result.stderr:
         return Check(
             "enforcement-path",
             FAIL,
             "the synthetic denial exited 2 but via the internal-error fail-closed "
-            f"path, not a real capability decision: {stderr_text.splitlines()[0]}",
+            f"path, not a real capability decision: {result.stderr.splitlines()[0]}",
             "A guard that denies everything by crashing is not enforcement — it "
             "is an outage that happens to look safe. Reinstall barony and re-run.",
         )
-    return Check(
-        "enforcement-path",
-        PASS,
-        "a synthetic denied Write returned exit 2 with a capability reason — "
-        "the enforcement path works end to end in this install",
+    scoped = (
+        f"a synthetic denied Write returned exit 2 with a capability reason from "
+        f"{result.scope}"
     )
+    if result.mode == "subprocess" and hook_exe.named_by_hook:
+        scoped += " — the command Claude Code would start does block"
+    return Check("enforcement-path", PASS, scoped)
 
 
-def _check_fail_closed() -> Check:
+def _check_fail_closed(hook_exe: HookExe, project_dir: Path) -> Check:
     """Pin ADR-004 §2.3 at runtime: a broken hook denies, it does not wave through."""
-    code, stderr_text = _probe("{ this is not json", None)
-    if code != 2 or "fail closed" not in stderr_text:
+    result = _probe(hook_exe, "{ this is not json", None, project_dir)
+    if result.error is not None:
         return Check(
             "fail-closed",
             FAIL,
-            f"malformed hook stdin returned exit {code} ({stderr_text.splitlines()[0] if stderr_text else 'no stderr'}) "
-            "— ADR-004 §2.3 requires a deny. A guard that fails OPEN is worse "
-            "than no guard: it reports enforcement it is not doing.",
-            "Reinstall barony; this install's guard does not implement the "
-            "documented fail-closed policy.",
+            f"the malformed-stdin probe could not be run against {result.scope}: "
+            f"{result.error}",
+            "See the enforcement-path remedy; the same command is at fault.",
+        )
+    if result.code != 2 or "fail closed" not in result.stderr:
+        first = result.stderr.strip().splitlines()[0][:200] if result.stderr.strip() else "no stderr"
+        return Check(
+            "fail-closed",
+            FAIL,
+            f"malformed hook stdin returned exit {result.code} ({first}) from "
+            f"{result.scope} — ADR-004 §2.3 requires a deny. A guard that fails "
+            "OPEN is worse than no guard: it reports enforcement it is not doing.",
+            "Reinstall barony; the guard this hook reaches does not implement "
+            "the documented fail-closed policy.",
         )
     return Check(
         "fail-closed",
         PASS,
-        "malformed hook stdin returns exit 2 (ADR-004 §2.3 fail-closed policy "
-        "holds in this install)",
+        f"malformed hook stdin returns exit 2 from {result.scope} "
+        "(ADR-004 §2.3 fail-closed policy holds here)",
     )
 
 
@@ -621,26 +893,38 @@ def run(project_dir: Path, *, persona_file: Path | None = None) -> Report:
     """Run every wiring check against ``project_dir`` (read-only)."""
     project_dir = project_dir.resolve()
     wiring = read_hook_wiring(project_dir)
+    hook_exe = resolve_hook_exe(wiring, project_dir)
+    probe_argv = hook_exe.probe_argv
     return Report(
         project_dir,
         [
-            _check_cli_on_path(wiring, project_dir),
+            _check_cli_on_path(hook_exe, project_dir),
             _check_hook_configured(wiring, project_dir),
             _check_hook_matcher(wiring),
             _check_persona_file(wiring, project_dir, persona_file),
             _check_rules_artifact(),
-            _check_enforcement_path(),
-            _check_fail_closed(),
+            _check_enforcement_path(hook_exe, project_dir),
+            _check_fail_closed(hook_exe, project_dir),
             _check_override_env(),
             _check_override_log(project_dir),
         ],
+        probe_mode="subprocess" if probe_argv else "in-process",
+        probe_argv=probe_argv or (),
     )
 
 
 def render(report: Report) -> str:
+    probe_line = (
+        f"guard probe:  {report.probe_mode} — {' '.join(report.probe_argv)} guard"
+        if report.probe_mode == "subprocess"
+        else f"guard probe:  {report.probe_mode} (no resolvable hook executable "
+        "to probe; checks 6-7 measure the imported baron package, not the "
+        "hook's command)"
+    )
     lines = [
         "baron doctor — guard WIRING self-test",
         f"project dir: {report.dir.as_posix()}",
+        probe_line,
         "",
     ]
     width = max(len(c.id) for c in report.checks)

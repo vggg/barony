@@ -560,17 +560,21 @@ def doctor(
     The badminton-analyzer incident merged 15 PRs under a persona whose
     `merge_pr` denial was believed enforced; the hook had never been installed,
     so the denial had silently degraded to persona text. This command is that
-    silence's remedy: it checks that `baron` resolves, that a PreToolUse hook in
-    `.claude/settings.json` invokes `baron guard` with a matcher covering every
-    governed tool, that the named persona and the capability-rules artifact
-    load, that a synthetic denial really exits 2 in THIS install, that malformed
-    stdin fails closed (ADR-004 §2.3), and that BARON_GUARD_OVERRIDE is not
-    sitting exported. Exit 1 on any FAIL.
+    silence's remedy: it checks that the hook's executable resolves, that a
+    PreToolUse hook in `.claude/settings.json` invokes `baron guard` with a
+    matcher covering every governed tool, that the named persona and the
+    capability-rules artifact load, that a synthetic denial fed to THAT
+    EXECUTABLE really exits 2, that malformed stdin fails closed (ADR-004 §2.3),
+    and that BARON_GUARD_OVERRIDE is not sitting exported. Exit 1 on any FAIL.
 
     Honesty boundary: doctor verifies WIRING, not invocation. It proves the
     install CAN enforce; it cannot observe whether Claude Code actually ran the
     hook on a real tool call. A green doctor means "correctly wired", never
-    "enforcement happened". Project-level settings only — a hook wired in
+    "enforcement happened". Two further bounds, both printed: the denial probes
+    spawn the hook's own command (`uv run`-style prefixes included) and fall back
+    to the in-process guard module only when no resolvable executable is named —
+    saying so when they do; and a bare executable name resolves against DOCTOR's
+    PATH, not the runtime's. Project-level settings only — a hook wired in
     ~/.claude/settings.json is invisible here.
     """
     if not dir_.is_dir():

@@ -192,12 +192,16 @@ guard that never had to fire leave identical evidence.
 `baron doctor` ([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)) is that
 silence's remedy: nine read-only checks — executable resolves, hook present,
 matcher covers every governed tool, persona and rules load, a synthetic denial
-really exits 2 in this install, malformed stdin fails closed, no exported
-override — exiting 1 on any FAIL with a remedy line each. Its own bound is
-printed on every run: doctor verifies **WIRING, not invocation**. It proves the
-install *can* enforce; whether the runtime actually called the hook is not
-observable from outside the runtime, and a command that implied otherwise would
-manufacture the very confidence that produced those merges.
+fed to **the executable the hook names** really exits 2, malformed stdin fails
+closed, no exported override — exiting 1 on any FAIL with a remedy line each.
+That the denial probe *spawns the hook's own command* rather than calling the
+imported `baron.guard` is load-bearing: a project wired to a stale or hand-rolled
+`baron` is the same drift as a missing hook, and an in-process probe exercises
+the very module the bug assumes is fine. Doctor's own bound is printed on every
+run: it verifies **WIRING, not invocation**. It proves the install *can* enforce;
+whether the runtime actually called the hook is not observable from outside the
+runtime, and a command that implied otherwise would manufacture the very
+confidence that produced those merges.
 
 ## PR-locks
 

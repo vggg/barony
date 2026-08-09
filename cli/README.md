@@ -328,13 +328,13 @@ Nine checks, each with a remedy line when it fails:
 
 | id | proves |
 |---|---|
-| `cli-on-path` | the executable the hook names resolves and `--version` runs |
+| `cli-on-path` | the executable the hook names resolves and `--version` runs (wrapper prefixes like `uv run` are resolved as the launcher) |
 | `hook-configured` | project `.claude/settings.json` wires a PreToolUse hook invoking `baron guard` |
 | `hook-matcher` | that matcher selects every governed tool (`Bash`, `Edit`, `Write`, `NotebookEdit`) |
 | `persona-file` | the persona the hook names exists and parses |
 | `rules-artifact` | `capability-rules.v1.yaml` loads at a supported `rules_version` |
-| `enforcement-path` | a synthetic denial really returns exit 2 **in this install** |
-| `fail-closed` | malformed hook stdin also returns exit 2 (ADR-004 §2.3) |
+| `enforcement-path` | a synthetic denial fed to **the executable the hook names** really returns exit 2 |
+| `fail-closed` | malformed hook stdin also returns exit 2 (ADR-004 §2.3), same executable |
 | `override-env` | `BARON_GUARD_OVERRIDE` is not sitting exported (if it is, every denial is allowed) |
 | `override-log` | the evidence sink is writable and not gitignored — **INFO only, never FAIL** |
 
@@ -342,8 +342,9 @@ Nine checks, each with a remedy line when it fails:
 $ baron doctor
 baron doctor — guard WIRING self-test
 project dir: /path/to/collab
+guard probe:  subprocess — /usr/local/bin/baron guard
 
-PASS    cli-on-path       /usr/local/bin/baron — barony 0.8.0 (named by the hook command)
+PASS    cli-on-path       baron -> /usr/local/bin/baron — barony 0.8.0 (named by the hook command)
 FAIL    hook-configured   no `baron guard` PreToolUse hook in this project (no project settings file). Capability denials here are INSTRUCTED, not enforced.
                           -> `baron init` generated the wiring at agents/carson/runtime/.claude/settings.json but nothing copied it into place — ... Copy the runtime kit: cp -R .../runtime/. . (see adapters/claude/HYDRATE.md).
 ...
@@ -356,6 +357,17 @@ whether Claude Code actually ran the hook on a real tool call, because nothing
 outside the runtime can. Read a green doctor as "correctly wired", never as
 "enforcement happened" — implying otherwise would manufacture the exact false
 confidence that produced the badminton merges.
+
+**Two further bounds, also printed.** (a) Checks 6–7 spawn the hook's *own*
+command — `<exe> guard --persona-file <synthetic probe>`, `uv run`-style prefixes
+included — rather than calling the `baron` package doctor imported. A project
+wired to a stale or hand-rolled `baron` is exactly the badminton shape and an
+in-process probe cannot see it. Where the hook names no resolvable executable,
+doctor falls back in-process and the detail says so: that PASS is about the
+library, not about the command the hook would run (`probe_mode` in `--json`).
+(b) A *bare* executable name is resolved with `shutil.which` against **doctor's**
+PATH, not the runtime's, so `cli-on-path` for that shape is a property of the
+invoking shell. An absolute path in the hook command removes the ambiguity.
 
 Two scope notes, both deliberate (ADR-017 §3.4–§3.5): the override-log check is
 **INFO whatever it finds**, because enforcement is fail-closed while evidence is
