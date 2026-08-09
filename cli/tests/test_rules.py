@@ -228,34 +228,69 @@ def test_duplicate_rule_ids_are_refused() -> None:
         raise AssertionError("duplicate rule ids were accepted")
 
 
-def test_only_guard_checked_verbs_are_labelled_enforced() -> None:
-    """`enforced` is claimed for a verb IFF guard mechanically checks it.
+#: The enforcement claim baron makes for each frozen verb, stated OUTRIGHT.
+#: verb -> (class, detection, enforcement, label)
+#:
+#: Written as literals on purpose. The round-2 test derived its expectation from
+#: `detection` — the very field under test — so it could only ever restate the
+#: document back to itself: a document claiming `detection: command` for
+#: `read_code` satisfied it while `baron rules list` printed `enforced` for a
+#: verb nothing checks. A table of literals cannot be satisfied that way. If a
+#: row here changes, someone is changing what baron CLAIMS to enforce, and the
+#: diff says so in review.
+EXPECTED_CLAIMS: dict[str, tuple[str, str, str, str]] = {
+    "read_code": ("whole-tool", "none", rules.ENFORCEMENT_ADAPTER_DEPENDENT, "instructed"),
+    "read_collab": ("whole-tool", "none", rules.ENFORCEMENT_ADAPTER_DEPENDENT, "instructed"),
+    "write_code": ("whole-tool", "file-op", rules.ENFORCEMENT_GUARD, "enforced"),
+    "write_path": ("sub-tool", "file-op", rules.ENFORCEMENT_GUARD, "enforced"),
+    "open_pr": ("sub-tool", "none", rules.ENFORCEMENT_INSTRUCTED, "instructed"),
+    "run_tests": ("sub-tool", "none", rules.ENFORCEMENT_INSTRUCTED, "instructed"),
+    "merge_pr": ("sub-tool", "command", rules.ENFORCEMENT_GUARD, "enforced"),
+    "push_main": ("sub-tool", "command", rules.ENFORCEMENT_GUARD, "enforced"),
+    "force_push": ("sub-tool", "command", rules.ENFORCEMENT_GUARD, "enforced"),
+    "edit_other_personas": ("sub-tool", "file-op", rules.ENFORCEMENT_GUARD, "enforced"),
+}
 
-    Derived from `detection`, which is the only property of the artifact that
-    corresponds to code that actually runs. The previous version of this test
-    pinned the enforcement constants against themselves, which is why it
-    green-lit labelling `read_code` as `enforced` — a claim
-    `test_denying_read_code_does_not_omit_read_tools` (in test_pydantic_ai.py)
-    measures to be false.
+
+def test_enforcement_claims_are_pinned_to_a_literal_table() -> None:
+    """What baron claims to enforce is pinned, not re-derived from the document."""
+    loaded = rules.load_rules()
+    assert set(EXPECTED_CLAIMS) == set(CAPABILITY_VERBS)
+    for verb, (klass, detection, enforcement, label) in EXPECTED_CLAIMS.items():
+        entry = loaded.verbs[verb]
+        assert entry["class"] == klass, verb
+        assert entry["detection"] == detection, verb
+        assert loaded.enforcement(verb) == enforcement, verb
+        assert loaded.label(verb) == label, verb
+
+
+def test_every_enforced_verb_is_backed_by_a_real_check() -> None:
+    """`enforced` requires a rule (or the file-op chain) behind it — no exceptions.
+
+    The independent half of the pinning above: it does not ask what the document
+    SAYS, it asks whether something in the parsed rule set could actually fire.
     """
     loaded = rules.load_rules()
-    for verb, entry in loaded.verbs.items():
-        guard_checks = entry.get("detection", "none") != "none"
-        assert loaded.label(verb) == ("enforced" if guard_checks else "instructed"), (
-            f"{verb}: detection={entry.get('detection')!r} but "
-            f"label={loaded.label(verb)!r}"
-        )
-        assert (loaded.enforcement(verb) == rules.ENFORCEMENT_GUARD) is guard_checks
+    for verb in CAPABILITY_VERBS:
+        bound = [r for r in loaded.rules if r.verb == verb]
+        chain = verb in rules.FILE_OP_CHAIN_VERBS
+        if loaded.label(verb) == "enforced":
+            assert bound or chain, f"{verb}: labelled enforced with nothing behind it"
+        else:
+            assert not bound, f"{verb}: a rule binds it but it is not labelled enforced"
 
-    # Every verb guard checks must be reachable by at least one rule OR by the
-    # file-op precedence chain (write_code / write_path are decided by the
-    # chain as a whole, not by a single named rule).
-    chain_decided = {"write_code", "write_path"}
-    for verb, entry in loaded.verbs.items():
-        if entry.get("detection") == "command":
-            assert [r for r in loaded.rules if r.verb == verb], f"{verb}: no rule"
-        elif entry.get("detection") == "file-op" and verb not in chain_decided:
-            assert [r for r in loaded.rules if r.verb == verb], f"{verb}: no rule"
+
+def test_detection_consistency_is_parser_enforced_not_test_enforced() -> None:
+    """The check above must live in the PARSER, so document input reaches it.
+
+    Round 2 asserted verb/rule consistency in this file only, against
+    `load_rules()`. That left every *document* free to violate it — which is the
+    input that matters, since `--file` accepts one. This test pins the check's
+    presence in `rules.py`; the REFUSED_DOCUMENTS cases exercise it.
+    """
+    assert hasattr(rules, "_check_detection_consistency")
+    source = Path(rules.__file__).read_text(encoding="utf-8")
+    assert "_check_detection_consistency(verbs, command_rules, path_rules)" in source
 
 
 def test_adapter_dependent_verbs_are_qualified_not_claimed() -> None:
@@ -304,6 +339,25 @@ def test_parse_text_refuses_an_unknown_vocabulary() -> None:
 #: parser must refuse. Reachability is the point: before ADR-016's round-2 fix
 #: the closed-matcher check could only fire against a developer edit to the
 #: builtin table, and an added rule was silently discarded.
+#: Verb entries quoted verbatim from the artifact, so a value-level fixture
+#: patches the ENTRY rather than a same-looking string in the header comment.
+#: `test_verb_entry_fixtures_are_anchored_to_the_artifact` pins them.
+_READ_CODE_ENTRY = "  read_code:\n    class: whole-tool\n    detection: none\n"
+_MERGE_PR_ENTRY = "  merge_pr:\n    class: sub-tool\n    detection: command\n"
+
+
+def test_verb_entry_fixtures_are_anchored_to_the_artifact() -> None:
+    """The value-level fixtures below are worthless if their anchor drifts.
+
+    A substitution that no longer matches would make its case silently test the
+    unmodified artifact — and `test_unrecognised_document_content_is_refused`
+    would still pass, for the wrong reason.
+    """
+    text = _artifact_text()
+    for anchor in (_READ_CODE_ENTRY, _MERGE_PR_ENTRY):
+        assert text.count(anchor) == 1, f"anchor not unique in the artifact: {anchor!r}"
+
+
 REFUSED_DOCUMENTS: dict[str, tuple[str, str, str]] = {
     # name: (find, replace, expected fragment of the refusal)
     "added rule": (
@@ -357,6 +411,48 @@ REFUSED_DOCUMENTS: dict[str, tuple[str, str, str]] = {
         '          flags: ["--all", "--branches", "--mirror"]\n',
         "",
         "missing required key",
+    ),
+    # --- VALUE-level refusals (round-3) ------------------------------------
+    # Every fixture above targets a KEY or a RULE SLOT. None targeted a VALUE,
+    # which is how `detection: banana` and `class: banana` validated clean at
+    # exit 0 while silently re-routing what baron claims to enforce. Note these
+    # substitute the verb ENTRY, not the bare string: the artifact's header
+    # comment also contains "detection: none", and a fixture that patches the
+    # comment tests nothing (it passed, and looked like a pass, in round 3).
+    "unknown detection value": (
+        _READ_CODE_ENTRY,
+        _READ_CODE_ENTRY.replace("detection: none", "detection: banana"),
+        "not a detection this baron implements",
+    ),
+    "unknown class value": (
+        _READ_CODE_ENTRY,
+        _READ_CODE_ENTRY.replace("class: whole-tool", "class: banana"),
+        "not a class this baron implements",
+    ),
+    "detection claiming a check nothing performs": (
+        _READ_CODE_ENTRY,
+        _READ_CODE_ENTRY.replace("detection: none", "detection: command"),
+        "no command rule binds it",
+    ),
+    "detection file-op with nothing behind it": (
+        _READ_CODE_ENTRY,
+        _READ_CODE_ENTRY.replace("detection: none", "detection: file-op"),
+        "no path rule binds it",
+    ),
+    "verb whose rule exists but under-declares detection": (
+        _MERGE_PR_ENTRY,
+        _MERGE_PR_ENTRY.replace("detection: command", "detection: none"),
+        "misdescribes the enforcement it documents",
+    ),
+    "verb entry missing detection": (
+        _READ_CODE_ENTRY,
+        "  read_code:\n    class: whole-tool\n",
+        "missing required key 'detection'",
+    ),
+    "verb entry missing class": (
+        _READ_CODE_ENTRY,
+        "  read_code:\n    detection: none\n",
+        "missing required key 'class'",
     ),
 }
 
@@ -467,6 +563,32 @@ def test_diff_rules_detects_changed_rules_verbs_and_header() -> None:
 def test_diff_rules_is_empty_for_identical_tables() -> None:
     base = rules.load_rules()
     assert not any(rules.diff_rules(base, base).values())
+
+
+def test_diff_rules_joins_verb_entries_not_just_rule_ids() -> None:
+    """`verbs_changed` — the round-3 hole.
+
+    Round 2's diff joined on rule id only, so a candidate that rewrote
+    `detection`, `class` or `notes` on an existing verb came back completely
+    empty and `rules diff` printed "identical to the packaged artifact". Those
+    are the fields that decide whether baron prints `enforced`.
+
+    The document-reachable cases are covered by fixtures in
+    `test_cli.py::test_rules_diff_reports_a_changed_verb_entry`; this pins the
+    pure function, including that an unchanged verb never appears.
+    """
+    base = rules.load_rules()
+    other = replace(
+        base,
+        verbs={**base.verbs, "open_pr": {**base.verbs["open_pr"], "class": "whole-tool"}},
+    )
+    delta = rules.diff_rules(base, other)
+    assert delta["verbs_changed"] == ["open_pr"]
+    assert delta["verbs_added"] == [] and delta["verbs_removed"] == []
+    assert delta["rules_changed"] == []
+    # Symmetric, and every other verb stays out of it.
+    assert rules.diff_rules(other, base)["verbs_changed"] == ["open_pr"]
+    assert len(base.verbs) > 1
 
 
 def test_guard_reads_packaged_data_only() -> None:

@@ -54,8 +54,9 @@ additional rule.** The data was external; the shape was not extensible.
   own measured 0.53 operational fidelity says is not good enough. All four take `--json`.
 - **`list` reports enforcement in three states, but only one of them is `enforced`.**
   `guard` (guard mechanically checks it) / `adapter-dependent` (guard does NOT parse for it;
-  a runtime with a tool allow-list *could* enforce it by omitting the tool, but no adapter
-  baron ships does) / `instructed` (nothing checks it — `open_pr`, `run_tests`, by design).
+  a runtime with a tool allow-list *could* enforce it by omitting the tool, but the one
+  adapter **measured** does not) / `instructed` (nothing checks it — `open_pr`, `run_tests`,
+  by design).
   `label` says `enforced` **only** for `guard`; `adapter-dependent` labels `instructed`. The
   qualifier is carried in the `--json` payload (`label_caveat` at the top level, `caveat`
   per affected verb) as well as the table footer — machine consumers are the ones most
@@ -82,6 +83,57 @@ additional rule.** The data was external; the shape was not extensible.
   `rules_added` / `rules_removed` branches can be unit-tested against constructed values.
   No document can currently produce either (an extra rule is refused, a missing one is too);
   they exist for the deferred loader.
+
+#### Round-3 corrections
+
+Three defects found in review, all in the same family — a claim wider than the thing that
+backed it. Recorded rather than quietly fixed, per ADR-002/ADR-008.
+
+- **Verb-entry VALUES are now validated, not just keys.** Every refusal shipped in rounds
+  1–2 targeted a *key* or a *rule slot*; no *value* was checked. Measured, all at exit 0 on
+  the shipped `validate`: `detection: banana` passed; `class: banana` passed and silently
+  re-routed `enforcement()`; and `read_code` with `detection: command` and no rule behind it
+  passed **and made `baron rules list` print `LABEL=enforced` for a verb nothing checks** —
+  a false enforcement claim from a one-word document edit, which is the exact failure this
+  work exists to prevent. `class` and `detection` are now closed sets and both are
+  **required** (defaulting an enforcement decision is a guess). New
+  `rules._check_detection_consistency` cross-checks `detection` against the rules that
+  actually bind each verb, **symmetrically**: over-claiming (`command`, no rule) and
+  under-declaring (a rule binds it, entry says `none`) are both refused. That check
+  previously existed only as an assertion in `test_rules.py` against the packaged artifact,
+  where no document input could ever reach it.
+- **`rules diff` now joins on verb id as well as rule id** (`verbs_changed`). It was blind to
+  verb entries: a candidate that rewrote `detection`, `class` or `notes` on an existing verb
+  printed `identical to the packaged artifact` and exited 0 — reproduced three ways. Those
+  are the fields that decide whether baron prints `enforced`, so the edit most worth
+  reviewing was the one the review surface could not see. The renderer names the resulting
+  `enforcement/label` transition inline and prints values in full (a first draft truncated to
+  a fixed prefix, making two different `notes` blocks look identical — a diff that hides the
+  diff). Unlike `rules_added`/`rules_removed` this branch **is** document-reachable and is
+  covered by document fixtures.
+- **`validate`'s "no unrecognised content" check no longer overstates itself.** It was
+  hardcoded `True` behind text claiming "every key and rule in the document is one this
+  baron implements", and printed `ok` over a document containing `detection: banana`. Its
+  text now names exactly what is covered, and a new **computed** check,
+  `detection matches implementation`, re-derives the enforced/backed relationship from the
+  parsed table instead of asserting it.
+- **`LABEL_CAVEAT` is scoped to what was measured.** It stated "no adapter baron ships does"
+  omit read tools as fact for all four adapters, on the strength of one instrumented test.
+  Only **pydantic-ai** was measured; the `claude` and `code-puppy` kits are prompt/config
+  templates whose tool exposure belongs to the host runtime and is **unmeasured**. The label
+  is unchanged (absent a measurement, `instructed` is the honest default) but the reason is
+  now "unmeasured", not a claim about untested code.
+- **The circular label test is replaced.** `test_only_guard_checked_verbs_are_labelled_enforced`
+  derived its expectation from `detection` — the field under test — and ran only against
+  `load_rules()`, so it restated the document back to itself and green-lit the
+  `detection: command` hole above. Replaced by a **literal** `EXPECTED_CLAIMS` table for all
+  ten verbs, a test asking whether a rule could actually fire, and the parser change that
+  makes the bad state unrepresentable from document input.
+
+> **Blocking owner decision (ADR-016 §8, D-1).** Narrowing `enforced` to guard-checked verbs
+> changed what `baron rules list` prints for `read_code`/`read_collab` from `enforced` to
+> `instructed` — a user-visible output change, and a claim about the product an implementer
+> should not sign off alone. The box is unticked and recorded as blocking for merge.
 
 ### Not shipped, deliberately — the project-level rules loader
 

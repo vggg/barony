@@ -559,6 +559,32 @@ def _load_rules_or_exit(file: Optional[Path]) -> rules_mod.CapabilityRules:
         raise typer.Exit(2)
 
 
+#: Longest verb-entry value rendered inline as `was -> now`. Anything longer
+#: gets the two-line block form below.
+_INLINE_VALUE_LIMIT = 60
+
+
+def _oneline(text: str) -> str:
+    """Collapse a verb-entry value onto one line (`notes` is a YAML block)."""
+    return " ".join(text.split())
+
+
+def _echo_value_change(key: str, was: str, now: str, flag: str) -> None:
+    """Render one changed verb-entry field, never eliding the difference.
+
+    Values are printed in FULL. An earlier draft truncated to a fixed prefix,
+    which rendered two different `notes` blocks as an identical-looking pair —
+    a diff that hides the diff is worse than no diff at all.
+    """
+    was, now = _oneline(was), _oneline(now)
+    if len(was) <= _INLINE_VALUE_LIMIT and len(now) <= _INLINE_VALUE_LIMIT:
+        typer.echo(f"    {key}: {was} -> {now}{flag}")
+        return
+    typer.echo(f"    {key}:{flag}")
+    typer.echo(f"      base:      {was}")
+    typer.echo(f"      candidate: {now}")
+
+
 def _rules_for_verb(loaded: rules_mod.CapabilityRules, verb: str) -> list[str]:
     """Ids of the rules that can imply ``verb`` (rule ids, sorted by table order)."""
     return [rule.id for rule in loaded.rules if rule.verb == verb]
@@ -714,11 +740,39 @@ def rules_validate(
         "set AND the one guard implements (parser-enforced, from the document); "
         "path-rule matchers are structural, not document-supplied",
     )
+    # RE-DERIVED here, not asserted. The parser refuses an inconsistent document
+    # before it reaches this code (rules._check_detection_consistency), so this
+    # can only fail against a CONSTRUCTED CapabilityRules — but a check whose
+    # text claims coverage must compute the thing it claims. The round-2 version
+    # of the check below was hardcoded True and printed `ok` over a document
+    # containing `detection: banana`; that is the exact failure mode ADR-002 and
+    # ADR-008 exist to prevent, so nothing here is hardcoded that can be counted.
+    misdescribed: list[str] = []
+    for verb, entry in loaded.verbs.items():
+        modality = entry.get("detection", rules_mod.DETECTION_NONE)
+        bound = [rule for rule in loaded.rules if rule.verb == verb]
+        chain = verb in rules_mod.FILE_OP_CHAIN_VERBS
+        claims = modality != rules_mod.DETECTION_NONE
+        implemented = bool(bound) or (chain and modality == rules_mod.DETECTION_FILE_OP)
+        if claims != implemented:
+            misdescribed.append(f"{verb} (detection={modality}, rules={len(bound)})")
+    check(
+        "detection matches implementation",
+        not misdescribed,
+        (
+            f"{len(loaded.verbs)} verbs; every `enforced` label is backed by a "
+            "rule or the file-op precedence chain (parser-enforced, re-derived "
+            "here)"
+        )
+        if not misdescribed
+        else "misdescribed: " + ", ".join(misdescribed),
+    )
     check(
         "no unrecognised content",
         True,
-        "every key and rule in the document is one this baron implements "
-        "(parser-enforced: unknown content is refused, never ignored)",
+        "every key, rule slot and enumerated value (class, detection, matcher) "
+        "in the document is one this baron implements (parser-enforced: unknown "
+        "content is refused, never ignored)",
     )
 
     failed = [c for c in checks if not c["ok"]]
@@ -771,6 +825,7 @@ def rules_diff(
     changed = delta["rules_changed"]
     verbs_added = delta["verbs_added"]
     verbs_removed = delta["verbs_removed"]
+    verbs_changed = delta["verbs_changed"]
 
     payload = {
         "base": f"packaged {rules_mod.RULES_RESOURCE}",
@@ -797,6 +852,25 @@ def rules_diff(
             typer.echo(f"+ verb {verb}  (NOT in the frozen vocabulary)")
         for verb in verbs_removed:
             typer.echo(f"- verb {verb}")
+        for verb in verbs_changed:  # type: ignore[union-attr]
+            typer.echo(f"~ verb {verb}")
+            base_entry = base.verbs[verb]
+            other_entry = other.verbs[verb]
+            for key in sorted(set(base_entry) | set(other_entry)):
+                was, now = base_entry.get(key, "(absent)"), other_entry.get(key, "(absent)")
+                if was == now:
+                    continue
+                # `class` and `detection` change what baron CLAIMS to enforce;
+                # spell the consequence out rather than leaving a reviewer to
+                # re-derive it from the routing rules.
+                was_claim = (base.enforcement(verb), base.label(verb))
+                now_claim = (other.enforcement(verb), other.label(verb))
+                flag = (
+                    f"  [{was_claim[0]}/{was_claim[1]} -> {now_claim[0]}/{now_claim[1]}]"
+                    if key in ("class", "detection") and was_claim != now_claim
+                    else ""
+                )
+                _echo_value_change(key, was, now, flag)
     raise typer.Exit(1 if differs else 0)
 
 

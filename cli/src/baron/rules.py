@@ -31,14 +31,17 @@ deferred and what one-way doors it has to settle first.
 understand rather than silently mis-enforce them; a refusal reaches guard as a
 :class:`RulesError` and guard fails CLOSED.
 
-**Refuse, don't ignore.** The same principle applies inside the document. The
-parser enumerates the keys and rules the document actually carries and refuses
-any it does not implement — an unrecognised key at any level, a rule slot this
-baron has no matcher for, an unknown ``matcher`` (or one other than the matcher
-guard implements for that rule), a missing built-in rule, a missing required
-parameter. Silently dropping an unrecognised rule is the worst failure mode an
-enforcement artifact has: the document says a thing is blocked and nothing
-blocks it.
+**Refuse, don't ignore — values as well as keys.** The same principle applies
+inside the document. The parser enumerates what the document actually carries
+and refuses anything it does not implement: an unrecognised key at any level, a
+rule slot this baron has no matcher for, an unknown ``matcher`` (or one other
+than the matcher guard implements for that rule), a missing built-in rule, a
+missing required parameter, an unknown or missing ``class``/``detection``, and a
+``detection`` that misdescribes what guard implements in either direction (see
+:func:`_check_detection_consistency`). Silently dropping an unrecognised rule is
+the worst failure mode an enforcement artifact has: the document says a thing is
+blocked and nothing blocks it. Accepting a bad *value* is the second worst — it
+is how a document can make baron print ``enforced`` for a verb nothing checks.
 
 **Enforcement labelling is measured, not asserted.** :meth:`CapabilityRules.label`
 returns ``enforced`` only where guard mechanically checks the verb. See
@@ -102,6 +105,36 @@ MATCHER_SPEC_DIR = "spec_dir"
 
 PATH_MATCHERS = frozenset({MATCHER_UNIVERSAL_WRITE, MATCHER_SPEC_DIR})
 
+# --- closed verb-entry value sets --------------------------------------------------------
+# `class` and `detection` are not free text: both ROUTE ENFORCEMENT. `class`
+# picks the `adapter-dependent` vs `instructed` branch in `enforcement()`, and
+# `detection` decides whether a verb is labelled `enforced` at all. A document
+# that misspells either silently changes what baron CLAIMS to enforce, which is
+# precisely the failure mode ADR-002/ADR-008 exist to prevent — so both are
+# validated against a closed set at parse time, exactly like `matcher`.
+
+#: Enforceable by omitting the whole tool from the runtime's tool set.
+VERB_CLASS_WHOLE_TOOL = "whole-tool"
+#: Enforceable only by inspecting the arguments of a tool that stays granted.
+VERB_CLASS_SUB_TOOL = "sub-tool"
+
+VERB_CLASSES = frozenset({VERB_CLASS_WHOLE_TOOL, VERB_CLASS_SUB_TOOL})
+
+#: guard performs no mechanical check for this verb.
+DETECTION_NONE = "none"
+#: guard parses shell commands for it (a CommandRule must bind the verb).
+DETECTION_COMMAND = "command"
+#: guard scopes write-tool paths for it (a PathRule or the precedence chain).
+DETECTION_FILE_OP = "file-op"
+
+DETECTION_MODALITIES = frozenset({DETECTION_NONE, DETECTION_COMMAND, DETECTION_FILE_OP})
+
+#: The `file-op` verbs decided by the write-path PRECEDENCE CHAIN as a whole
+#: (`guard.evaluate_write`) rather than by a single named :class:`PathRule`.
+#: Mirrors the chain documented in the artifact's ``file_ops`` block; the
+#: consistency check below treats membership here as "guard implements it".
+FILE_OP_CHAIN_VERBS = frozenset({"write_code", "write_path"})
+
 #: Provenance of a rule. Only ``builtin`` exists today; the tag is here so a
 #: future project-level loader cannot omit it (and so `baron rules list`/`diff`
 #: can always say where a rule came from).
@@ -144,8 +177,8 @@ ENFORCEMENT_GUARD = "guard"
 #: No guard detection, but the class is whole-tool, so a runtime adapter with a
 #: tool allow-list *could* enforce it by omitting the tool. Whether any adapter
 #: actually does is a property of that adapter, not of this table — and the one
-#: adapter baron ships does NOT (see :data:`LABEL_CAVEAT`). Labels as
-#: `instructed`, because nothing baron ships enforces it.
+#: adapter that was MEASURED does NOT (see :data:`LABEL_CAVEAT`). Labels as
+#: `instructed`, because no measured enforcement backs it.
 ENFORCEMENT_ADAPTER_DEPENDENT = "adapter-dependent"
 #: No guard detection and sub-tool class — the denial is prose in the persona
 #: body and nothing checks it.
@@ -163,8 +196,11 @@ LABEL_CAVEAT = (
     "unconditionally, so read_file/list_directory/search_files remain available "
     "to a persona that denies read_code (measured by "
     "test_denying_read_code_does_not_omit_read_tools). A runtime with a tool "
-    "allow-list could enforce them by omitting the tool; no adapter baron ships "
-    "does, so they label as `instructed`."
+    "allow-list could enforce them by omitting the tool. The one adapter "
+    "MEASURED (pydantic-ai, the only in-process one baron ships) does not; the "
+    "claude and code-puppy kits are prompt/config templates (adapters/*/"
+    "HYDRATE.md) whose tool exposure is the host runtime's, and are UNMEASURED "
+    "here. Absent a measurement, they label as `instructed`."
 )
 
 
@@ -282,8 +318,9 @@ class CapabilityRules:
         """The blunt two-state label: ``enforced`` or ``instructed``.
 
         ``enforced`` iff guard mechanically checks the verb. ``adapter-dependent``
-        deliberately labels ``instructed``: no adapter baron ships omits the
-        tools that would make it real (:data:`LABEL_CAVEAT`).
+        deliberately labels ``instructed``: the one adapter measured does not
+        omit the tools that would make it real, and the rest are unmeasured
+        (:data:`LABEL_CAVEAT`).
         """
         return "enforced" if self.enforcement(verb) == ENFORCEMENT_GUARD else "instructed"
 
@@ -568,6 +605,102 @@ def _parse_command_rules(
     return tuple(sorted(rules, key=lambda r: order.index(r.id)))
 
 
+def _verb_entry(verb: str, entry: object) -> dict[str, str]:
+    """Parse and validate one ``verbs.<verb>`` entry.
+
+    ``class`` and ``detection`` are REQUIRED and drawn from closed sets. They
+    are required rather than defaulted because both route enforcement: a missing
+    ``detection`` would quietly mean "guard checks nothing" and a missing
+    ``class`` would quietly mean "not whole-tool". Defaulting an enforcement
+    decision is a guess, and a guess is what this parser exists to refuse.
+    """
+    entry_map = _mapping(entry, f"verbs.{verb}")
+    _only(entry_map, _VERB_ENTRY_KEYS, f"verbs.{verb}")
+    parsed = {k: str(v) for k, v in entry_map.items()}
+    for key, allowed in (("class", VERB_CLASSES), ("detection", DETECTION_MODALITIES)):
+        if key not in parsed:
+            raise RulesError(
+                f"capability-rules: verbs.{verb} is missing required key {key!r} — "
+                f"it routes enforcement, so it is not defaulted "
+                f"(one of: {', '.join(sorted(allowed))})"
+            )
+        if parsed[key] not in allowed:
+            raise RulesError(
+                f"capability-rules: verbs.{verb}.{key} is {parsed[key]!r}, which is "
+                f"not a {key} this baron implements — refusing rather than "
+                f"silently changing what baron claims to enforce "
+                f"(known: {', '.join(sorted(allowed))})"
+            )
+    return parsed
+
+
+def _check_detection_consistency(
+    verbs: dict[str, dict[str, str]],
+    command_rules: tuple[CommandRule, ...],
+    path_rules: tuple[PathRule, ...],
+) -> None:
+    """Refuse a document whose ``detection`` misdescribes what guard implements.
+
+    ``detection`` is the field :meth:`CapabilityRules.label` turns into the word
+    ``enforced``. Validating it against a closed set is not enough: ``command``
+    is only true if some :class:`CommandRule` actually binds the verb, and
+    ``file-op`` only if a :class:`PathRule` does or the verb is decided by the
+    write-path precedence chain (:data:`FILE_OP_CHAIN_VERBS`).
+
+    The check is SYMMETRIC, and both directions are lies worth refusing:
+
+    * **over-claim** — ``detection: command`` with no rule behind it makes
+      ``baron rules list`` print ``enforced`` for a verb nothing checks. This is
+      the dangerous direction: it manufactures a false assurance.
+    * **under-declare** — a rule binds the verb but the entry says ``none``,
+      so baron under-reports its own enforcement. Safe in the ADR-002 sense, but
+      still an artifact that misdescribes the code, and the whole point of the
+      table is that it does not.
+
+    This consistency was previously asserted in ``test_rules.py`` against the
+    packaged artifact only, so any *document* could violate it. It belongs in
+    the parser, where document input reaches it (ADR-016 §3.3).
+    """
+    known = set(verbs)
+    declared: dict[str, set[str]] = {
+        DETECTION_COMMAND: set(),
+        DETECTION_FILE_OP: set(),
+    }
+    for verb, entry in verbs.items():
+        modality = entry.get("detection", DETECTION_NONE)
+        if modality in declared:
+            declared[modality].add(verb)
+
+    implemented = {
+        DETECTION_COMMAND: {rule.verb for rule in command_rules if rule.verb},
+        DETECTION_FILE_OP: (
+            {rule.verb for rule in path_rules if rule.verb} | FILE_OP_CHAIN_VERBS
+        ) & known,
+    }
+    how = {
+        DETECTION_COMMAND: "no command rule binds it",
+        DETECTION_FILE_OP: (
+            "no path rule binds it and it is not one of the verbs the write-path "
+            f"precedence chain decides ({', '.join(sorted(FILE_OP_CHAIN_VERBS))})"
+        ),
+    }
+
+    for modality in (DETECTION_COMMAND, DETECTION_FILE_OP):
+        for verb in sorted(declared[modality] - implemented[modality]):
+            raise RulesError(
+                f"capability-rules: verbs.{verb}.detection is {modality!r} but "
+                f"{how[modality]} — refusing to label a verb `enforced` when no "
+                "check performs it"
+            )
+        for verb in sorted(implemented[modality] - declared[modality]):
+            raise RulesError(
+                f"capability-rules: verbs.{verb}.detection is "
+                f"{verbs[verb].get('detection', DETECTION_NONE)!r} but guard does "
+                f"check it ({modality}) — refusing an artifact that misdescribes "
+                "the enforcement it documents"
+            )
+
+
 def _parse(data: object) -> CapabilityRules:
     if not isinstance(data, dict):
         raise RulesError("capability-rules: top level is not a mapping")
@@ -590,9 +723,7 @@ def _parse(data: object) -> CapabilityRules:
         raise RulesError("capability-rules: no verbs table")
     verbs: dict[str, dict[str, str]] = {}
     for verb, entry in verbs_raw.items():
-        entry_map = _mapping(entry, f"verbs.{verb}")
-        _only(entry_map, _VERB_ENTRY_KEYS, f"verbs.{verb}")
-        verbs[str(verb)] = {k: str(v) for k, v in entry_map.items()}
+        verbs[str(verb)] = _verb_entry(str(verb), entry)
 
     git = _mapping(_mapping(data.get("commands"), "commands").get("git", {}), "commands.git")
     push = _mapping(git.get("push", {}), "commands.git.push")
@@ -639,6 +770,10 @@ def _parse(data: object) -> CapabilityRules:
                 f"capability-rules: rule {path_rule.id!r} names unknown matcher "
                 f"{path_rule.matcher!r} — no consumer can enforce it"
             )
+
+    # Last, because it needs the verbs table AND both rule lists: the document's
+    # `detection` claims must match the checks guard actually implements.
+    _check_detection_consistency(verbs, command_rules, path_rules)
 
     return CapabilityRules(
         rules_version=int(version),
@@ -692,6 +827,17 @@ def diff_rules(base: CapabilityRules, other: CapabilityRules) -> dict[str, objec
         ),
         "verbs_added": sorted(set(other.verbs) - set(base.verbs)),
         "verbs_removed": sorted(set(base.verbs) - set(other.verbs)),
+        # Verb ENTRIES, joined on verb id. Without this a candidate that changes
+        # `detection`, `class` or `notes` on an existing verb diffed as
+        # `identical` — and `detection`/`class` are exactly the fields that
+        # decide whether baron prints `enforced`. Unlike rules_added /
+        # rules_removed this branch IS document-reachable, so it is covered by
+        # document fixtures rather than constructed values (ADR-016 §7).
+        "verbs_changed": sorted(
+            verb
+            for verb in set(base.verbs) & set(other.verbs)
+            if base.verbs[verb] != other.verbs[verb]
+        ),
     }
 
 

@@ -333,22 +333,34 @@ baron rules explain agents/other/persona.yaml --write --persona-file agents/dev/
 - **`list`** reports enforcement in **three** states, but only one of them is
   `enforced`: `guard` (guard mechanically checks it → `enforced`),
   `adapter-dependent` (guard does NOT parse for it; a runtime with a tool
-  allow-list *could* enforce it by omitting the tool, but no adapter baron ships
-  does → `instructed`), `instructed` (nothing checks it — `open_pr`,
-  `run_tests`). `read_code` / `read_collab` are the `adapter-dependent` pair:
-  the pydantic-ai adapter builds `FileSystem` unconditionally, so a persona
-  denying `read_code` still gets the read tools. `--json` carries the qualifier
-  in the payload (`label_caveat`, plus `caveat` per affected verb), not just the
-  table footer.
+  allow-list *could* enforce it by omitting the tool, but the one adapter
+  **measured** does not → `instructed`), `instructed` (nothing checks it —
+  `open_pr`, `run_tests`). `read_code` / `read_collab` are the
+  `adapter-dependent` pair: the pydantic-ai adapter builds `FileSystem`
+  unconditionally, so a persona denying `read_code` still gets the read tools
+  (measured by `test_denying_read_code_does_not_omit_read_tools`). The `claude`
+  and `code-puppy` kits are prompt/config templates whose tool exposure belongs
+  to the host runtime and is **unmeasured** here — absent a measurement they
+  label `instructed` too. `--json` carries the qualifier in the payload
+  (`label_caveat`, plus `caveat` per affected verb), not just the table footer.
 - **`validate`** exits 0 clean, 1 if a check fails, **2 if the document is
   refused outright** — unreadable, not YAML, unknown `rules_version` or
   `vocabulary`, a rule or key this baron does not implement, an unknown matcher
   (or one other than the matcher guard implements for that rule), a missing
-  built-in rule. That refusal is the same one guard turns into a fail-closed
-  DENY. Unrecognised content is never dropped silently.
-- **`diff`** exits 0 identical / 1 differs / 2 refused. A candidate carrying a
-  rule this baron does not implement is **refused**, not reported as an
-  addition — `identical` can never be printed over content that was discarded.
+  built-in rule, **an unknown `class` or `detection` value, or a `detection`
+  that misdescribes what guard implements** (claiming `command` with no rule
+  behind it, or `none` where a rule does bind the verb). That refusal is the
+  same one guard turns into a fail-closed DENY. Unrecognised content is never
+  dropped silently — and that includes values, not just keys.
+- **`diff`** exits 0 identical / 1 differs / 2 refused. It joins on **rule id
+  and verb id**: `rules_changed` for a rule body, `verbs_changed` for a verb
+  entry (`class` / `detection` / `notes`), with the resulting
+  enforcement/label change spelled out inline. A candidate carrying a rule this
+  baron does not implement is **refused**, not reported as an addition — so
+  `identical` can never be printed over content that was discarded.
+  *Honest limit:* `rules_added` / `rules_removed` cannot fire from a document
+  (the built-in rule set is closed and every slot mandatory); they exist for the
+  deferred loader. See ADR-016 §7.
 - **`explain`** is a **dry run of the real decision**: it calls
   `guard.evaluate_bash` / `guard.evaluate_write`, not a reimplementation, and a
   test pins its verdict to the evaluator's `Decision` so the two cannot drift.

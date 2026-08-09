@@ -182,7 +182,14 @@ def test_rules_list_table_names_the_honesty_caveat() -> None:
     assert result.exit_code == 0, result.output
     assert "force_push" in result.output
     assert "adapter-dependent" in result.output
-    assert "no adapter baron ships does" in result.output
+    # The caveat must be scoped to what was actually MEASURED. Round 2 said
+    # "no adapter baron ships does", asserting a property of four adapters from
+    # one instrumented test; only pydantic-ai was measured. The claim now names
+    # its evidence and admits the rest are unmeasured.
+    assert "MEASURED" in result.output
+    assert "pydantic-ai" in result.output
+    assert "UNMEASURED" in result.output
+    assert "no adapter baron ships does" not in result.output
 
 
 def test_rules_validate_passes_on_the_shipped_artifact() -> None:
@@ -296,6 +303,92 @@ def test_rules_diff_reports_an_added_verb(tmp_path: Path) -> None:
     assert result.exit_code == 1, result.output
     assert "FAIL" in result.output
     assert "wild_verb" in result.output
+
+
+#: Verb-entry edits that a document CAN legally make (they survive the parser)
+#: and that `diff` must therefore report. Round 2 printed "identical to the
+#: packaged artifact" and exited 0 for every one of these, because the diff
+#: joined on rule id and never compared verb ENTRIES. Unlike rules_added /
+#: rules_removed this branch is document-reachable, so it gets document
+#: fixtures rather than constructed values.
+VERB_ENTRY_EDITS: dict[str, tuple[str, str, str]] = {
+    # name: (find, replace, verb expected in verbs_changed)
+    "notes reworded": (
+        "No command/file-op parsing needed or defined.",
+        "TOTALLY DIFFERENT NOTES.",
+        "read_code",
+    ),
+    "class flipped": (
+        "  open_pr:\n    class: sub-tool\n    detection: none\n",
+        "  open_pr:\n    class: whole-tool\n    detection: none\n",
+        "open_pr",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(VERB_ENTRY_EDITS))
+def test_rules_diff_reports_a_changed_verb_entry(name: str, tmp_path: Path) -> None:
+    import json
+
+    find, replace, verb = VERB_ENTRY_EDITS[name]
+    artifact = _packaged_artifact_text()
+    assert artifact.count(find) == 1, f"{name}: fixture anchor is not unique"
+    fixture = tmp_path / f"{verb}.yaml"
+    fixture.write_text(artifact.replace(find, replace, 1), encoding="utf-8")
+
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture), "--json"])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["identical"] is False
+    assert payload["verbs_changed"] == [verb], payload
+    # It is specifically NOT reported as an added/removed verb or a rule change.
+    assert payload["verbs_added"] == [] and payload["verbs_removed"] == []
+    assert payload["rules_changed"] == []
+
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture)])
+    assert result.exit_code == 1, result.output
+    assert "identical" not in result.output
+    assert f"~ verb {verb}" in result.output
+
+
+def test_rules_diff_names_the_enforcement_consequence_of_a_class_change(
+    tmp_path: Path,
+) -> None:
+    """A `class` edit re-routes `enforcement()`. The diff must say so.
+
+    Flipping `open_pr` to whole-tool moves it from `instructed` to
+    `adapter-dependent` — a real change in what baron reports about itself,
+    invisible if the diff only prints the raw field.
+    """
+    find, replace, verb = VERB_ENTRY_EDITS["class flipped"]
+    fixture = tmp_path / "class-flip.yaml"
+    fixture.write_text(
+        _packaged_artifact_text().replace(find, replace, 1), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture)])
+    assert result.exit_code == 1, result.output
+    assert "class: sub-tool -> whole-tool" in result.output
+    assert "instructed/instructed -> adapter-dependent/instructed" in result.output
+
+
+def test_rules_diff_does_not_elide_the_difference_it_is_reporting(
+    tmp_path: Path,
+) -> None:
+    """A long `notes` change must print both values in full.
+
+    An earlier draft truncated to a fixed 72-char prefix; since the two blocks
+    shared a longer prefix, the diff rendered them as an identical-looking pair.
+    A diff that hides the diff is worse than no diff.
+    """
+    find, replace, _ = VERB_ENTRY_EDITS["notes reworded"]
+    fixture = tmp_path / "notes.yaml"
+    fixture.write_text(
+        _packaged_artifact_text().replace(find, replace, 1), encoding="utf-8"
+    )
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture)])
+    assert result.exit_code == 1, result.output
+    assert find in " ".join(result.output.split())
+    assert replace in " ".join(result.output.split())
 
 
 def test_rules_diff_identical_and_changed(tmp_path: Path) -> None:
