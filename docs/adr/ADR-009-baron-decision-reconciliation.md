@@ -192,7 +192,7 @@ wolf in the other.
 | Source | `park` support |
 |---|---|
 | `github_issues` | full — `closed` or `filtered`, via the forge |
-| `file` | `filtered` only, as a text assertion (item absent, or marked with `park_label`); **needs no `gh`**, per ADR-003 §2.3 |
+| `file` | `filtered` only — the item carries an HTML-comment marker `<!-- <park_label> -->`. **Removal alone is NOT a verifiable discharge**: baron cannot distinguish removed from renamed or never-matched, so it reports unverifiable. **needs no `gh`**, per ADR-003 §2.3 |
 | `jira` | **not supported at first cut** — reports `unverifiable`. Named so the omission is deliberate; a Jira path needs the forge-plugin treatment (`docs/BACKLOG.md`) |
 
 ## 6. Forge Protocol extension (additive)

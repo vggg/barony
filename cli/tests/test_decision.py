@@ -115,7 +115,7 @@ def test_labelled_but_open_without_declaration_is_outstanding(tmp_path: Path) ->
 
 def test_declared_label_discharges(tmp_path: Path) -> None:
     root, m = _collab(
-        tmp_path, park_label="parked", backlog="- SHU-1 epic #214 [parked] see D57\n"
+        tmp_path, park_label="parked", backlog="- SHU-1 epic #214 <!-- parked --> see D57\n"
     )
     decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
     findings = decision.check(root, m)
@@ -145,17 +145,42 @@ def test_prefixed_id_mismatch_does_not_discharge(tmp_path: Path) -> None:
     assert decision.check(root, m)[0].state != decision.DISCHARGED
 
 
-def test_park_label_must_be_a_delimited_marker_not_prose(tmp_path: Path) -> None:
-    """`- #214 Epic — was parked, REOPENED, ACTIVE` discharged under a bare-token
-    rule, because the word appears in prose describing the item's HISTORY."""
+@pytest.mark.parametrize("line", [
+    "- [ ] #214 Epic — was parked, REOPENED, ACTIVE\n",          # bare token (round 2)
+    "- [ ] #214 Epic — was (parked) under D57, REOPENED, ACTIVE\n",  # delimited (round 3)
+    "- [ ] #214 Epic — see [parked] items, ACTIVE\n",             # bracketed in prose
+    "## Parked items\n- [ ] #214 Epic ACTIVE\n",                  # marker on a heading
+])
+def test_park_marker_cannot_be_written_by_prose(tmp_path: Path, line: str) -> None:
+    """Three marker rules have been tried; two were defeated by ordinary prose.
+
+    A bare token fell to `was parked, REOPENED`. `[parked]`/`(parked)` fell to
+    `was (parked) under D57, REOPENED, ACTIVE` — a sentence taken from this module's
+    own docstring. The marker must be something an author cannot write while merely
+    DESCRIBING the item: an HTML comment.
+    """
+    root, m = _collab(tmp_path, park_label="parked", backlog=line)
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    assert decision.check(root, m)[0].state != decision.DISCHARGED
+
+
+def test_html_comment_marker_discharges(tmp_path: Path) -> None:
     root, m = _collab(
-        tmp_path, park_label="parked",
-        backlog="- [ ] #214 Epic — was parked, REOPENED, ACTIVE\n",
+        tmp_path, park_label="parked", backlog="- [ ] #214 Epic <!-- parked -->\n"
     )
     decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
+    assert decision.check(root, m)[0].state == decision.DISCHARGED
+
+
+def test_unverifiable_is_not_green(tmp_path: Path) -> None:
+    """THE round-3 blocker. Moving absence DISCHARGED->UNVERIFIABLE produced the
+    identical exit code, so nothing a CI gate can see actually changed. An
+    obligation baron could not verify is not an obligation discharged."""
+    root, m = _collab(tmp_path, backlog="- [ ] GH-214 Epic ACTIVE\n")
+    decision.reconcile(root, 57, parks=[decision.Park("#214")], commit=False)
     findings = decision.check(root, m)
-    assert findings[0].state == decision.OUTSTANDING
-    assert "without a `[parked]` marker" in findings[0].message
+    assert findings[0].state == decision.UNVERIFIABLE
+    assert not decision.is_green(findings), "unverifiable must not exit 0"
 
 
 def test_missing_backlog_file_is_outstanding_not_green(tmp_path: Path) -> None:

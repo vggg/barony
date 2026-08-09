@@ -437,7 +437,8 @@ def decision_check(
         typer.echo(
             f"{len(findings)} obligation(s): {outstanding} outstanding, {unver} unverifiable"
         )
-    raise typer.Exit(1 if decision_mod.has_outstanding(findings) else 0)
+    # Green only on all-DISCHARGED: unverifiable is amber, and amber is not green.
+    raise typer.Exit(0 if decision_mod.is_green(findings) else 1)
 
 
 @decision_app.command("new")

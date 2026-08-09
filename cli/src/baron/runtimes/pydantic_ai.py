@@ -171,8 +171,9 @@ _RITUAL_LINES = {
     ),
     "check_backlog": (
         "Read the project backlog (source per the manifest). If "
-        "manifest.backlog.park_label is declared, skip items carrying it — a parked "
-        "item is work a ratified decision superseded (ADR-009)."
+        "manifest.backlog.park_label is declared, skip parked items — marked "
+        "<!-- <park_label> --> in a file backlog, or carrying that label on a "
+        "tracker. A parked item is work a ratified decision superseded (ADR-009)."
     ),
 }
 

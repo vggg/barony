@@ -25,12 +25,17 @@ in ADR-009 §3 and unbuilt.
 - **`baron decision check [N] [--fetch]`** verifies discharge. Exit 1 on
   outstanding, CI-usable.
 - **The discharge condition is the whole feature.** A park is discharged only when
-  an agent's backlog query stops returning the item — **closed/absent**, or
-  **labelled AND declared** via the new `manifest.backlog.park_label` (schema
-  **v1.3**, additive). "Labelled and commented" is *not* enough: that is exactly
-  the state D57 recorded for epic #214, which it left open. Without `park_label`
-  declared the only discharge is closing it — the default fails toward the strong
-  condition.
+  an agent's backlog query stops returning the item: **closed** (tracker), or
+  **marked and declared** via the new `manifest.backlog.park_label` (schema
+  **v1.3**, additive). On a **file** backlog the item carries an HTML-comment
+  marker `<!-- parked -->`, and **removal alone is NOT a verifiable discharge** —
+  baron cannot tell "removed" from "renamed" or "never matched", so it reports
+  unverifiable rather than guessing green.
+- **Green means DISCHARGED, nothing else.** `check` exits 0 only when every
+  obligation is positively discharged. An earlier cut exited 0 on `unverifiable`,
+  which meant moving absence from discharged to unverifiable produced the
+  *identical* exit code and changed nothing a CI gate could see — the fix relabelled
+  the failure without fixing it.
 - **Three states, never two** — discharged / outstanding / **unverifiable**. A
   github_issues backlog without `--fetch`, an unreachable forge, or a `jira`
   backlog reports unverifiable and is scored as neither. A **malformed block is
@@ -47,9 +52,11 @@ in ADR-009 §3 and unbuilt.
   the collab checkout and answers the *collab* repo's same-numbered issue. A park
   naming a repo baron cannot resolve reports unverifiable rather than querying the
   wrong one.
-- **`check_backlog` now excludes parked items** in all five renderers (the two
-  code renderers + the three prose adapter surfaces), which is what makes the
-  `filtered` discharge real rather than notional.
+- **`check_backlog` now excludes parked items** in all SEVEN renderers (the two
+  code renderers, the three prose adapter surfaces, plus `PARTICIPATE.md` and
+  `persona.schema.md`'s token table — the last two found only when a reviewer
+  counted them), which is what makes the `filtered` discharge real rather than
+  notional.
 - **Authored data, not a derived view.** Unlike the handoff index this block cannot
   be regenerated, so reconcile only ever appends or updates its own region, never
   rebuilds it, and a malformed block is **reported, never silently rewritten**

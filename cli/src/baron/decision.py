@@ -186,19 +186,21 @@ def _issue_pattern(issue: str) -> re.Pattern[str]:
 
 
 def _label_pattern(label: str) -> re.Pattern[str]:
-    """Match the park label only as a DELIMITED MARKER — `[parked]` or `(parked)`.
+    """The park marker is an HTML COMMENT: ``<!-- parked -->``.
 
-    A bare token anywhere on the line is not enough: `- #214 Epic — was parked,
-    REOPENED, ACTIVE` discharged the park under that rule, because the word appears
-    in prose describing the item's HISTORY. Requiring a delimiter makes the marker a
-    deliberate act rather than an accident of wording.
+    Three rules have now been tried and two were defeated by ordinary prose:
+    a bare token (`was parked, REOPENED` discharged), then `[parked]`/`(parked)`
+    (`was (parked) under D57, REOPENED, ACTIVE` discharged — that sentence was in
+    this module's own docstring). Each time the marker was something an author could
+    write while *describing* the item rather than *marking* it.
 
-    This is also the honest analogue of what the renderers do for a tracker backlog
-    (`--search "-label:<park_label>"` against a real label FIELD). A markdown file has
-    no label field, so baron specifies one; `manifest.schema.md` documents it.
+    An HTML comment cannot appear in descriptive prose by accident, is invisible in
+    rendered markdown, and is unambiguously a deliberate act. It is also the closest
+    a markdown file gets to the label FIELD a tracker backlog has, which is what the
+    rendered `check_backlog` query actually filters on.
     """
     lab = re.escape(label.strip())
-    return re.compile(rf"\[{lab}\]|\({lab}\)")
+    return re.compile(rf"<!--\s*{lab}\s*-->")
 
 
 # --- discharge --------------------------------------------------------------------------
@@ -244,17 +246,20 @@ def check_park_file(
         # on an epic that was live, and made any typo a permanently green obligation.
         # baron cannot tell "removed" from "never matched", so it says so.
         return Finding(decision, "park", park.issue, UNVERIFIABLE,
-                       f"no line in {loc} references `{park.issue}` — baron cannot "
-                       f"distinguish 'removed' from 'never matched' (id-format mismatch, "
-                       f"e.g. GH-214 vs 214). Confirm removal by hand, or record the id "
-                       f"exactly as the backlog writes it")
+                       f"no line in {loc} references `{park.issue}`. On a file backlog "
+                       f"baron cannot distinguish 'removed' from 'renamed' or 'never "
+                       f"matched' (GH-214 vs 214), so REMOVAL ALONE IS NOT A VERIFIABLE "
+                       f"DISCHARGE. To get one: declare `backlog.park_label` and mark the "
+                       f"item `<!-- {_park_label(manifest) or 'parked'} -->`. Until then "
+                       f"this stays unverifiable, and unverifiable is not green")
     label_re = _label_pattern(label) if label else None
     if label_re and all(label_re.search(ln) for ln in lines):
         return Finding(decision, "park", park.issue, DISCHARGED,
-                       f"marked `[{label}]` in {loc}, which backlog.park_label declares excluded")
+                       f"marked `<!-- {label} -->` in {loc}, which backlog.park_label "
+                       f"declares excluded")
     if label:
         return Finding(decision, "park", park.issue, OUTSTANDING,
-                       f"still listed in {loc} without a `[{label}]` marker — an agent "
+                       f"still listed in {loc} without a `<!-- {label} -->` marker — an agent "
                        f"reading the backlog will still be offered this work")
     return Finding(decision, "park", park.issue, OUTSTANDING,
                    f"still listed in {loc}, and backlog.park_label is not declared, so the "
@@ -440,6 +445,17 @@ def check(
                     f"backlog.source `{source}` has no park support at this cut "
                     f"(ADR-009 §5.1 — named so the omission is deliberate)"))
     return findings
+
+
+def is_green(findings: list[Finding]) -> bool:
+    """Green ONLY when every obligation is positively DISCHARGED.
+
+    An earlier cut exited 0 on UNVERIFIABLE, which meant round 2's "fix" — moving
+    absence from DISCHARGED to UNVERIFIABLE — produced the identical exit code and
+    changed nothing that a CI gate could see. An obligation baron could not verify is
+    not an obligation discharged; amber must not be green.
+    """
+    return all(f.state == DISCHARGED for f in findings)
 
 
 def has_outstanding(findings: list[Finding]) -> bool:
