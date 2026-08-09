@@ -314,6 +314,54 @@ overrides are visible in diffs); each override is expected to become a
 it. Without baron installed the hook fails non-blocking and denials degrade to
 instructed — honest degradation, never a bricked session.
 
+### `baron rules list|validate|diff|explain` (ADR-016)
+
+The read-only diagnostic surface over the capability-rules artifact. Nothing
+here changes enforcement; it makes enforcement *inspectable* instead of
+requiring you to read YAML by hand.
+
+```bash
+baron rules list                      # the verb table: class, detection, enforcement, label
+baron rules list --json               # same, machine-readable
+baron rules validate                  # negotiation + integrity checks on the packaged artifact
+baron rules validate --file r.yaml    # ...on a candidate document (see the caveat below)
+baron rules diff --file r.yaml        # join a candidate against the packaged artifact on rule id
+baron rules explain 'git push --force origin main' --persona-file agents/dev/persona.yaml
+baron rules explain agents/other/persona.yaml --write --persona-file agents/dev/persona.yaml
+```
+
+- **`list`** reports enforcement in **three** states, not two: `guard` (guard
+  mechanically checks it), `tool-omission` (guard does NOT parse for it — a
+  runtime with a tool allow-list enforces it by omitting the tool, which is the
+  *adapter's* enforcement, not guard's), `instructed` (nothing checks it —
+  `open_pr`, `run_tests`). `label` collapses the first two to `enforced`;
+  `enforcement` is the field to trust.
+- **`validate`** exits 0 clean, 1 if a check fails, **2 if the document is
+  refused outright** — unreadable, not YAML, unknown `rules_version` or
+  `vocabulary`, unknown matcher, duplicate rule id. That refusal is the same one
+  guard turns into a fail-closed DENY.
+- **`diff`** exits 0 identical / 1 differs / 2 refused.
+- **`explain`** is a **dry run of the real decision**: it calls
+  `guard.evaluate_bash` / `guard.evaluate_write`, not a reimplementation, and a
+  test pins its verdict to the evaluator's `Decision` so the two cannot drift.
+  Exit 0 would-pass / 1 would-be-DENIED / 2 guard could not evaluate. Honest
+  limit: it lists the rules that *can* imply each verb, not the single rule
+  instance that matched — guard's own `reason` names the concrete inference.
+
+> **`--file` validates; it does not activate.** baron loads the **packaged**
+> artifact only. There is no `.baron/rules.yaml` discovery, no merge, no
+> precedence — ADR-016 §5 records why the project-level loader is deferred and
+> which one-way doors it has to settle first (add-only/deny-only, never new
+> verbs, explicit supported ranges on both artifacts, refuse-don't-ignore on a
+> malformed file, cache safety, and the `.baron/` vs root-level convention).
+
+**Representation (ADR-016 §3):** the parsed rules are a *list* of typed rules
+(`CommandRule` / `PathRule`, each with a stable `id`, a `matcher` from a closed
+set, a `verb`, and a `source`), not a flat field-per-rule record — that is what
+makes an additional rule representable at all. Every name `guard.py` grew up
+with survives as a derived property, and `guard.py` is byte-identical across the
+change.
+
 ### `baron lock claim|release|list` (M5)
 
 PR-as-lock (ADR-002 §3), replacing the race-prone markdown LOCK-commit
@@ -489,7 +537,9 @@ hook tests (synthetic PreToolUse JSON on stdin), a recorded fake forge for the
 lock lifecycle, a real two-persona worktree fixture, the waiver
 downgrade/expiry cases, the
 capability-rules artifact tests (packaged + versioned, verb set ≡ the frozen
-vocabulary, guard-consumes-the-data mutation test), and the pydantic-ai
+vocabulary, guard-consumes-the-data mutation test, the ADR-016 legacy-accessor
+pin against hand-transcribed pre-refactor literals, and the `baron rules
+explain` ≡ `guard.evaluate_*` equality pin), and the pydantic-ai
 adapter tests (offline TestModel/FunctionModel: capability omission, write
 scoping, a scripted-and-vetoed `git push origin main`, the clean import-error
 path), the `baron init` acceptance tests (layout + self-validation via the real

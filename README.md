@@ -67,6 +67,7 @@ cd gardenkit-collab
 
 baron validate .                       # canonical specs — expect 0 errors
 baron status                           # divergence/staleness — green when fresh
+baron rules list                       # what the guard actually enforces, honestly labelled
 
 # First coordination moves:
 baron finding new --title "First finding" --author fern --no-push
@@ -155,7 +156,9 @@ adapter's machine-readable capability map (checked in CI by
 `write_path` scoping, `edit_other_personas`. Every enforcing consumer loads the
 same artifact, so decisions are identical across runtimes. A persona always runs
 at the highest tier its runtime supports and degrades gracefully — with the
-honesty label degrading alongside it.
+honesty label degrading alongside it. `baron rules list` prints that table with
+its labels; `baron rules explain '<command>' --persona-file <p>` dry-runs one
+guard decision (ADR-016).
 
 ² code-puppy enforces whole-tool denials natively (JSON agent allow-list) but
 its sub-tool denials stay instruction-only — a partial Tier 3, which its own

@@ -59,6 +59,26 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Shipped (unreleased) — externalizable capability rules, step 1 (ADR-016)
+
+The enabling refactor for project-level custom guard rules, plus the audit surface.
+`rules.CapabilityRules` was a flat record with one field per built-in rule, which
+**structurally cannot hold an additional rule** — so the BACKLOG's "mostly a loader" was
+wrong about the blocker. It is now a rule LIST (`CommandRule`/`PathRule`, stable ids, a
+**closed** matcher set that refuses an unenforceable rule at parse time, `source`
+provenance), with every legacy accessor preserved as a derived property; `guard.py` and
+`runtimes/pydantic_ai.py` are **byte-identical** across the change. New
+`baron rules list|validate|diff|explain` (all `--json`): `list` labels enforcement in three
+honest states (`guard` / `tool-omission` = the adapter's, not guard's / `instructed`), and
+`explain` is a dry run of the real evaluators with a test pinning its verdict to
+`guard.evaluate_bash`'s `Decision`.
+
+**Not shipped:** the `.baron/rules.yaml` loader. `validate --file` parses a candidate but
+does not activate it — baron still loads packaged rules only. The one-way doors
+(add-only/deny-only precedence, supported ranges on both artifacts, refuse-don't-ignore,
+cache safety, the `.baron/` vs root-config convention collision) and the separable
+project-defined-verbs question are recorded in ADR-016 §5–§6 for their own ADR.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the

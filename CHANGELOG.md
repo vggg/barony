@@ -6,7 +6,76 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — externalizable capability rules, step 1: the rule-list representation and `baron rules` (ADR-016)
+
+Teams want project-specific guard rules without forking baron. `docs/BACKLOG.md`
+(2026-07-28) called this "mostly a loader + merge + a precedence story, no new detection
+code". That was wrong about the blocker. The rule table has been externalized *data* since
+v1.6.0, but the parsed form — `rules.CapabilityRules` — was a flat record with one field
+per built-in rule (`push_force_flags`, `push_force_verb`, `gh_pr_merge_subcommand`,
+`universal_write_components`, …). **A structure with a fixed field per rule cannot hold an
+additional rule.** The data was external; the shape was not extensible.
+
+- **`CapabilityRules` is now a rule LIST** — `command_rules: tuple[CommandRule, ...]` and
+  `path_rules: tuple[PathRule, ...]`, each rule carrying a stable `id`
+  (`git.push.force_flags`, `gh.pr_merge`, `file_ops.spec_dir`, …), a `matcher` from a
+  **closed** set, a `verb`, and a `source` provenance tag. Eight built-in rules; the ids are
+  the public handle `baron rules explain` prints and `baron rules diff` joins on.
+- **The matcher set is closed on purpose.** `flag_present`, `refspec_prefix`,
+  `refspec_default_branch`, `current_branch_is_default`, `subcommand_present`,
+  `universal_write`, `spec_dir`. A rule naming anything else is **refused at parse time** —
+  it is a rule no consumer can honestly enforce, and accepting it would print an `enforced`
+  label over nothing. This makes the BACKLOG's cheap/expensive split mechanical instead of
+  aspirational: a new modality (file size, time window, rate limit, anything semantic) is
+  new detection code in `guard.py`, not a config line.
+- **Behaviour preservation is the acceptance criterion, not a claim about it.**
+  `cli/src/baron/guard.py` and `cli/src/baron/runtimes/pydantic_ai.py` are **byte-identical**
+  across this change. All fifteen pre-existing accessors survive as derived read-only
+  properties with the same name and type, pinned by
+  `test_legacy_accessors_are_behaviour_preserving` against **hand-transcribed pre-refactor
+  literals** — deliberately literals, because re-deriving them from the artifact would test
+  the loader against itself and prove nothing.
+- **`baron rules list|validate|diff|explain`** — the read-only audit surface. Until now the
+  only way to ask baron what it enforces was to read the YAML by hand, which the project's
+  own measured 0.53 operational fidelity says is not good enough. All four take `--json`.
+- **`list` reports enforcement in three states, not two.** `guard` (guard mechanically
+  checks it) / `tool-omission` (guard does NOT parse for it — a runtime with a tool
+  allow-list enforces it by omitting the tool, which is the *adapter's* enforcement, not
+  guard's, and only real on a runtime that has an allow-list) / `instructed` (nothing checks
+  it — `open_pr`, `run_tests`, by design). `label` collapses the first two to `enforced`;
+  the table prints the caveat as a footer. Two states could not say this honestly.
+- **`explain` is a dry run of the real decision.** It calls `guard.evaluate_bash` /
+  `guard.evaluate_write`, and `test_rules_explain_matches_guard_evaluate_bash_exactly` pins
+  its JSON verdict to the evaluator's `Decision` for the same input, so a second
+  implementation cannot creep in. Exit 0 would-pass / 1 would-be-DENIED / 2 could not
+  evaluate. Honest limit, stated in `--help`: it lists the rules that *can* imply each verb,
+  not the single rule instance that matched — re-deriving that in the CLI would mean a
+  second parser that could drift from the first.
+- **Two new fail-closed parse refusals**: an unknown `vocabulary` (previously the field was
+  not read at all) and a duplicate rule id. Both join the existing unknown-`rules_version`
+  refusal; guard turns all three into an exit-2 DENY.
+
+### Not shipped, deliberately — the project-level rules loader
+
+`baron rules validate --file` / `diff --file` will parse a candidate rules document, but
+**validating a file does not activate it**. Every enforcer still loads the PACKAGED
+artifact only — no `.baron/rules.yaml` discovery, no merge, no precedence — pinned by
+`test_guard_reads_packaged_data_only`. ADR-016 §5 records the one-way doors that need
+their own ADR first: add-only/deny-only (project rules may never grant), explicit supported
+version ranges on *both* artifacts, refuse-don't-ignore on a malformed project file
+(matching guard's fail-closed policy, deliberately unlike `.baron-waivers.yaml`'s
+soft-fail), `load_rules()` cache safety once it is path-dependent, and the `.baron/`
+(machine state) vs root-level `.baron-waivers.yaml` (human config) convention collision.
+**Project-defined verbs are a separate, unmade decision** (ADR-016 §6.1): they would break
+the frozen-vocabulary invariant asserted in two test files, and custom rules for *existing*
+verbs — the 90% case — need no vocabulary change at all.
+
+Docs: new `docs/adr/ADR-016-externalizable-capability-rules.md`; `cli/README.md` §`baron
+rules`; `skills/barony/references/capability-rules.md` (+ the vendored template copy)
+gained the inspection surface, the three-state labelling table and the
+not-loaded-yet section; `docs/BACKLOG.md` § *User-extensible guard rules* records why "mostly
+a loader" was wrong and what is still open. **CLI track: a minor bump** (new command
+surface, no behaviour change) — left to the release commit.
 
 ## [1.10.0] — 2026-08-04
 

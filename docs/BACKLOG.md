@@ -159,6 +159,25 @@ rule from config.
   new matcher in `guard.py`, not a config line. Gate on observed need
   (vocabulary design rule 4), same as the core verbs.
 
+**Update (2026-08-09, ADR-016) — step 1 landed; the loader is still open.**
+"Mostly a loader" was wrong: the parsed form (`rules.CapabilityRules`) was a
+flat record with one field per built-in rule, and a fixed field per rule cannot
+hold an *additional* rule. The data was external; the shape was not extensible.
+ADR-016 fixed the shape (a rule LIST of typed `CommandRule`/`PathRule` with
+stable ids and a **closed** matcher set — the cheap/expensive split above, made
+mechanical: an unknown matcher is refused at parse time) and shipped
+`baron rules list|validate|diff|explain` as the audit/diagnostic surface.
+`guard.py` was byte-identical across the change.
+
+Still open, and each is a one-way door (ADR-016 §5, needs its own ADR): the
+`.baron/rules.yaml` loader itself, add-only/deny-only precedence, explicit
+supported version ranges on *both* artifacts, refuse-don't-ignore on a malformed
+project file, `load_rules()` cache safety once it is path-dependent, and the
+`.baron/` (machine state) vs root-level `.baron-waivers.yaml` (human config)
+convention collision. **Project-defined verbs are a separate, unmade decision**
+(ADR-016 §6.1) — custom rules for existing verbs need no vocabulary change and
+are the 90% case; do that first, if at all.
+
 ### Centralized cross-project memory substrate
 Within a project the collab repo already *is* the shared memory substrate
 (findings/decisions/wiki/handoffs in git+markdown). Extending to a **centralized,
