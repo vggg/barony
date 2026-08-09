@@ -266,6 +266,54 @@ finding/decision numbering: duplicates are errors (exit 1); gaps and
 out-of-order headings are **report-only** warnings — baron never renumbers
 history.
 
+### `baron export [--kind K]... [--json]` (P3.4 partial, [ADR-015](../docs/adr/ADR-015-baron-export.md))
+
+The governed corpus as **citable records** — one flat record per ADR, decision,
+finding and handoff, walked from the same markdown the personas write:
+
+```bash
+baron export                                                    # table
+baron export --json | jq '.records[] | select(.kind=="decision")'
+baron export --kind adr --kind decision --json                  # subset
+baron export --json | jq -r '.records[] | "\(.id)\t\(.commit_sha)\t\(.path)"'
+```
+
+```json
+{ "id": "D57", "kind": "decision", "title": "RATIFIED: …",
+  "path": "decisions/index.md", "commit_sha": "6bccfba7…", "status": null,
+  "body": "**Owner decision (Vikram), ratified 2026-07-31…",
+  "links": [{"type": "ref", "target": "ADR-0011"}, {"type": "ref", "target": "D56"}],
+  "meta": {"form": "heading"} }
+```
+
+Eight core fields (`id, kind, title, path, commit_sha, status, body, links`) plus
+an open, kind-specific `meta`. Primary key is `(kind, id)`. `path` is
+**repo-root-relative** so the citation below pastes verbatim; the envelope's
+`repo_prefix` recovers the `--collab`-relative form when they differ.
+
+**Every record cites a commit that reproduces it.** A source file that is
+untracked or has uncommitted edits is **skipped and named** in `skipped[]` — never
+emitted with a SHA that resolves but returns different text. So
+`git show <commit_sha>:<path>` always returns the exact bytes the record was
+parsed from. `--allow-dirty` relaxes that for **modified tracked** sources only,
+stamping `meta.dirty` on the affected records; untracked sources stay skipped
+under every flag, because `commit_sha` is never empty and a file with no commit
+has nothing to cite.
+
+Both real ledger entry-forms parse (`### F40 — title (date, author)` blocks and
+bare `| F40 | title |` index rows; the heading wins for the same ID). `status` is
+**null for findings and decisions** — the canon gives ledgers no lifecycle field,
+and guessing one from prose would be an overclaim. Output is byte-stable across
+runs (`age_days` is deliberately dropped). Archived handoffs are **included** by
+default (`--no-archived` to drop them) — unlike `baron handoff list`, this is the
+history, not the work queue. `--adr-dir` retargets the ADR walk (default
+`docs/adr`); ADRs kept in the *code* repo are out of reach for now.
+
+There is **no knowledge backend, no plugin group, and no vendor dependency** here,
+and that is deliberate — see [ADR-015](../docs/adr/ADR-015-baron-export.md) §4 for
+the sequencing argument and the open owner decision. Exit 0; exit 2 if the collab
+path is not a git repo with history (there is no provenance-free mode).
+
 ### `baron guard --persona-file <persona.yaml>` (M4)
 
 Deterministic capability enforcement as a **Claude Code PreToolUse hook**
