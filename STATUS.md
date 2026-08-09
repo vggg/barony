@@ -37,6 +37,28 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — P3.4 (partial) `baron export`: citable records
+
+[ADR-015](docs/adr/ADR-015-baron-export.md). `baron export [--kind …] [--json]` walks
+`docs/adr/`, `decisions/index.md`, `findings/index.md` and `_handoff/**` into flat records
+carrying `{id, kind, title, path, commit_sha, status, body, links, meta}`. **The citation gate
+is the substance:** a source that is untracked or dirty is skipped and named rather than
+emitted with a SHA that resolves but returns different text, so `git show <sha>:<path>` always
+reproduces a record's bytes. That discharges 3.4's "every retrieval result must carry
+path + commit SHA" independently of any backend. Measured: 284 records out of
+`baddie-analyzer-collab` (62 decisions / 62 findings / 160 handoffs), 9 ADRs out of this repo,
+every SHA resolving. No new dependency; still typer + pyyaml.
+
+**Deliberately not shipped:** the backend contract interface, a `baron.knowledge` entry-point
+group, and any semantic-memory adapter — 3.4 is gated on 3.3 (which does not exist), and an
+entry-point group with no consumer is unretractable public API (ADR-015 §4). **Nothing about
+the candidate vendor was run** — public docs read, no ingest, no retrieval, no measurement.
+
+> **OWNER DECISION OUTSTANDING** (ADR-015 §4.1, from the 2026-08-04 reconciliation item C):
+> semantic memory as a *rebuildable projection* over git+markdown, or as an *authoritative*
+> knowledge source? The latter contradicts product-vision invariant #1. Recommendation: keep it
+> a projection and amend 3.4 to drop mode (b). No adapter until this is answered and 3.3 exists.
+
 ## Shipped (unreleased) — ritual-token coverage guard (plugin 1.10.0)
 
 Closes the `docs/BACKLOG.md` gap from the 1.9.0 cycle: the three prose adapter surfaces now

@@ -6,7 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — `baron export`: the governed corpus as citable records ([ADR-015](docs/adr/ADR-015-baron-export.md))
+
+`baron export [--kind …] [--json]` walks the four corpora a collab repo already keeps —
+`docs/adr/*.md`, `decisions/index.md`, `findings/index.md`, `_handoff/**.md` — and emits one
+flat record per artifact: `{id, kind, title, path, commit_sha, status, body, links}` plus an
+open `meta` bag. No new dependency (still typer + pyyaml), no network, no plugin seam.
+
+- **The citation gate is the point.** `AGENT-TASKS.md` 3.4 requires every retrieval result to
+  carry `path + commit SHA`. A record is emitted **only** if its source file is tracked and
+  unmodified, so `git show <commit_sha>:<path>` reproduces the parsed bytes exactly. Sources
+  failing that test are **skipped and named** in `skipped[]` with a reason and a lost-record
+  count — never emitted with a SHA that resolves but returns different text, which is the
+  failure mode that would poison a downstream index with confidently-wrong citations.
+  `--allow-dirty` overrides the gate and stamps `meta.dirty` on the affected records, so the
+  caveat travels with the data rather than with the invocation.
+- **Both real ledger entry-forms parse.** Full `### F40 — title (date, author)` blocks *and*
+  bare `| F40 | title |` index rows, with the heading form winning for the same ID — the
+  shape badminton-analyzer's migrated F1–F39 table actually has. Entries with no trailing
+  `(date, author)` (its whole D48+ run) parse too.
+- **`status` is null for findings and decisions**, on purpose: the canon gives ledgers no
+  lifecycle field, supersession is prose, and a regex that produced `"superseded"` would be
+  the enforced-vs-instructed overclaim ADR-002 bans.
+- **Byte-stable across runs** — sorted output, ISO-coerced YAML dates, and `age_days`
+  deliberately dropped (it is a function of today). Locked by a test; without it nothing
+  downstream can sync incrementally.
+- Measured on real repos: 284 records (62 decisions / 62 findings / 160 handoffs) out of
+  `baddie-analyzer-collab`, 9 ADRs out of this one, every SHA resolving with `git cat-file -e`.
+
+### Not shipped, deliberately — the knowledge-substrate adapter (`AGENT-TASKS.md` 3.4)
+
+No `baron.knowledge` entry-point group, no sink protocol, **no semantic-memory adapter, and no
+vendor named anywhere under `cli/src/baron/`** (asserted by test). 3.4 is gated on **3.3**, the
+governed-memory evaluation harness, which does not exist — building the adapter first inverts
+the project's own measure-first rule on the exact task where that rule is written down — and an
+entry-point group with no consumer is public API that cannot be retracted. Two further tests
+pin the boundary: runtime dependencies are still exactly `["typer", "pyyaml"]`, and
+`baron.forges` is still the only entry-point group.
+
+**Open owner decision** ([ADR-015](docs/adr/ADR-015-baron-export.md) §4.1, carried from the
+2026-08-04 reconciliation): is a semantic-memory backend a *rebuildable projection* over
+git+markdown, or a candidate *authoritative* source? The latter contradicts the product
+vision's invariant #1 ("the repo is the only source of truth; `cat` always works"). The export
+is the input either answer consumes, so it is not wasted under either branch. **Nothing here
+claims a working third-party integration — none was built and none was run** (ADR-015 §6).
 
 ## [1.10.0] — 2026-08-04
 

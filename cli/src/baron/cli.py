@@ -15,6 +15,7 @@ import typer
 
 from . import (
     clock,
+    export as export_mod,
     guard as guard_mod,
     handoff as handoff_mod,
     indexer,
@@ -501,6 +502,77 @@ def index(
             if not (r.duplicates or r.gaps or r.out_of_order):
                 typer.echo(f"ok      {r.kind}s: numbering duplicate-free and monotonic")
     raise typer.Exit(1 if duplicates else 0)
+
+
+# --- P3.4 (partial): export -------------------------------------------------------------
+
+
+@app.command()
+def export(
+    collab: Path = _COLLAB_OPT,
+    kind: Optional[list[str]] = typer.Option(
+        None,
+        "--kind",
+        help=(
+            "Restrict to one or more kinds (repeatable): "
+            + " | ".join(export_mod.KIND_ORDER)
+            + ". Default: all four."
+        ),
+    ),
+    adr_dir: str = typer.Option(
+        export_mod.ADR_DIR, "--adr-dir", help="ADR directory, relative to the collab repo."
+    ),
+    archived: bool = typer.Option(
+        True,
+        "--archived/--no-archived",
+        help="Include archived handoffs (default ON — the export is the history, not the queue).",
+    ),
+    allow_dirty: bool = typer.Option(
+        False,
+        "--allow-dirty",
+        help="Emit records from uncommitted/modified sources too (their citation will NOT verify).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Export ADRs, decisions, findings and handoffs as citable records.
+
+    One flat record per artifact — `{id, kind, title, path, commit_sha, status,
+    body, links}` plus an open `meta` bag — walked from the same markdown the
+    personas write. Every record names the commit whose bytes were parsed, so
+    `git show <commit_sha>:<path>` reproduces the source exactly; that is the
+    citation requirement AGENT-TASKS.md 3.4 puts on any knowledge substrate.
+
+    A source that is untracked or has uncommitted edits is **skipped and named**
+    (`skipped[]`), never emitted with a SHA that does not match its content.
+    `--allow-dirty` overrides that and stamps `meta.dirty` on the affected
+    records.
+
+    This is a plain read — no knowledge backend, no plugin seam, no network
+    ([ADR-015](../docs/adr/ADR-015-baron-export.md)). `baron export --json | jq
+    '.records[] | select(.kind=="decision")'` is the whole intended workflow
+    today. Exit 0; exit 2 if the collab path is not a git repo with history.
+    """
+    try:
+        result = export_mod.collect(
+            collab,
+            kinds=set(kind) if kind else None,
+            include_archived=archived,
+            allow_dirty=allow_dirty,
+            adr_dir=adr_dir,
+        )
+    except export_mod.ExportError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    if json_out:
+        _echo_json(result.to_dict())
+        for s in result.skipped:
+            typer.echo(
+                f"warning: skipped {s.path} ({s.reason}) — {s.records} record(s) not citable",
+                err=True,
+            )
+    else:
+        typer.echo(export_mod.render_table(result))
+    raise typer.Exit(0)
 
 
 # --- M4: guard ------------------------------------------------------------------------

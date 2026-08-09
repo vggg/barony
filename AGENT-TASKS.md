@@ -116,6 +116,26 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
   retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
   classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
+  - **PARTIAL, 2026-08-09 ([ADR-015](docs/adr/ADR-015-baron-export.md)):** the *producer* half is
+    built and shipped as **`baron export`** — ADRs/decisions/findings/handoffs walked into flat
+    records that each carry `path + commit_sha`, with sources that cannot honour that citation
+    skipped by name rather than mis-cited. That discharges the "every retrieval result must carry
+    an authoritative source ID/version" requirement independently of which backend wins, since it
+    is a requirement on the corpus walk, not on the store. **Curated status is still not
+    exported** (no schema), and ADRs living in the code repo are out of reach (needs the manifest).
+  - **Still NOT built, deliberately:** the backend contract interface, the `baron.knowledge`
+    entry-point group, and any vendor adapter. Reasons in ADR-015 §4 — 3.4 is gated on 3.3 (which
+    does not exist), and a published entry-point group with no consumer is unretractable public
+    API. Tests assert `baron.forges` is still the only group, that runtime deps are still
+    typer + pyyaml, and that no vendor name appears under `cli/src/baron/`.
+  - **BLOCKING OWNER DECISION** (carried from the 2026-08-04 Codex reconciliation, item C):
+    mode **(b)** "authoritative knowledge source" contradicts the product vision's invariant #1
+    ("the repo is the only source of truth; any hosted surface is a cache, rebuildable from
+    `git clone`; `cat` always works"). Either drop mode (b) and keep the substrate a projection,
+    or consciously amend invariant #1 and record why. **Recommendation: drop (b).** No adapter
+    should be built until this is answered *and* 3.3 exists.
+  - **Nothing about the vendor has been run.** Its public docs were read on 2026-08-09; no
+    ingest, no retrieval, no measurement. Do not let any surface imply otherwise (ADR-015 §6).
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.

@@ -118,6 +118,14 @@ live in [docs/concepts.md](docs/concepts.md). The short version:
   description is not a substitute. Closing a handoff archives it
   (`_handoff/archive/YYYY/`), never deletes it. `baron index` keeps a generated
   summary table without eating prose.
+- **A citable export, not a memory service.** `baron export --json` walks the
+  ADRs, decisions, findings and handoffs into flat records that each name the
+  commit whose bytes were parsed — so `git show <commit_sha>:<path>` reproduces
+  any record exactly, and a source that cannot honour that is skipped by name
+  rather than cited wrongly. It is grep/jq-usable on its own; there is no
+  knowledge backend, no plugin group and no vendor dependency behind it, and
+  [ADR-015](docs/adr/ADR-015-baron-export.md) explains why the semantic-memory
+  adapter is withheld until the evaluation harness exists.
 - **The divergence radar.** `baron status` reports every working copy's
   ahead/behind/dirty state, unmerged branches with age, overdue handoffs, and
   ledger/wiki staleness — exit 1 on any red. Deliberately-parked reds get
