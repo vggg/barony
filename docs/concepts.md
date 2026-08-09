@@ -184,6 +184,21 @@ against a wrapper, use OS-level isolation (a container/sandbox). The pydantic-ai
 in-process Shell narrows the class — it denies redirect/pipe operators and
 allowlists test-only personas' shells — but does not close it.
 
+**The bigger failure was never a bypass — it was absence.** The badminton-analyzer
+incident merged 15 PRs under a persona denied `merge_pr`, and nothing had gone
+wrong: the hook had never been wired into `.claude/settings.json`, so the denial
+degraded to persona text exactly as designed, and silently. An absent guard and a
+guard that never had to fire leave identical evidence.
+`baron doctor` ([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)) is that
+silence's remedy: nine read-only checks — executable resolves, hook present,
+matcher covers every governed tool, persona and rules load, a synthetic denial
+really exits 2 in this install, malformed stdin fails closed, no exported
+override — exiting 1 on any FAIL with a remedy line each. Its own bound is
+printed on every run: doctor verifies **WIRING, not invocation**. It proves the
+install *can* enforce; whether the runtime actually called the hook is not
+observable from outside the runtime, and a command that implied otherwise would
+manufacture the very confidence that produced those merges.
+
 ## PR-locks
 
 For contested hot files, **the open PR is the lock** (ADR-002 §3): `baron lock

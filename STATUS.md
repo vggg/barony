@@ -37,6 +37,45 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — `baron doctor`, the guard wiring self-test ([ADR-017](docs/adr/ADR-017-baron-doctor-wiring-selftest.md))
+
+Closes the first and highest-value checkbox of the `baron guard` hardening list from the
+2026-08-01 source-level validation. The badminton-analyzer incident merged 15 PRs under a
+persona denied `merge_pr`, and nothing had failed — the hook had never been wired into
+`.claude/settings.json`, so the denial degraded to persona text **silently**. `baron doctor`
+runs nine read-only checks (executable resolves · PreToolUse hook present · matcher covers
+every governed tool · persona parses · rules artifact loads · **a synthetic denial really
+exits 2 in this install** · malformed stdin fails closed per ADR-004 §2.3 ·
+`BARON_GUARD_OVERRIDE` not exported · override log writable, INFO-only) and **exits 1 on any
+FAIL**, each with a remedy line. `--json` for CI and audit reports.
+
+**Honesty boundary, printed on every run including green ones:** doctor verifies **WIRING,
+not invocation**. It proves the install *can* enforce; it cannot observe whether Claude Code
+actually ran the hook, because nothing outside the runtime can. Implying otherwise would
+manufacture the same false confidence that produced the badminton merges. Two scoped
+non-goals, both deliberate: evidence checks are INFO and never FAIL (enforcement is
+fail-closed, evidence is fail-open), and only project-level settings are read — a hook wired
+in `~/.claude/settings.json` reads as FAIL, because a verdict that depends on the developer's
+home directory is not a property of the repo.
+
+## Documented (unreleased) — 2026-08-08 evaluation close-out, no code change
+
+Two "gaps" from the 2026-08-08 Barony/Nasiko evaluation were already decided; the deliverable
+was recording that honestly rather than re-deriving them (the note's own CORRECTIONS block
+¶2 names re-derivation as its documented failure mode).
+
+- **Fail-open vs fail-closed on hook failure** — settled since **ADR-004 §2.3** and
+  implemented in `guard.process()`'s two DENY paths. No new ADR. The 2026-08-08 hands-on run
+  measured it empirically; it is now pinned per-install by doctor's `fail-closed` check and by
+  `test_doctor.py::test_fail_closed_policy_is_pinned_adr_004_s2_3`.
+- **`open_pr` / `run_tests` denial parsing** — remains DEFERRED as of 2026-08-09 with no
+  observed-need evidence anywhere in the repo or the evaluation (vocabulary design rule 4;
+  ADR-004 §2.2). `capability-rules.v1.yaml` unchanged, `rules_version` still **1**, pinned by
+  `test_rules.py::test_open_pr_and_run_tests_stay_unparsed_deferred`.
+- **Lock soft-timeout sweep** — still open and correctly so: folding locks into `baron status`
+  crosses the recorded "status reads local git state only, never the forge" deferral, so it
+  needs its own ADR first. Shape recorded in `docs/BACKLOG.md`.
+
 ## Shipped (unreleased) — ritual-token coverage guard (plugin 1.10.0)
 
 Closes the `docs/BACKLOG.md` gap from the 1.9.0 cycle: the three prose adapter surfaces now

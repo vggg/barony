@@ -76,12 +76,20 @@ baron index                            # regenerates _handoff/README.md — comm
 
 # Per-persona working copies (worktrees of the code repo above):
 baron worktree add fern                # ../gardenkit-worktrees/fern, branch persona/fern
+
+# Install fern's runtime kit where the runtime actually reads it, then PROVE it:
+cp -R agents/fern/runtime/.claude ../gardenkit/
+baron doctor --dir ../gardenkit        # guard wiring self-test — exit 1 if the hook is missing
 ```
 
 Drop `--no-push` once the collab repo has an origin remote. The `worktree` step
 needs the `--code-repo` you passed to `init` (that's what created the code repo
 above). `baron init` also emits each persona's runtime kit under
-`agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`).
+`agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`) —
+the `cp` step is what installs it, and skipping it is how the badminton-analyzer
+incident merged 15 PRs under a persona that was denied `merge_pr`. `baron doctor`
+exists so that skipping it is loud rather than silent; it verifies WIRING, not
+invocation (ADR-017).
 Full command reference: [`cli/README.md`](cli/README.md). The conversational
 setup path (an agent interviews you, then scaffolds) routes through
 `skills/barony/assets/collab-repo/START.md` — see

@@ -241,6 +241,16 @@ behavior above — worse-is-visible, never worse-is-broken. Overrides
 (`BARON_GUARD_OVERRIDE=<reason>`) are allowed-but-logged to the tracked
 `.baron/guard-override.log`; each one is expected to become a `_handoff/`.
 
+**Then PROVE it — `baron doctor --dir <code_repo>`.** Writing the settings block is not the
+same as having enforcement, and the difference is invisible: the badminton-analyzer project
+merged 15 PRs under a persona denied `merge_pr` because this step was believed done and had
+not been. `baron doctor` checks that the executable resolves, that the hook is really in the
+file the runtime reads, that the matcher covers all four governed tools, that the persona path
+resolves and parses, and that a synthetic denial actually exits 2 in this install — exit 1 on
+any FAIL, with a remedy line each. Note its bound before quoting it to the user: doctor
+verifies **WIRING, not invocation**; it cannot observe whether Claude Code ran the hook on a
+real call.
+
 ### 4. Render the session ritual (v1 tokens, relative paths)
 Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 
@@ -285,6 +295,10 @@ readability.
 - `.claude/settings.json` carries the PreToolUse → `baron guard` hook (step 3c) with the
   persona-file path resolving; state honestly whether baron is installed (enforced) or not
   (instructed until it is).
+- **`baron doctor --dir <code_repo>` exits 0** — the mechanical version of the line above, and
+  the only one that catches "the hook was written somewhere the runtime does not read". If it
+  exits 1, do not report this persona as enforced; paste doctor's FAIL lines and their remedies
+  to the user. Repeat doctor's own caveat when you quote it: it verifies WIRING, not invocation.
 
 **Tier 3:**
 - `.claude/agents/<slug>.md` exists with frontmatter (`name`, `description`, `tools`) + body.

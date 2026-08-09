@@ -6,7 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — `baron doctor`: the guard wiring self-test ([ADR-017](docs/adr/ADR-017-baron-doctor-wiring-selftest.md))
+
+Closes the first and highest-value checkbox in the roadmap's `baron guard` hardening
+list. The badminton-analyzer incident merged 15 PRs under a persona denied `merge_pr`,
+and nothing had failed: `baron guard` had never been wired into `.claude/settings.json`,
+so the denial degraded to persona text exactly as designed — and **silently**. An absent
+guard and a guard that never had to fire produce identical evidence: nothing.
+
+- **`baron doctor [--dir .] [--persona-file F] [--json]`** — nine read-only checks, each
+  with a remedy line, **exit 1 on any FAIL**: the hook's executable resolves and runs;
+  project `.claude/settings.json` wires a `baron guard` PreToolUse hook; its matcher
+  covers every governed tool (`Bash`, `Edit`, `Write`, `NotebookEdit`); the named persona
+  parses; `capability-rules.v1.yaml` loads at a supported `rules_version`; **a synthetic
+  denial really returns exit 2 in this install**; malformed stdin also returns exit 2
+  (ADR-004 §2.3); `BARON_GUARD_OVERRIDE` is not sitting exported; and the override log is
+  writable (INFO).
+- **The caveat ships with the command, not just the docs.** Doctor verifies WIRING, not
+  invocation — it proves the install *can* enforce and cannot observe whether Claude Code
+  actually ran the hook, because nothing outside the runtime can. That sentence prints on
+  every run including green ones, is a field in `--json`, and is grep-asserted by a test.
+  A command that implied otherwise would manufacture the same false confidence that
+  produced the badminton merges.
+- **Check 6 uses a synthetic persona, not the project's** — otherwise it would measure the
+  project's capability grants rather than the mechanism (a permissive project would PASS
+  vacuously; a merger persona holding `merge_pr` would FAIL falsely). It also rejects an
+  exit 2 that arrived via the internal-error path: a guard that denies everything by
+  crashing is an outage that happens to look safe, not enforcement.
+- **Probes neutralise `BARON_GUARD_OVERRIDE` and restore it** — left set, it would measure
+  the escape hatch instead of the mechanism. Its being exported is its own FAIL: for a
+  session, it is indistinguishable from having no guard.
+- **Evidence checks are INFO, never FAIL.** Enforcement is fail-closed; evidence is
+  fail-open. A broken audit sink must not be reported as broken enforcement, or people
+  learn to ignore the exit code. A gitignored `guard-override.log` is called out loudly in
+  the detail and still exits 0 on its own.
+- **Un-copied runtime kits get a named remedy** — when there is no hook but
+  `agents/<slug>/runtime/.claude/settings.json` exists, the remedy names the kit path, the
+  incident, and the `cp -R`. That gap *is* the badminton shape.
+- `baron init`'s next-steps now has an explicit INSTALL-the-kit step followed by
+  `baron doctor`, and both READMEs' quickstarts do the same (verified as written).
+- Tests: `cli/tests/test_doctor.py` — mostly mutation tests (delete the settings file,
+  corrupt the persona, narrow the matcher, break the executable path, monkeypatch the deny
+  path to return 0) each asserting doctor names the break at nonzero exit.
+
+### Documented — two evaluation gaps that were already decided
+
+From the 2026-08-08 Barony/Nasiko evaluation. Recording the existing decision honestly *is*
+the deliverable here; re-deriving a settled decision as a fresh proposal is the documented
+failure mode of that note (its own CORRECTIONS block, ¶2).
+
+- **Fail-open vs fail-closed on hook failure — settled since ADR-004 §2.3, now also
+  measured and pinned.** No new ADR: the policy was decided, implemented
+  (`guard.process()`'s two DENY paths), and documented on day one. The 2026-08-08 hands-on
+  run measured it empirically; `test_doctor.py::test_fail_closed_policy_is_pinned_adr_004_s2_3`
+  and doctor's own `fail-closed` check now assert it per-install.
+- **`open_pr` / `run_tests` denial parsing stays DEFERRED** (`docs/BACKLOG.md` § Guard
+  coverage growth), with the date and the reason: no observed-need evidence exists anywhere
+  in the repo or the evaluation, and the vocabulary's design rule 4 / ADR-004 §2.2 make
+  observed need the trigger. `capability-rules.v1.yaml` is unchanged and `rules_version`
+  stays 1.
 
 ## [1.10.0] — 2026-08-04
 

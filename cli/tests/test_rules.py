@@ -27,6 +27,32 @@ def test_artifact_is_packaged_and_versioned() -> None:
     assert loaded.ambiguity_policy == "conservative-deny"
 
 
+def test_open_pr_and_run_tests_stay_unparsed_deferred() -> None:
+    """`open_pr`/`run_tests` denial parsing is DEFERRED, not forgotten.
+
+    ADR-004 §2.2, the artifact's own notes, and docs/BACKLOG.md § "Guard coverage
+    growth" all say the same thing on the same trigger rule: these two verbs stay
+    instruction-only until there is OBSERVED NEED (capability vocabulary design
+    rule 4). Re-checked 2026-08-09 during the 2026-08-08 evaluation close-out —
+    no observed-need evidence exists in the repo or in that evaluation, so the
+    deferral holds and `rules_version` stays 1.
+
+    This test is the tripwire: adding detection for either verb must be a
+    deliberate act that bumps `rules_version` (so every consumer notices) rather
+    than a quiet edit to the artifact.
+    """
+    loaded = rules.load_rules()
+    for verb in ("open_pr", "run_tests"):
+        entry = loaded.verbs[verb]
+        assert entry["detection"] == "none", (
+            f"{verb} gained detection — that is a policy change: bump "
+            "rules_version in capability-rules.v1.yaml, update ADR-004 §2.2 and "
+            "docs/BACKLOG.md, and record the observed need that triggered it"
+        )
+        assert "NOT parsed" in entry["notes"]
+    assert loaded.rules_version == rules.SUPPORTED_RULES_VERSION == 1
+
+
 def test_rules_verb_set_matches_frozen_vocabulary() -> None:
     loaded = rules.load_rules()
     assert set(loaded.verbs) == set(CAPABILITY_VERBS), (

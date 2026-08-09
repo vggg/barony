@@ -62,6 +62,9 @@ HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
 baron handoff close "$HANDOFF" --note "Done, see F1."
 baron index               # regenerates _handoff/README.md — commit it
 baron worktree add fern   # worktree of ./gardenkit — ../gardenkit-worktrees/fern
+
+cp -R agents/fern/runtime/.claude ../gardenkit/   # install the guard hook
+baron doctor --dir ../gardenkit                   # prove it — exit 1 if it is missing
 ```
 
 ## Commands
@@ -313,6 +316,55 @@ overrides are visible in diffs); each override is expected to become a
 `Bash|Edit|Write|NotebookEdit`): the Claude adapter's HYDRATE.md step 3c emits
 it. Without baron installed the hook fails non-blocking and denials degrade to
 instructed — honest degradation, never a bricked session.
+
+### `baron doctor [--dir .] [--persona-file F] [--json]` (ADR-017)
+
+The guard **wiring** self-test — and the answer to the badminton-analyzer
+incident, where 15 PRs were merged by a persona denied `merge_pr` because the
+hook had never been installed. Nothing failed; enforcement had degraded to
+persona text, silently. Doctor breaks that silence and **exits 1 on any FAIL**.
+
+Nine checks, each with a remedy line when it fails:
+
+| id | proves |
+|---|---|
+| `cli-on-path` | the executable the hook names resolves and `--version` runs |
+| `hook-configured` | project `.claude/settings.json` wires a PreToolUse hook invoking `baron guard` |
+| `hook-matcher` | that matcher selects every governed tool (`Bash`, `Edit`, `Write`, `NotebookEdit`) |
+| `persona-file` | the persona the hook names exists and parses |
+| `rules-artifact` | `capability-rules.v1.yaml` loads at a supported `rules_version` |
+| `enforcement-path` | a synthetic denial really returns exit 2 **in this install** |
+| `fail-closed` | malformed hook stdin also returns exit 2 (ADR-004 §2.3) |
+| `override-env` | `BARON_GUARD_OVERRIDE` is not sitting exported (if it is, every denial is allowed) |
+| `override-log` | the evidence sink is writable and not gitignored — **INFO only, never FAIL** |
+
+```
+$ baron doctor
+baron doctor — guard WIRING self-test
+project dir: /path/to/collab
+
+PASS    cli-on-path       /usr/local/bin/baron — barony 0.8.0 (named by the hook command)
+FAIL    hook-configured   no `baron guard` PreToolUse hook in this project (no project settings file). Capability denials here are INSTRUCTED, not enforced.
+                          -> `baron init` generated the wiring at agents/carson/runtime/.claude/settings.json but nothing copied it into place — ... Copy the runtime kit: cp -R .../runtime/. . (see adapters/claude/HYDRATE.md).
+...
+-- 5 pass, 1 fail, 2 unknown, 1 info
+```
+
+**Honesty boundary — printed on every run, green included.** Doctor verifies
+WIRING, not invocation. It proves this install *can* enforce; it cannot observe
+whether Claude Code actually ran the hook on a real tool call, because nothing
+outside the runtime can. Read a green doctor as "correctly wired", never as
+"enforcement happened" — implying otherwise would manufacture the exact false
+confidence that produced the badminton merges.
+
+Two scope notes, both deliberate (ADR-017 §3.4–§3.5): the override-log check is
+**INFO whatever it finds**, because enforcement is fail-closed while evidence is
+fail-open, and a broken audit trail must never be reported as broken
+enforcement; and only **project-level** settings are inspected, so a hook wired
+in the machine-global `~/.claude/settings.json` reads as a FAIL (the remedy says
+so). Checking the home directory would make the verdict depend on the developer's
+machine rather than on the repo. Read-only and fully offline — the only write is
+a temp dir for the synthetic probe.
 
 ### `baron lock claim|release|list` (M5)
 
