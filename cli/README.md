@@ -472,6 +472,42 @@ implementation, GitHub via `gh` subprocess (`github.py`) — first consumed by
 `close_pr`). Other forges are plugins discovered through the `baron.forges`
 entry-point group; GitLab is backlog — design sketch in `../docs/BACKLOG.md`.
 
+## Events and sinks (ADR-013)
+
+`src/baron/events.py` defines one `Event` shape covering guard verdicts, session
+boundaries, ledger writes, decisions and tool outcomes; `src/baron/sinks/` defines
+where they go. **The default is `null` — baron writes nothing unless you ask.**
+
+```bash
+BARON_EVENTS_SINK=disk baron ...   # append-only JSONL under .baron/events/<date>.jsonl
+BARON_EVENTS_DEBUG=1               # print swallowed sink errors while debugging a sink
+```
+
+Three things worth knowing:
+
+- **It observes; it never decides.** Guard is fail-CLOSED (ADR-004 §2.3). Emission is the
+  deliberate opposite — fail-OPEN and silent, so a full disk or a broken sink can never turn
+  "log this" into "deny everything".
+- **`.baron/events/` is gitignored; `.baron/guard-override.log` stays tracked.** Overrides
+  are a handful of deliberate human acts, and belong in the diff. Events are one row per
+  tool call, and belong on local disk. Retention is yours: `find .baron/events -mtime +30 -delete`.
+- **No OpenTelemetry dependency** (ADR-003 holds). The row shape is the flat JSONL that
+  `skills/multi-agent-audit/scripts/ingest_otel.py` already parses, so the audit skill reads
+  baron's own stream with zero new code. A live exporter is a plugin in the `baron.sinks`
+  entry-point group, mirroring `baron.forges`:
+
+```toml
+[project.entry-points."baron.sinks"]
+logfire = "barony_logfire:LogfireSink"
+```
+
+The `Sink` Protocol is **final at three members** (`name`, `emit`, `close`). Optional
+capabilities are duck-typed (`flush()`, `bind(cwd)`), never Protocol members — see the
+warning comment in `sinks/base.py` for why.
+
+Only guard's verdict path emits today. Ledger, session and decision have the contract
+available and adopt it on their own schedule.
+
 ## Development
 
 ```bash

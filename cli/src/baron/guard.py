@@ -71,7 +71,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from . import clock
+from . import clock, events
 from .gitutil import default_branch, git, is_git_repo
 from .rules import CapabilityRules, RulesError, load_rules
 
@@ -518,6 +518,72 @@ def log_override(cwd: Path, tool: str, target: str, reason: str) -> Path:
     return log_path
 
 
+# --- observation (ADR-013) ------------------------------------------------------------
+#
+# Emission is ONE-WAY. Nothing below can allow, deny, or change an exit code:
+# every call goes through _observe(), which swallows everything. Guard is
+# fail-CLOSED (ADR-004 §2.3); evidence emission is deliberately fail-OPEN, so a
+# broken sink can never turn "log this" into "deny everything".
+
+
+def _enforcement(verbs: tuple[str, ...]) -> str:
+    """Label the mapped verbs honestly, DERIVED from the rules artifact.
+
+    ``detection: command`` / ``file-op`` means guard actually parses for the
+    verb → ``"enforced"``. ``detection: none`` means the boundary is carried by
+    persona instructions only → ``"instructed"``. Never hardcode this:
+    ``capability-rules.v1.yaml`` sets ``detection: none`` for ``open_pr`` and
+    ``run_tests``, and stamping those "enforced" is exactly the overclaiming
+    ADR-002/ADR-008 forbid.
+    """
+    if not verbs:
+        return "not-applicable"
+    try:
+        table = _rules().verbs
+    except GuardError:
+        return "unknown"  # the rules artifact is broken; do not guess a label
+    detections = {table.get(verb, {}).get("detection", "none") for verb in verbs}
+    return "enforced" if detections & {"command", "file-op"} else "instructed"
+
+
+def _observe(
+    *,
+    kind: str,
+    actor: str,
+    subject: str,
+    outcome: str,
+    tool: str,
+    session_id: str,
+    cwd: Path,
+    verbs: tuple[str, ...] = (),
+    reason: str = "",
+    error: str = "",
+) -> None:
+    """Emit one observation event. Never raises, never affects the verdict."""
+    try:
+        attributes: dict[str, object] = {
+            "tool.name": tool,
+            "session.id": session_id,
+            "baron.capability.verb": ",".join(verbs),
+            "baron.enforcement": _enforcement(verbs),
+            "baron.reason": reason,
+        }
+        if error:
+            attributes["baron.error"] = error
+        events.emit(
+            events.Event(
+                kind=kind,
+                actor=actor or "unknown",
+                subject=subject,
+                outcome=outcome,
+                attributes=attributes,
+            ),
+            cwd,
+        )
+    except Exception:  # belt and braces: events.emit already swallows
+        return None
+
+
 # --- entry point ----------------------------------------------------------------------
 
 
@@ -539,10 +605,15 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     permission flow applies), exit 2 = block, stderr fed to the model.
     Fail-closed: any internal error is a deny with actionable stderr — unless
     BARON_GUARD_OVERRIDE is set, which allows AND logs.
+
+    Additionally emits one observation event per verdict (ADR-013). That path
+    is fail-OPEN and cannot change the returned exit code — see :func:`_observe`.
     """
     override = os.environ.get(OVERRIDE_ENV)
     tool = "?"
     target = "?"
+    actor = "unknown"
+    session_id = ""
     cwd = Path.cwd()
     try:
         try:
@@ -552,6 +623,7 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         if not isinstance(payload, dict):
             raise GuardError("hook stdin is not a JSON object")
         tool = str(payload.get("tool_name", "?"))
+        session_id = str(payload.get("session_id") or "")
         tool_input = payload.get("tool_input")
         if tool_input is None:
             tool_input = {}
@@ -568,13 +640,18 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         )
 
         if tool != "Bash" and tool not in WRITE_TOOLS:
-            return 0, ""  # unknown tools pass: a capability gate, not an allowlist
+            # Unknown tools pass: a capability gate, not an allowlist. No event
+            # either — guard reached no verdict, and one row per Read/Grep would
+            # bury the verdicts this stream exists to record. A PostToolUse
+            # observer (kind ``tool.post``) is the right home for that traffic.
+            return 0, ""
 
         if persona_file is None:
             raise GuardError(
                 f"no persona file — pass --persona-file or set {PERSONA_ENV}"
             )
         persona = load_persona(persona_file)
+        actor = persona.slug or persona_file.name
         if tool == "Bash":
             decision = evaluate_bash(str(tool_input.get("command") or ""), cwd, persona)
         else:
@@ -582,22 +659,57 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     except GuardError as exc:
         if override:
             log_override(cwd, tool, target, f"[fail-closed bypass] {override}")
+            _observe(
+                kind="guard.override", actor=actor, subject=target,
+                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                reason=f"[fail-closed bypass] {override}", error=str(exc),
+            )
             return 0, ""
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="error",
+            tool=tool, session_id=session_id, cwd=cwd, reason=str(exc),
+            error=str(exc),
+        )
         return 2, f"baron guard: DENY (fail closed) — {exc}\n{_remedy()}"
     except Exception as exc:  # fail-closed on internal bugs, never fail-open
+        detail = f"{type(exc).__name__}: {exc}"
         if override:
             log_override(cwd, tool, target, f"[internal-error bypass] {override}")
+            _observe(
+                kind="guard.override", actor=actor, subject=target,
+                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                reason=f"[internal-error bypass] {override}", error=detail,
+            )
             return 0, ""
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="error",
+            tool=tool, session_id=session_id, cwd=cwd, reason=detail, error=detail,
+        )
         return 2, (
             f"baron guard: DENY (internal error, fail closed) — "
-            f"{type(exc).__name__}: {exc}\n{_remedy()}"
+            f"{detail}\n{_remedy()}"
         )
 
     if decision.allowed:
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="allow",
+            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+            reason=decision.reason,
+        )
         return 0, ""
     if override:
         log_override(cwd, tool, target, override)
+        _observe(
+            kind="guard.override", actor=actor, subject=target, outcome="override",
+            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+            reason=override,
+        )
         return 0, ""
+    _observe(
+        kind="guard.decision", actor=actor, subject=target, outcome="deny",
+        tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+        reason=decision.reason,
+    )
     persona_name = persona.slug or persona_file.name
     reason = decision.reason.replace("\n", "\n  ")  # indent continuation lines
     return 2, (
