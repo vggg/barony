@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from baron import guard
+
 from conftest import commit_file, clone, init_bare, run_git
 
 DEV_PERSONA = """\
@@ -437,3 +439,136 @@ def test_env_persona_file_is_honored(
     )
     assert proc.returncode == 2
     assert "push_main" in proc.stderr
+
+
+# --- ADR-012: hook_event_name dispatch ------------------------------------------------
+#
+# The invariant this whole section protects: ONLY PreToolUse may return exit 2.
+# Every other hook event is evidence, and evidence must never be able to trap a
+# session — a blocked SessionStart or Stop is unrecoverable from INSIDE the
+# session, which is the exact brick ADR-012 §3 refuses.
+
+
+@pytest.fixture
+def no_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In-process equivalent of run_guard's env scrubbing."""
+    monkeypatch.delenv("BARON_GUARD_OVERRIDE", raising=False)
+    monkeypatch.delenv("BARON_PERSONA_FILE", raising=False)
+    monkeypatch.delenv("BARON_EVENTS_SINK", raising=False)
+    monkeypatch.delenv("BARON_EVENTS_DEBUG", raising=False)
+
+
+def evidence_hook(event: str, cwd: Path, **extra: object) -> dict:
+    """A non-PreToolUse payload in the real 2.1.226 base shape — every event
+    carries session_id / transcript_path / cwd (see guard.KNOWN_HOOK_EVENTS)."""
+    return {
+        "session_id": "sess-abc-123",
+        "transcript_path": str(cwd / "transcript.jsonl"),
+        "hook_event_name": event,
+        "cwd": str(cwd),
+        **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    ("stdin", "expected"),
+    [
+        pytest.param("", 2, id="empty-stdin-denies"),
+        pytest.param("   \n", 2, id="whitespace-stdin-denies"),
+        pytest.param("this is not json {", 2, id="malformed-stdin-denies"),
+        pytest.param("[1, 2, 3]", 2, id="json-but-not-an-object-denies"),
+        pytest.param('{"hook_event_name": "PreCompact"}', 0, id="precompact"),
+        pytest.param('{"hook_event_name": "PostCompact"}', 0, id="postcompact"),
+        pytest.param('{"hook_event_name": "Notification"}', 0, id="notification"),
+        pytest.param('{"hook_event_name": "SubagentStart"}', 0, id="subagentstart"),
+        pytest.param('{"hook_event_name": "TaskCompleted"}', 0, id="taskcompleted"),
+        pytest.param('{"hook_event_name": "UserPromptSubmit"}', 0, id="userpromptsubmit"),
+        pytest.param('{"hook_event_name": "NoSuchEventInvented"}', 0, id="unknown-name"),
+    ],
+)
+def test_hook_event_dispatch(
+    personas: dict[str, Path], stdin: str, expected: int
+) -> None:
+    proc = run_guard(personas["dev"], stdin)
+    assert proc.returncode == expected, proc.stderr
+    if expected == 2:
+        # ADR-004 §2.3: a guard that cannot decide DENIES. Pinned rather than
+        # merely observed — empty and malformed stdin shared one unnamed path.
+        assert "fail closed" in proc.stderr
+    else:
+        assert proc.stderr == ""
+
+
+def test_hook_event_dispatch_leaves_the_deny_path_alone(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    """The push_main deny that shipped in M4, re-asserted after the dispatch table."""
+    proc = run_guard(
+        personas["dev"], hook("Bash", {"command": "git push origin main"}, tmp_path)
+    )
+    assert proc.returncode == 2
+    assert "push_main" in proc.stderr
+
+
+def test_absent_hook_event_name_is_treated_as_pretooluse(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    """Back-compat: guard shipped before it read the field, so payloads without
+    it (older harnesses, hand-rolled callers) must still be ENFORCED, not skipped."""
+    payload = hook("Bash", {"command": "git push origin main"}, tmp_path)
+    del payload["hook_event_name"]
+    proc = run_guard(personas["dev"], payload)
+    assert proc.returncode == 2
+    assert "push_main" in proc.stderr
+
+
+#: The most enforcement-provoking tool_input that exists: a force-push to main,
+#: a write outside any persona scope, and a path escaping the root — all three
+#: at once, so any accidental fall-through to an evaluator would deny loudly.
+HOSTILE_TOOL_INPUT = {
+    "command": "git push --force origin main && gh pr merge 1",
+    "file_path": "/etc/passwd",
+    "notebook_path": "../../../outside.ipynb",
+}
+
+
+@pytest.mark.parametrize(
+    "event", [e for e in guard.KNOWN_HOOK_EVENTS if e != guard.PRE_TOOL_USE]
+)
+def test_only_pretooluse_can_block(
+    personas: dict[str, Path], tmp_path: Path, event: str, no_override: None
+) -> None:
+    """Every non-PreToolUse event in the real 2.1.226 surface, fed the hostile
+    payload, still exits 0. Iterates the WHOLE known surface rather than just the
+    handled subset, so a future handler cannot quietly grow a deny path.
+
+    In-process (not a subprocess like the tests above) purely for speed — this
+    parametrizes over 30 events; the CLI wiring is covered by the subprocess
+    tests either side of it."""
+    payload = {
+        "session_id": "sess-hostile",
+        "hook_event_name": event,
+        "cwd": str(tmp_path),
+        "tool_name": "Bash",
+        "tool_input": HOSTILE_TOOL_INPUT,
+        "tool_response": {"stdout": "x"},
+        "reason": "other",
+        "stop_hook_active": False,
+    }
+    code, stderr = guard.process(json.dumps(payload), personas["dev"])
+    assert code == 0, f"{event} blocked: {stderr}"
+    assert stderr == ""
+
+
+def test_evidence_events_do_not_need_a_persona_file(tmp_path: Path) -> None:
+    """A missing persona is a DENY on PreToolUse and a non-event everywhere else:
+    evidence must not require the enforcement configuration to be correct."""
+    for event in sorted(guard.EVIDENCE_HANDLERS):
+        proc = run_guard(None, evidence_hook(event, tmp_path))
+        assert proc.returncode == 0, f"{event}: {proc.stderr}"
+
+
+def test_evidence_handlers_cover_only_non_blocking_events() -> None:
+    assert guard.PRE_TOOL_USE not in guard.EVIDENCE_HANDLERS
+    unknown = sorted(set(guard.EVIDENCE_HANDLERS) - set(guard.KNOWN_HOOK_EVENTS))
+    assert not unknown, f"handler for an event Claude Code does not emit: {unknown}"

@@ -88,6 +88,12 @@ in **v1.6.0**; `baron init` (the deterministic scaffold, ADR-006) in **v1.8.0**;
 - [ ] **Phase-gate audit** — re-run `multi-agent-audit` against the pilot with guard/lock
   live, to measure whether operational fidelity moves off 0.53 now that the rules are
   mechanisms.
+- [x] **Claude Code hook coverage** ([ADR-012](docs/adr/ADR-012-hook-coverage-and-evidence-capture.md))
+  — `baron guard` dispatches on `hook_event_name`: `PreToolUse` enforces (unchanged,
+  fail-closed), four more events capture evidence (fail-open, structurally unable to block),
+  everything else is inert. Correlates by `session_id`. Producer-side only; the event plane
+  itself is a separate workstream and the integration is contract-tested against a double,
+  not run.
 - [ ] **Merger precondition verification** + guard coverage growth — `docs/BACKLOG.md`.
 - [ ] **pydantic-ai adapter field validation** — the adapter is test-proven offline
   (v1.6.0); running a real persona on a real project on this runtime is the ADR-001

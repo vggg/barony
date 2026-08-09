@@ -515,15 +515,24 @@ def guard(
         help="The acting persona's persona.yaml (or set BARON_PERSONA_FILE).",
     ),
 ) -> None:
-    """Claude Code PreToolUse hook: deterministic capability enforcement.
+    """Claude Code hook: capability enforcement (PreToolUse) + evidence capture.
 
-    Reads the hook JSON from stdin (tool_name/tool_input/cwd per
-    https://code.claude.com/docs/en/hooks), maps the call to the frozen v1
-    capability verbs, and either stays silent (exit 0 — normal permission flow)
-    or blocks (exit 2, reason on stderr, fed to the model). Fail-closed on
-    internal errors; BARON_GUARD_OVERRIDE=<reason> allows AND appends to the
-    tracked .baron/guard-override.log. Wire-up: see the Claude adapter's
-    HYDRATE.md (matcher Bash|Edit|Write|NotebookEdit).
+    Reads the hook JSON from stdin (hook_event_name/session_id/cwd on every
+    event, plus tool_name/tool_input on tool events, per
+    https://code.claude.com/docs/en/hooks) and dispatches on hook_event_name.
+
+    PreToolUse (or no hook_event_name) is the ENFORCEMENT path: the call is
+    mapped to the frozen v1 capability verbs and guard either stays silent
+    (exit 0 — normal permission flow) or blocks (exit 2, reason on stderr, fed
+    to the model). Fail-closed on internal errors; BARON_GUARD_OVERRIDE=<reason>
+    allows AND appends to the tracked .baron/guard-override.log.
+
+    SessionStart / SessionEnd / Stop / PostToolUse / PostToolUseFailure are
+    EVIDENCE ONLY — they emit one event and always exit 0 (ADR-012). Any other
+    hook event exits 0 and does nothing. Only PreToolUse can ever block.
+
+    Wire-up: see the Claude adapter's HYDRATE.md steps 3c (enforcement) and 3d
+    (evidence).
     """
     code, stderr_text = guard_mod.process(sys.stdin.read(), persona_file)
     if stderr_text:

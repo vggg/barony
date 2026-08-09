@@ -184,6 +184,20 @@ against a wrapper, use OS-level isolation (a container/sandbox). The pydantic-ai
 in-process Shell narrows the class — it denies redirect/pipe operators and
 allowlists test-only personas' shells — but does not close it.
 
+**One hook, two jobs** ([ADR-012](adr/ADR-012-hook-coverage-and-evidence-capture.md)).
+`baron guard` also answers `SessionStart`, `SessionEnd`, `PostToolUse` and
+`PostToolUseFailure`, dispatching internally on `hook_event_name` — one binary,
+one command per event. Those four are **evidence only**: they emit a structured
+event (correlated by a trace id derived from `session_id`, so a denial can be
+placed in its session) and always exit 0. Only `PreToolUse` can ever block, and
+that is enforced by a test that feeds every other event a maximally hostile
+payload. The reason is not tidiness: a hook that blocks `SessionStart` cannot be
+un-blocked from *inside* the session, so an evidence path that fails closed
+would brick the agent rather than correct it. Hence the asymmetry — enforcement
+fails **closed**, evidence fails **open** and silently
+(`BARON_EVENTS_DEBUG=1` to see it). Any hook event baron does not recognise is
+inert; Claude Code emits 31 distinct event names and that number keeps moving.
+
 ## PR-locks
 
 For contested hot files, **the open PR is the lock** (ADR-002 §3): `baron lock

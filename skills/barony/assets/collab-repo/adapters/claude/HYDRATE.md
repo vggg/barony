@@ -241,6 +241,61 @@ behavior above — worse-is-visible, never worse-is-broken. Overrides
 (`BARON_GUARD_OVERRIDE=<reason>`) are allowed-but-logged to the tracked
 `.baron/guard-override.log`; each one is expected to become a `_handoff/`.
 
+### 3d. BOTH tiers — wire the evidence hooks (non-blocking; baron ADR-012)
+
+The **same** `baron guard` command, on four more events. Guard dispatches internally on
+`hook_event_name`; there is no second binary and no second config to keep in sync.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "<same command as 3c>", "timeout": 5 }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|Edit|Write|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "<same command as 3c>", "timeout": 5 }]
+      }
+    ],
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "<same command as 3c>", "timeout": 5 }] }
+    ],
+    "SessionEnd": [
+      { "hooks": [{ "type": "command", "command": "<same command as 3c>", "timeout": 5 }] }
+    ]
+  }
+}
+```
+
+`SessionStart` / `SessionEnd` take **no matcher** — those events carry no tool name, so a
+matcher would silently never fire. Use the *same* relative persona path as 3c.
+
+**What these do and, more importantly, do not do.** They are **EVIDENCE ONLY**: each one
+emits a structured event (`session.start`, `session.end`, `tool.post`, `tool.failure`) and
+always exits 0. They enforce nothing, and they are structurally incapable of blocking —
+only `PreToolUse` (step 3c) can ever exit 2. This is deliberate: a hook that blocks
+`SessionStart` or `Stop` cannot be un-blocked from *inside* the session, so a bad evidence
+path would brick the agent rather than correct it. Preconditions belong in `baron doctor`,
+not here.
+
+**Fail-open, unlike 3c.** Enforcement fails CLOSED (a guard that cannot decide denies);
+evidence fails OPEN and silently (an event sink that cannot write must not take the session
+with it). Set `BARON_EVENTS_DEBUG=1` to see emission failures on stderr.
+
+**Default is off, so wiring this changes nothing yet.** The event plane's default sink is
+null: with 3d wired and no `BARON_EVENTS_SINK` set, the session behaves exactly as it did
+with 3c alone. Wire it now so enabling telemetry later is one environment variable rather
+than a re-hydration of every persona kit.
+
+`Stop` and `SubagentStop` are also handled by `baron guard` (they map to `session.end`) but
+are **not** wired by default — `Stop` fires on every turn and its only distinctive power is
+blocking, which this design refuses. Any other Claude Code hook event routed here is inert:
+guard exits 0 and emits nothing.
+
 ### 4. Render the session ritual (v1 tokens, relative paths)
 Used by both tiers (in the subagent body at Tier 3, in `CLAUDE.md` at Tier 2).
 

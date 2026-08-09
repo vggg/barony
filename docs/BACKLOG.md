@@ -84,6 +84,21 @@ has no PreToolUse equivalent today), and the lock soft-timeout sweep
 (`COORDINATION.md` names a 24h soft timeout; `baron lock list` shows age — flagging
 expiry candidates could fold into `baron status`).
 
+**Open after ADR-012 (hook coverage):**
+
+- **Hook-install verification** — the whole enforcement story assumes the hook is actually
+  wired. Nothing checks. ADR-012 §3 explicitly refused to put that check in a `SessionStart`
+  hook (a failed precondition there is unrecoverable from inside the session); it belongs in
+  a `baron doctor`, which does not exist yet.
+- **Process-spawn cost.** Wiring `PostToolUse` doubles the guard subprocesses per tool call.
+  Not measured. If it bites, the fix is a persistent sink, not fewer events.
+- **`UserPromptSubmit` capture** — deliberately not wired: it carries the user's raw prompt,
+  which makes the event stream a different product with different consent requirements.
+  Needs its own decision, not a config flag.
+- **Other runtimes have no evidence seam.** The pydantic-ai adapter enforces in-process but
+  emits nothing; the event stream is Claude-Code-only today, exactly as enforcement was
+  before v1.6.0.
+
 ## pydantic-ai adapter — field validation + follow-ups (post-v1.6.0)
 
 **What:** the adapter shipped test-proven offline (TestModel/FunctionModel); ADR-001's

@@ -6,7 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added — `baron guard` taps the wider Claude Code hook surface (ADR-012)
+
+`baron guard` was wired to exactly one hook event (`PreToolUse`, ADR-004), and
+`guard.process()` was shaped to match: it read `tool_name`/`tool_input` and nothing else,
+so a `SessionStart` payload returned 0 not because guard decided anything but because
+`"SessionStart"` is not `"Bash"`. Barony also had **no event stream at all** — guard
+decisions evaporated, and the framework that measured its own operational fidelity at 0.53
+could not produce the data that measurement needs.
+
+- **`hook_event_name` dispatch** in `guard.process()`. Absent or `PreToolUse` → the ADR-004
+  enforcement path, byte-unchanged (absent means PreToolUse for back-compat: guard shipped
+  before it read the field). Five events get evidence handlers. **Everything else exits 0
+  immediately.** The default arm is load-bearing, not defensive padding — see below.
+- **The hook surface is bigger than the docs say.** The list this work started from had 9
+  events; a survey corrected it to 14. Reading Claude Code 2.1.226's own event enum out of
+  the installed binary gives **31**. Recorded in `guard.KNOWN_HOOK_EVENTS` — which is
+  deliberately **inert**: a name in it without a handler behaves exactly like a name
+  invented tomorrow. The surface grows, so unknown must be normal, not exceptional.
+- **Evidence handlers** — `SessionStart` → `session.start`, `SessionEnd`/`Stop` →
+  `session.end`, `PostToolUse` → `tool.post`, `PostToolUseFailure` → `tool.failure`. They
+  emit and exit 0, always. They record the *presence* of `tool_response`, never its content:
+  responses carry file bodies and stdout, and a stream that accumulates them is an
+  exfiltration surface, not telemetry. They do **not** wrap `baron session start/end` —
+  ADR-007 already ruled Barony does not own the execution loop.
+- **Session correlation.** `trace_id = sha256(session_id)[:32]` — deterministic, no producer
+  state — so guard denials land in the same trace as the session events. Nothing consumed
+  `session_id` before.
+- **Enforcement fails CLOSED; evidence fails OPEN.** The asymmetry is the point. Extending
+  fail-closed to evidence would mean a full disk or an unwritable `.baron/` blocks
+  `SessionStart` — **and a blocked `SessionStart` cannot be un-blocked from inside the
+  session.** Silent rather than warning, because guard's stderr is fed to the *model* on
+  exit 2 and noise there degrades the denial message; `BARON_EVENTS_DEBUG=1` opts in.
+- **Hard invariant: only `PreToolUse` may exit 2.** `Stop`/`SubagentStop` blocking is a real
+  Claude Code capability and is exactly the trap above. `test_only_pretooluse_can_block`
+  iterates all 30 non-`PreToolUse` events with one payload carrying a force-push to main, a
+  write to `/etc/passwd` and a `..` escape simultaneously, asserting exit 0 for every one.
+- **Empty and malformed stdin are both pinned at exit 2.** They already shared the
+  `JSONDecodeError` path, but nothing named it; ADR-004 §2.3 makes it policy, so it now has
+  a test rather than a coincidence.
+- **Generated wiring** (`baron init` Claude kit + step **3d** in both copies of
+  `adapters/claude/HYDRATE.md`): four evidence hook blocks alongside the enforcement one,
+  all invoking the same command. Session events get **no matcher** — they carry no tool
+  name, so a matcher would silently never fire. The `PreToolUse` block is **byte-frozen**
+  (matcher, command, `timeout: 15`, key order) and pinned by test, because it already exists
+  verbatim in every repo `baron init` has ever generated. `Stop` is handled in code but not
+  wired: it fires every turn and its only distinctive power is blocking.
+- **Default-off means default-unchanged.** The event plane's default sink is null, so a
+  freshly scaffolded repo with these hooks wired behaves identically to one without them.
+  That safety property is what makes the generated-settings change landable.
+
+**Honesty boundary.** The event plane (`baron.events`, `BARON_EVENTS_SINK`, the sink
+protocol) is a separate workstream that had not landed. Guard is a producer only, reaching it
+through one late-bound call, and everything here is verified against
+`cli/tests/fake_events.py` — a contract double implementing the agreed signature. That proves
+the producer side and **nothing** about interoperability with the real plane;
+`test_real_event_plane_matches_the_producer_contract` skips today and fails loudly the moment
+`baron.events` exists with an incompatible `emit`. Do not read the green suite as an
+integration claim. Enforcement labels are unchanged: evidence hooks enforce nothing, and
+`enforced-with-baron (instructed otherwise)` still describes exactly five verbs.
 
 ## [1.10.0] — 2026-08-04
 
