@@ -21,6 +21,7 @@ from . import (
     indexer,
     ledger,
     lock as lock_mod,
+    rules as rules_mod,
     runtimes,
     scaffold as scaffold_mod,
     session as session_mod,
@@ -30,6 +31,7 @@ from . import (
     worktree as worktree_mod,
 )
 from .forge import ForgeError, ForgeUnavailable
+from .schemas import CAPABILITY_VERBS
 
 app = typer.Typer(
     name="baron",
@@ -615,6 +617,450 @@ def guard(
     if stderr_text:
         typer.echo(stderr_text, err=True)
     raise typer.Exit(code)
+
+
+# --- rules: inspect the capability-rules artifact (ADR-016) ---------------------------
+
+rules_app = typer.Typer(
+    help=(
+        "Inspect the capability-rules artifact — the verb→enforcement table "
+        "`baron guard` and the runtime adapters share "
+        "(baron/data/capability-rules.v1.yaml). Read-only and diagnostic: "
+        "baron loads PACKAGED rules only, so nothing here activates a rules "
+        "file (ADR-016 §5)."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(rules_app, name="rules")
+
+
+def _load_rules_or_exit(file: Optional[Path]) -> rules_mod.CapabilityRules:
+    """The packaged artifact, or a candidate document named by ``--file``."""
+    try:
+        if file is None:
+            return rules_mod.load_rules()
+        return rules_mod.parse_file(file)
+    except rules_mod.RulesError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+
+#: Longest verb-entry value rendered inline as `was -> now`. Anything longer
+#: gets the two-line block form below.
+_INLINE_VALUE_LIMIT = 60
+
+
+def _oneline(text: str) -> str:
+    """Collapse a verb-entry value onto one line (`notes` is a YAML block)."""
+    return " ".join(text.split())
+
+
+def _echo_value_change(key: str, was: str, now: str, flag: str) -> None:
+    """Render one changed verb-entry field, never eliding the difference.
+
+    Values are printed in FULL. An earlier draft truncated to a fixed prefix,
+    which rendered two different `notes` blocks as an identical-looking pair —
+    a diff that hides the diff is worse than no diff at all.
+    """
+    was, now = _oneline(was), _oneline(now)
+    if len(was) <= _INLINE_VALUE_LIMIT and len(now) <= _INLINE_VALUE_LIMIT:
+        typer.echo(f"    {key}: {was} -> {now}{flag}")
+        return
+    typer.echo(f"    {key}:{flag}")
+    typer.echo(f"      base:      {was}")
+    typer.echo(f"      candidate: {now}")
+
+
+def _rules_for_verb(loaded: rules_mod.CapabilityRules, verb: str) -> list[str]:
+    """Ids of the rules that can imply ``verb`` (rule ids, sorted by table order)."""
+    return [rule.id for rule in loaded.rules if rule.verb == verb]
+
+
+def _verb_rows(loaded: rules_mod.CapabilityRules) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for verb in CAPABILITY_VERBS:
+        entry = loaded.verbs.get(verb, {})
+        row: dict[str, object] = {
+            "verb": verb,
+            "class": entry.get("class", ""),
+            "detection": entry.get("detection", "none"),
+            "enforcement": loaded.enforcement(verb),
+            "label": loaded.label(verb),
+            "rules": _rules_for_verb(loaded, verb),
+            "notes": entry.get("notes", "").strip(),
+        }
+        # The qualifier travels WITH the row, not just in a human-readable
+        # footer: machine consumers are the ones most likely to trust `label`
+        # unread. Absent when the label needs no qualifying.
+        caveat = loaded.caveat(verb)
+        if caveat:
+            row["caveat"] = caveat
+        rows.append(row)
+    return rows
+
+
+@rules_app.command("list")
+def rules_list(
+    file: Optional[Path] = typer.Option(
+        None, "--file", help="Read this rules document instead of the packaged artifact."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """List the verb table: class, detection modality, and the honest label.
+
+    `enforcement` is three-state on purpose (ADR-002 honesty rule):
+    `guard` = guard mechanically checks it; `adapter-dependent` = guard does
+    NOT parse for it and neither does any adapter baron ships, though a runtime
+    with a tool allow-list could; `instructed` = nothing checks it, the denial
+    is prose in the persona body.
+
+    `label` says `enforced` ONLY for `guard`. `adapter-dependent` labels
+    `instructed` because nothing baron ships enforces it — see the `caveat`
+    field (JSON) or the footer (table).
+    """
+    loaded = _load_rules_or_exit(file)
+    rows = _verb_rows(loaded)
+    qualified = [row for row in rows if row.get("caveat")]
+    if json_out:
+        payload: dict[str, object] = {
+            "rules_version": loaded.rules_version,
+            "vocabulary": loaded.vocabulary,
+            "ambiguity_policy": loaded.ambiguity_policy,
+            # Document-level too, so a consumer reading only the envelope still
+            # sees what `label` does and does not promise.
+            "label_caveat": rules_mod.LABEL_CAVEAT,
+            "verbs": rows,
+        }
+        _echo_json(payload)
+        return
+    typer.echo(
+        f"capability-rules v{loaded.rules_version} "
+        f"({loaded.vocabulary}, ambiguity: {loaded.ambiguity_policy})"
+    )
+    typer.echo(f"{'VERB':<21}{'CLASS':<12}{'DETECTION':<11}{'ENFORCEMENT':<19}LABEL")
+    for row in rows:
+        typer.echo(
+            f"{row['verb']:<21}{row['class']:<12}{row['detection']:<11}"
+            f"{row['enforcement']:<19}{row['label']}"
+        )
+        rule_ids = row["rules"]
+        if rule_ids:
+            typer.echo(f"{'':<21}rules: {', '.join(rule_ids)}")  # type: ignore[arg-type]
+    if qualified:
+        verbs = ", ".join(str(row["verb"]) for row in qualified)
+        typer.echo(f"\nnote ({verbs}): {rules_mod.LABEL_CAVEAT}")
+
+
+@rules_app.command("validate")
+def rules_validate(
+    file: Optional[Path] = typer.Option(
+        None,
+        "--file",
+        help=(
+            "Validate this candidate rules document instead of the packaged "
+            "artifact. Validating a file does NOT activate it — baron loads "
+            "packaged rules only (ADR-016 §5)."
+        ),
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Parse a rules artifact and report the negotiation + integrity checks.
+
+    Exit 0 clean, 1 if a check fails, 2 if the document is refused outright —
+    the same refusal guard turns into a fail-closed DENY. A document is refused
+    when it is unreadable, not YAML, names an unsupported
+    `rules_version`/`vocabulary`, carries a key or a rule this baron does not
+    implement, names an unknown matcher (or one other than the matcher guard
+    implements for that rule), or omits a built-in rule. Unrecognised content is
+    never dropped silently.
+    """
+    loaded = _load_rules_or_exit(file)
+    origin = file.as_posix() if file is not None else f"packaged {rules_mod.RULES_RESOURCE}"
+
+    checks: list[dict[str, object]] = []
+
+    def check(name: str, ok: bool, detail: str) -> None:
+        checks.append({"check": name, "ok": ok, "detail": detail})
+
+    # The first two and the last are parser-enforced — a mismatch never reaches
+    # here, it exits 2 above. They are reported so `validate` shows WHAT was
+    # negotiated, not just that nothing blew up.
+    check(
+        "rules_version",
+        True,
+        f"{loaded.rules_version} == supported {rules_mod.SUPPORTED_RULES_VERSION} "
+        "(exact match, parser-enforced; negotiation is not a range)",
+    )
+    check(
+        "vocabulary",
+        True,
+        f"{loaded.vocabulary} == supported {rules_mod.SUPPORTED_VOCABULARY} "
+        "(parser-enforced)",
+    )
+    missing = sorted(set(CAPABILITY_VERBS) - set(loaded.verbs))
+    extra = sorted(set(loaded.verbs) - set(CAPABILITY_VERBS))
+    check(
+        "frozen vocabulary",
+        not missing and not extra,
+        f"{len(loaded.verbs)} verbs; missing={missing or 'none'} extra={extra or 'none'}",
+    )
+    unbound = sorted(
+        {rule.verb for rule in loaded.rules if rule.verb and rule.verb not in loaded.verbs}
+    )
+    check(
+        "rule verbs resolve",
+        not unbound,
+        f"{len(loaded.rules)} rules "
+        f"({len(loaded.command_rules)} command + {len(loaded.path_rules)} path); "
+        f"unbound={unbound or 'none'}",
+    )
+    check(
+        "ambiguity policy",
+        loaded.ambiguity_policy == "conservative-deny",
+        loaded.ambiguity_policy or "(unset)",
+    )
+    check(
+        "matchers known",
+        True,
+        f"{len(loaded.command_rules)} command rules name a matcher in the closed "
+        "set AND the one guard implements (parser-enforced, from the document); "
+        "path-rule matchers are structural, not document-supplied",
+    )
+    # RE-DERIVED here, not asserted. The parser refuses an inconsistent document
+    # before it reaches this code (rules._check_detection_consistency), so this
+    # can only fail against a CONSTRUCTED CapabilityRules — but a check whose
+    # text claims coverage must compute the thing it claims. The round-2 version
+    # of the check below was hardcoded True and printed `ok` over a document
+    # containing `detection: banana`; that is the exact failure mode ADR-002 and
+    # ADR-008 exist to prevent, so nothing here is hardcoded that can be counted.
+    misdescribed: list[str] = []
+    for verb, entry in loaded.verbs.items():
+        modality = entry.get("detection", rules_mod.DETECTION_NONE)
+        bound = [rule for rule in loaded.rules if rule.verb == verb]
+        chain = verb in rules_mod.FILE_OP_CHAIN_VERBS
+        claims = modality != rules_mod.DETECTION_NONE
+        implemented = bool(bound) or (chain and modality == rules_mod.DETECTION_FILE_OP)
+        if claims != implemented:
+            misdescribed.append(f"{verb} (detection={modality}, rules={len(bound)})")
+    check(
+        "detection matches implementation",
+        not misdescribed,
+        (
+            f"{len(loaded.verbs)} verbs; every `enforced` label is backed by a "
+            "rule or the file-op precedence chain (parser-enforced, re-derived "
+            "here)"
+        )
+        if not misdescribed
+        else "misdescribed: " + ", ".join(misdescribed),
+    )
+    check(
+        "no unrecognised content",
+        True,
+        "every key, rule slot and enumerated value (class, detection, matcher) "
+        "in the document is one this baron implements (parser-enforced: unknown "
+        "content is refused, never ignored)",
+    )
+
+    failed = [c for c in checks if not c["ok"]]
+    if json_out:
+        _echo_json(
+            {
+                "source": origin,
+                "ok": not failed,
+                "checks": checks,
+                "label_caveat": rules_mod.LABEL_CAVEAT,
+            }
+        )
+    else:
+        typer.echo(f"source: {origin}")
+        for c in checks:
+            status = "ok    " if c["ok"] else "FAIL  "
+            typer.echo(f"{status}  {c['check']}: {c['detail']}")
+        typer.echo("valid" if not failed else f"{len(failed)} check(s) failed")
+    raise typer.Exit(1 if failed else 0)
+
+
+@rules_app.command("diff")
+def rules_diff(
+    file: Path = typer.Option(
+        ...,
+        "--file",
+        help="Candidate rules document to compare against the packaged artifact.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Diff a candidate rules document against the packaged artifact.
+
+    Joins on rule id. Exit 0 if identical, 1 if they differ, 2 if either side
+    is refused. A candidate carrying a rule or key this baron does not
+    implement is REFUSED (exit 2), not reported as an addition — so `identical`
+    can never be printed over content that was quietly dropped.
+
+    A clean diff is NOT an adoption path: baron still loads only the packaged
+    artifact (ADR-016 §5).
+    """
+    base = _load_rules_or_exit(None)
+    other = _load_rules_or_exit(file)
+
+    base_rules = {rule.id: rule for rule in base.rules}
+    other_rules = {rule.id: rule for rule in other.rules}
+    delta = rules_mod.diff_rules(base, other)
+    header = delta["header"]
+    added = delta["rules_added"]
+    removed = delta["rules_removed"]
+    changed = delta["rules_changed"]
+    verbs_added = delta["verbs_added"]
+    verbs_removed = delta["verbs_removed"]
+    verbs_changed = delta["verbs_changed"]
+
+    payload = {
+        "base": f"packaged {rules_mod.RULES_RESOURCE}",
+        "candidate": file.as_posix(),
+        **delta,
+    }
+    differs = any(delta.values())
+    if json_out:
+        _echo_json({**payload, "identical": not differs})
+    elif not differs:
+        typer.echo("identical to the packaged artifact")
+    else:
+        for line in header:
+            typer.echo(f"~ {line}")
+        for rid in added:
+            typer.echo(f"+ rule {rid} ({other_rules[rid].verb})")
+        for rid in removed:
+            typer.echo(f"- rule {rid} ({base_rules[rid].verb})")
+        for rid in changed:
+            typer.echo(f"~ rule {rid}")
+            typer.echo(f"    base:      {base_rules[rid]}")
+            typer.echo(f"    candidate: {other_rules[rid]}")
+        for verb in verbs_added:
+            typer.echo(f"+ verb {verb}  (NOT in the frozen vocabulary)")
+        for verb in verbs_removed:
+            typer.echo(f"- verb {verb}")
+        for verb in verbs_changed:  # type: ignore[union-attr]
+            typer.echo(f"~ verb {verb}")
+            base_entry = base.verbs[verb]
+            other_entry = other.verbs[verb]
+            for key in sorted(set(base_entry) | set(other_entry)):
+                was, now = base_entry.get(key, "(absent)"), other_entry.get(key, "(absent)")
+                if was == now:
+                    continue
+                # `class` and `detection` change what baron CLAIMS to enforce;
+                # spell the consequence out rather than leaving a reviewer to
+                # re-derive it from the routing rules.
+                was_claim = (base.enforcement(verb), base.label(verb))
+                now_claim = (other.enforcement(verb), other.label(verb))
+                flag = (
+                    f"  [{was_claim[0]}/{was_claim[1]} -> {now_claim[0]}/{now_claim[1]}]"
+                    if key in ("class", "detection") and was_claim != now_claim
+                    else ""
+                )
+                _echo_value_change(key, was, now, flag)
+    raise typer.Exit(1 if differs else 0)
+
+
+@rules_app.command("explain")
+def rules_explain(
+    target: str = typer.Argument(
+        ..., help="A shell command (default), or a file path with --write."
+    ),
+    persona_file: Path = typer.Option(
+        ...,
+        "--persona-file",
+        envvar=guard_mod.PERSONA_ENV,
+        help="The acting persona's persona.yaml (or set BARON_PERSONA_FILE).",
+    ),
+    write: bool = typer.Option(
+        False,
+        "--write",
+        help="Treat TARGET as a write-tool path (Edit/Write/NotebookEdit) instead "
+        "of a shell command.",
+    ),
+    tool: str = typer.Option(
+        "Write", "--tool", help="Write tool name to attribute the call to (with --write)."
+    ),
+    cwd: Path = typer.Option(
+        Path("."),
+        "--cwd",
+        help="Directory the call would run in — branch resolution reads it.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Show what `baron guard` would decide for one call, and why.
+
+    Runs the SAME evaluators the PreToolUse hook runs
+    (`guard.evaluate_bash` / `guard.evaluate_write`) — this is a dry run of the
+    real decision, not a reimplementation, so the two cannot drift.
+
+    Exit 0 = the call would pass, 1 = it would be DENIED, 2 = guard could not
+    evaluate it (which the hook turns into a fail-closed deny).
+
+    Honest limit: `candidate_rules` lists the rules that CAN imply each verb,
+    not the single rule instance that matched — guard reports the concrete
+    inference in `reason` instead (e.g. "force flag `--force`"), and
+    re-deriving it here would mean a second parser that could drift from the
+    first.
+    """
+    loaded = _load_rules_or_exit(None)
+    try:
+        persona = guard_mod.load_persona(persona_file)
+        where = cwd.resolve()
+        if write:
+            decision = guard_mod.evaluate_write(tool, {"file_path": target}, where, persona)
+        else:
+            decision = guard_mod.evaluate_bash(target, where, persona)
+    except guard_mod.GuardError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+    verbs = []
+    for verb in decision.verbs:
+        entry: dict[str, object] = {
+            "verb": verb,
+            "enforcement": loaded.enforcement(verb),
+            "label": loaded.label(verb),
+            "candidate_rules": _rules_for_verb(loaded, verb),
+        }
+        caveat = loaded.caveat(verb)
+        if caveat:
+            entry["caveat"] = caveat
+        verbs.append(entry)
+    if json_out:
+        _echo_json(
+            {
+                "target": target,
+                "mode": "write" if write else "bash",
+                "tool": tool if write else "Bash",
+                "cwd": where.as_posix(),
+                "persona": {
+                    "slug": persona.slug,
+                    "file": persona_file.as_posix(),
+                },
+                "allowed": decision.allowed,
+                "verbs": verbs,
+                "reason": decision.reason,
+            }
+        )
+    else:
+        typer.echo(f"target : {target}")
+        typer.echo(f"persona: {persona.slug or persona_file.name} ({persona_file})")
+        typer.echo(f"verdict: {'ALLOW' if decision.allowed else 'DENY'}")
+        if not verbs:
+            typer.echo("verbs  : (none — guard maps no capability verb to this call)")
+        else:
+            typer.echo("verbs  :")
+        for entry in verbs:
+            rule_ids = ", ".join(entry["candidate_rules"]) or "—"  # type: ignore[arg-type]
+            typer.echo(
+                f"  {entry['verb']:<21}{entry['label']:<11}"
+                f"({entry['enforcement']}; candidate rules: {rule_ids})"
+            )
+        if decision.reason:
+            typer.echo("reason :")
+            for line in decision.reason.splitlines():
+                typer.echo(f"  {line}")
+    raise typer.Exit(0 if decision.allowed else 1)
 
 
 # --- runtime hydrators ----------------------------------------------------------------

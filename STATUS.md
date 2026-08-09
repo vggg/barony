@@ -104,6 +104,30 @@ contract available and adopt it on their own schedule. The `events:` manifest bl
 declared in the schema (canon v1.3) so it does not warn, but **no command reads it** —
 wiring it means measuring a manifest parse on guard's per-tool-call hot path, which is a
 follow-up with its own ADR.
+## Shipped (unreleased) — externalizable capability rules, step 1 (ADR-016)
+
+The enabling refactor for project-level custom guard rules, plus the audit surface.
+`rules.CapabilityRules` was a flat record with one field per built-in rule, which
+**structurally cannot hold an additional rule** — so the BACKLOG's "mostly a loader" was
+wrong about the blocker. It is now a rule LIST (`CommandRule`/`PathRule`, stable ids, a
+**closed** matcher set that refuses an unenforceable rule at parse time, `source`
+provenance), with every legacy accessor preserved as a derived property; `guard.py` and
+`runtimes/pydantic_ai.py` are **byte-identical** across the change. New
+`baron rules list|validate|diff|explain` (all `--json`): `list` labels enforcement in three
+honest states (`guard` / `adapter-dependent` / `instructed`) of which only `guard` earns
+the word `enforced` — `read_code` and `read_collab` are `adapter-dependent` and label
+`instructed`, because the shipped pydantic-ai adapter builds `FileSystem` unconditionally
+and a test that hydrates a persona denying `read_code` measures the read tools still
+present. `explain` is a dry run of the real evaluators with a test pinning its verdict to
+`guard.evaluate_bash`'s `Decision`. The parser refuses unrecognised document content
+(unknown rule, unknown key, unknown or wrong matcher, missing built-in rule) rather than
+ignoring it.
+
+**Not shipped:** the `.baron/rules.yaml` loader. `validate --file` parses a candidate but
+does not activate it — baron still loads packaged rules only. The one-way doors
+(add-only/deny-only precedence, supported ranges on both artifacts, refuse-don't-ignore,
+cache safety, the `.baron/` vs root-config convention collision) and the separable
+project-defined-verbs question are recorded in ADR-016 §5–§6 for their own ADR.
 
 ## Parked after owner review — P2.1 `baron decision` design
 
