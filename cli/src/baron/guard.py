@@ -1,5 +1,13 @@
 """M4 — ``baron guard``: deterministic capability enforcement as a Claude Code
-PreToolUse hook (ADR-004).
+PreToolUse hook (ADR-004), plus non-blocking evidence capture on a handful of
+other hook events (ADR-012).
+
+Two jobs, deliberately asymmetric (ADR-012 §3):
+
+- **PreToolUse — ENFORCEMENT.** Fail-CLOSED. Can return exit 2 and block.
+- **Every other hook event — EVIDENCE.** Fail-OPEN, silent. Structurally
+  incapable of returning exit 2; a broken event sink must never brick a
+  session. ``BARON_EVENTS_DEBUG=1`` makes emission failures visible.
 
 Implements the documented Claude Code hooks contract
 (https://code.claude.com/docs/en/hooks — the canonical target that
@@ -7,9 +15,10 @@ https://docs.anthropic.com/en/docs/claude-code/hooks redirects to; fetched
 2026-07-23):
 
 - **Input**: the hook receives one JSON object on stdin with (among others)
-  ``tool_name`` (e.g. ``"Bash"``, ``"Edit"``), ``tool_input`` (the tool's
-  arguments — ``command`` for Bash, ``file_path`` for Edit/Write,
-  ``notebook_path`` for NotebookEdit), and ``cwd``.
+  ``hook_event_name``, ``session_id``, ``cwd`` — carried by EVERY event — plus,
+  on tool events, ``tool_name`` (e.g. ``"Bash"``, ``"Edit"``) and ``tool_input``
+  (the tool's arguments — ``command`` for Bash, ``file_path`` for Edit/Write,
+  ``notebook_path`` for NotebookEdit).
 - **Output**: exit code ``0`` with no stdout means "no decision" — the call
   proceeds through the normal permission flow. Exit code ``2`` BLOCKS the tool
   call and feeds stderr to the model as the blocking reason. (A JSON
@@ -62,10 +71,12 @@ this hook, the pydantic-ai adapter, future runtime adapters — must share.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -77,11 +88,146 @@ from .rules import CapabilityRules, RulesError, load_rules
 
 OVERRIDE_ENV = "BARON_GUARD_OVERRIDE"
 PERSONA_ENV = "BARON_PERSONA_FILE"
+#: Opt-in diagnostic for the (otherwise silent, fail-open) evidence path.
+#: Deliberately opt-in: guard's stderr is fed to the MODEL on exit 2, so
+#: unsolicited noise there degrades the actual denial message (ADR-012 §3).
+EVENTS_DEBUG_ENV = "BARON_EVENTS_DEBUG"
 #: Repo-relative override log — TRACKED (not gitignored): overrides must be
 #: visible in diffs. Each override is expected to become a handoff.
 OVERRIDE_LOG = PurePosixPath(".baron/guard-override.log")
 
 WRITE_TOOLS = ("Edit", "Write", "NotebookEdit")
+
+
+# --- hook-event dispatch (ADR-012) ------------------------------------------------------
+
+#: The ONE hook event guard is allowed to block on. Everything else is evidence.
+PRE_TOOL_USE = "PreToolUse"
+
+#: Every ``hook_event_name`` Claude Code 2.1.226 can emit, read out of the
+#: installed binary's own hook-event enum (2026-08-09) rather than from prose
+#: docs, which lag it. Recorded so a reader can see WHAT WAS CONSIDERED and
+#: rejected — behaviourally this tuple is inert: a name in it that has no
+#: handler is treated exactly like a name nobody has ever heard of (exit 0).
+KNOWN_HOOK_EVENTS = (
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PostToolBatch",
+    "Notification",
+    "UserPromptSubmit",
+    "UserPromptExpansion",
+    "SessionStart",
+    "SessionEnd",
+    "Stop",
+    "StopFailure",
+    "SubagentStart",
+    "SubagentStop",
+    "PreCompact",
+    "PostCompact",
+    "PermissionRequest",
+    "PermissionDenied",
+    "Setup",
+    "TeammateIdle",
+    "TaskCreated",
+    "TaskCompleted",
+    "Elicitation",
+    "ElicitationResult",
+    "ConfigChange",
+    "WorktreeCreate",
+    "WorktreeRemove",
+    "InstructionsLoaded",
+    "CwdChanged",
+    "FileChanged",
+    "DirectoryAdded",
+    "MessageDisplay",
+)
+
+
+# --- the event-plane producer contract (ADR-012 §4) -------------------------------------
+
+#: Version of the ATTRIBUTE schema this producer writes. Bumped when a
+#: ``baron.*`` attribute key changes meaning or disappears; adding a key is not
+#: a bump. Consumers read it from ``baron.events_version`` on every row.
+EVENTS_VERSION = 1
+
+#: Event ``kind``s guard produces. Open dotted strings, not a closed enum — the
+#: event stream is OBSERVATION, where an unrecognised kind costs nothing (the
+#: capability vocabulary is frozen because it is an ENFORCEMENT contract, where
+#: ambiguity means mis-enforcement). This tuple is the documented registry and
+#: is pinned by a test; it is not a runtime validation gate.
+EVENT_KINDS = (
+    "guard.allow",
+    "guard.deny",
+    "guard.override",
+    "session.start",
+    "session.end",
+    "tool.post",
+    "tool.failure",
+)
+
+
+def _trace_id(session_id: str) -> str | None:
+    """Derive a stable 32-hex OTel-shaped trace id from a Claude session id.
+
+    Deterministic, so every event of one session correlates without the
+    producer holding any state. ``None`` when there is no session id — better
+    an unattributed row than one bucketed into a shared fake trace.
+    """
+    if not session_id:
+        return None
+    return hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:32]
+
+
+def _debug(message: str) -> None:
+    if os.environ.get(EVENTS_DEBUG_ENV):
+        print(f"baron guard [events]: {message}", file=sys.stderr)
+
+
+def emit_event(kind: str, attributes: dict, *, trace_id: str | None = None) -> None:
+    """Append one observation to the event plane. NEVER raises. NEVER blocks.
+
+    Cross-workstream boundary: the sink, its config (``BARON_EVENTS_SINK``) and
+    the on-disk row format belong to :mod:`baron.events`. Guard is a producer
+    only and reaches it through this one function, by late import, so a baron
+    build without the events plane installed degrades to a silent no-op rather
+    than an ImportError at hook time.
+
+    The contract this calls against (ADR-012 §4)::
+
+        baron.events.emit(kind: str,
+                          attributes: dict[str, object],
+                          *, trace_id: str | None = None) -> None
+    """
+    try:
+        from . import events as events_mod  # type: ignore[attr-defined]
+    except Exception as exc:  # events plane not installed — evidence is optional
+        _debug(f"no event plane ({type(exc).__name__}: {exc}); dropped {kind}")
+        return
+    payload = {"baron.events_version": EVENTS_VERSION, **attributes}
+    try:
+        events_mod.emit(kind, payload, trace_id=trace_id)
+    except Exception as exc:  # fail OPEN: a broken sink must not brick a session
+        _debug(f"emit failed for {kind}: {type(exc).__name__}: {exc}")
+
+
+def _base_attrs(payload: dict) -> dict:
+    """The ``baron.*`` attributes every event carries. The key namespace is
+    FROZEN (ADR-012 §4) — it is what the audit skill's ingest actually parses."""
+    attrs: dict[str, object] = {
+        "baron.hook_event": str(payload.get("hook_event_name") or PRE_TOOL_USE),
+    }
+    for key, attr in (
+        ("session_id", "baron.session_id"),
+        ("cwd", "baron.cwd"),
+        ("agent_id", "baron.agent_id"),
+        ("agent_type", "baron.agent_type"),
+        ("permission_mode", "baron.permission_mode"),
+    ):
+        value = payload.get(key)
+        if value:
+            attrs[attr] = str(value)
+    return attrs
 
 
 class GuardError(RuntimeError):
@@ -518,7 +664,141 @@ def log_override(cwd: Path, tool: str, target: str, reason: str) -> Path:
     return log_path
 
 
-# --- entry point ----------------------------------------------------------------------
+# --- evidence handlers (ADR-012) --------------------------------------------------------
+#
+# Every handler below is EVIDENCE ONLY. Contract, asserted by
+# test_only_pretooluse_can_block: a handler returns nothing, its caller ignores
+# whatever it does, and the dispatch branch returns (0, "") unconditionally.
+# None of them may load a persona, evaluate a rule, or reach a deny path.
+
+
+def _handle_session_start(payload: dict) -> None:
+    """SessionStart — open the session record.
+
+    Deliberately does NOT wrap ``baron session start``: ADR-007 ruled Barony
+    does not own the execution loop, and a hook that mutates the collab repo on
+    every session open is a side effect nobody asked for. Wrappers are built on
+    demand; this is observation.
+    """
+    attrs = _base_attrs(payload)
+    for key, attr in (("source", "baron.session_source"), ("model", "baron.model")):
+        value = payload.get(key)
+        if value:
+            attrs[attr] = str(value)
+    emit_event(
+        "session.start", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+    )
+
+
+def _handle_session_end(payload: dict) -> None:
+    """SessionEnd / Stop — close the session record.
+
+    Both map to one kind: ``Stop`` fires when the main loop finishes a turn and
+    ``SessionEnd`` when the session actually terminates, but for correlation
+    purposes the useful fact is the same ("this trace stopped producing"). The
+    originating hook is preserved in ``baron.hook_event``, so a consumer that
+    cares can still tell them apart.
+    """
+    attrs = _base_attrs(payload)
+    reason = payload.get("reason")
+    if reason:
+        attrs["baron.end_reason"] = str(reason)
+    emit_event(
+        "session.end", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+    )
+
+
+def _handle_post_tool_use(payload: dict) -> None:
+    """PostToolUse — what a tool call actually did, after the fact.
+
+    Records the PRESENCE of ``tool_response``, never its content: responses
+    carry file bodies and command output, and an evidence stream that quietly
+    accumulates them is an exfiltration surface, not telemetry.
+    """
+    attrs = _base_attrs(payload)
+    attrs["baron.tool_name"] = str(payload.get("tool_name") or "?")
+    attrs["baron.has_tool_response"] = payload.get("tool_response") is not None
+    duration = payload.get("duration_ms")
+    if isinstance(duration, (int, float)):
+        attrs["baron.duration_ms"] = duration
+    emit_event(
+        "tool.post", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+    )
+
+
+def _handle_post_tool_failure(payload: dict) -> None:
+    """PostToolUseFailure — a tool call that errored or was interrupted."""
+    attrs = _base_attrs(payload)
+    attrs["baron.tool_name"] = str(payload.get("tool_name") or "?")
+    attrs["baron.is_interrupt"] = bool(payload.get("is_interrupt"))
+    error = payload.get("error")
+    if error:
+        attrs["baron.error"] = str(error)[:500]
+    duration = payload.get("duration_ms")
+    if isinstance(duration, (int, float)):
+        attrs["baron.duration_ms"] = duration
+    emit_event(
+        "tool.failure", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+    )
+
+
+#: hook_event_name -> evidence handler. Absent from this table (whether the name
+#: is in KNOWN_HOOK_EVENTS or invented tomorrow) means: do nothing, exit 0.
+#: PreToolUse is deliberately NOT here — it is the enforcement path, not evidence.
+EVIDENCE_HANDLERS = {
+    "SessionStart": _handle_session_start,
+    "SessionEnd": _handle_session_end,
+    "Stop": _handle_session_end,
+    "PostToolUse": _handle_post_tool_use,
+    "PostToolUseFailure": _handle_post_tool_failure,
+}
+
+
+def _dispatch_evidence(hook_event: str, payload: dict) -> None:
+    """Run one evidence handler. Swallows everything — see ADR-012 §3."""
+    handler = EVIDENCE_HANDLERS.get(hook_event)
+    if handler is None:
+        return
+    try:
+        handler(payload)
+    except Exception as exc:  # fail OPEN — evidence is never worth a blocked session
+        _debug(f"{hook_event} handler failed: {type(exc).__name__}: {exc}")
+
+
+# --- entry point ------------------------------------------------------------------------
+
+
+def _emit_guard_decision(
+    kind: str,
+    payload: dict,
+    *,
+    trace_id: str | None,
+    tool: str,
+    target: str,
+    decision: Decision | None = None,
+    persona_slug: str = "",
+    reason: str = "",
+) -> None:
+    """One ``guard.*`` observation for a PreToolUse outcome. Never raises.
+
+    Emitted for ALLOWS as well as denies: a stream that only records denials
+    cannot answer "how often did the boundary hold?", which is the question the
+    0.53 operational-fidelity measurement actually needed.
+    """
+    try:
+        attrs = _base_attrs(payload)
+        attrs["baron.tool_name"] = tool
+        attrs["baron.target"] = target[:500]
+        if persona_slug:
+            attrs["baron.persona"] = persona_slug
+        if decision is not None and decision.verbs:
+            attrs["baron.verbs"] = ",".join(decision.verbs)
+        text = reason or (decision.reason if decision is not None else "")
+        if text:
+            attrs["baron.reason"] = text[:1000]
+        emit_event(kind, attrs, trace_id=trace_id)
+    except Exception as exc:  # producing evidence must not change the verdict
+        _debug(f"decision event {kind} failed: {type(exc).__name__}: {exc}")
 
 
 def _remedy() -> str:
@@ -532,25 +812,57 @@ def _remedy() -> str:
 
 
 def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
-    """Evaluate one PreToolUse hook payload.
+    """Evaluate one Claude Code hook payload.
 
     Returns ``(exit_code, stderr_text)`` per the documented contract
     (https://code.claude.com/docs/en/hooks): exit 0 = no objection (normal
     permission flow applies), exit 2 = block, stderr fed to the model.
-    Fail-closed: any internal error is a deny with actionable stderr — unless
-    BARON_GUARD_OVERRIDE is set, which allows AND logs.
+
+    Dispatch (ADR-012 §2) on ``hook_event_name``:
+
+    - absent, or ``"PreToolUse"`` → the ENFORCEMENT path below, unchanged.
+      Absent means PreToolUse for back-compatibility: guard shipped before it
+      read the field, and payloads/tests predating this change must keep working.
+    - a name in :data:`EVIDENCE_HANDLERS` → emit one observation, exit 0.
+    - anything else → exit 0 immediately. Unknown events never block. This is
+      the whole reason the table has a default: Claude Code's event set grows
+      (2.1.226 emits 31 distinct names), and an event baron has never heard of
+      must be inert, not fatal.
+
+    Fail-closed applies to the ENFORCEMENT path only: any internal error is a
+    deny with actionable stderr — unless BARON_GUARD_OVERRIDE is set, which
+    allows AND logs. Malformed JSON and empty stdin are BOTH denies (exit 2);
+    they share the JSONDecodeError path, and both are pinned by tests because
+    ADR-004 §2.3 makes them policy, not incidental behaviour.
+
+    Evidence paths fail OPEN and silently (``BARON_EVENTS_DEBUG=1`` to see
+    them). The asymmetry is deliberate: a guard that cannot decide must deny,
+    but an event sink that cannot write must not take the session with it.
     """
     override = os.environ.get(OVERRIDE_ENV)
     tool = "?"
     target = "?"
     cwd = Path.cwd()
+    payload: dict = {}
+    session_trace: str | None = None
     try:
         try:
-            payload = json.loads(stdin_text)
+            parsed = json.loads(stdin_text)
         except json.JSONDecodeError as exc:
             raise GuardError(f"hook stdin is not valid JSON: {exc}") from exc
-        if not isinstance(payload, dict):
+        if not isinstance(parsed, dict):
             raise GuardError("hook stdin is not a JSON object")
+        payload = parsed
+
+        # Dispatch BEFORE anything that can raise a deny. Neither branch below
+        # can reach exit 2: _dispatch_evidence swallows everything and the
+        # return is unconditional.
+        hook_event = str(payload.get("hook_event_name") or PRE_TOOL_USE)
+        if hook_event != PRE_TOOL_USE:
+            _dispatch_evidence(hook_event, payload)
+            return 0, ""
+
+        session_trace = _trace_id(str(payload.get("session_id") or ""))
         tool = str(payload.get("tool_name", "?"))
         tool_input = payload.get("tool_input")
         if tool_input is None:
@@ -568,7 +880,16 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         )
 
         if tool != "Bash" and tool not in WRITE_TOOLS:
-            return 0, ""  # unknown tools pass: a capability gate, not an allowlist
+            # unknown tools pass: a capability gate, not an allowlist
+            _emit_guard_decision(
+                "guard.allow",
+                payload,
+                trace_id=session_trace,
+                tool=tool,
+                target=target,
+                reason="tool is outside guard's evaluated set",
+            )
+            return 0, ""
 
         if persona_file is None:
             raise GuardError(
@@ -582,23 +903,82 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     except GuardError as exc:
         if override:
             log_override(cwd, tool, target, f"[fail-closed bypass] {override}")
+            _emit_guard_decision(
+                "guard.override",
+                payload,
+                trace_id=session_trace,
+                tool=tool,
+                target=target,
+                reason=f"[fail-closed bypass] {exc}",
+            )
             return 0, ""
+        _emit_guard_decision(
+            "guard.deny",
+            payload,
+            trace_id=session_trace,
+            tool=tool,
+            target=target,
+            reason=f"fail closed: {exc}",
+        )
         return 2, f"baron guard: DENY (fail closed) — {exc}\n{_remedy()}"
     except Exception as exc:  # fail-closed on internal bugs, never fail-open
         if override:
             log_override(cwd, tool, target, f"[internal-error bypass] {override}")
+            _emit_guard_decision(
+                "guard.override",
+                payload,
+                trace_id=session_trace,
+                tool=tool,
+                target=target,
+                reason=f"[internal-error bypass] {type(exc).__name__}: {exc}",
+            )
             return 0, ""
+        _emit_guard_decision(
+            "guard.deny",
+            payload,
+            trace_id=session_trace,
+            tool=tool,
+            target=target,
+            reason=f"internal error, fail closed: {type(exc).__name__}: {exc}",
+        )
         return 2, (
             f"baron guard: DENY (internal error, fail closed) — "
             f"{type(exc).__name__}: {exc}\n{_remedy()}"
         )
 
     if decision.allowed:
+        _emit_guard_decision(
+            "guard.allow",
+            payload,
+            trace_id=session_trace,
+            tool=tool,
+            target=target,
+            decision=decision,
+            persona_slug=persona.slug,
+        )
         return 0, ""
     if override:
         log_override(cwd, tool, target, override)
+        _emit_guard_decision(
+            "guard.override",
+            payload,
+            trace_id=session_trace,
+            tool=tool,
+            target=target,
+            decision=decision,
+            persona_slug=persona.slug,
+        )
         return 0, ""
     persona_name = persona.slug or persona_file.name
+    _emit_guard_decision(
+        "guard.deny",
+        payload,
+        trace_id=session_trace,
+        tool=tool,
+        target=target,
+        decision=decision,
+        persona_slug=persona.slug,
+    )
     reason = decision.reason.replace("\n", "\n  ")  # indent continuation lines
     return 2, (
         f"baron guard: DENY {tool} for persona '{persona_name}' ({persona_file})\n"
