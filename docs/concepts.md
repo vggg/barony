@@ -197,6 +197,24 @@ would brick the agent rather than correct it. Hence the asymmetry — enforcemen
 fails **closed**, evidence fails **open** and silently
 (`BARON_EVENTS_DEBUG=1` to see it). Any hook event baron does not recognise is
 inert; Claude Code emits 31 distinct event names and that number keeps moving.
+**The bigger failure was never a bypass — it was absence.** The badminton-analyzer
+incident merged 15 PRs under a persona denied `merge_pr`, and nothing had gone
+wrong: the hook had never been wired into `.claude/settings.json`, so the denial
+degraded to persona text exactly as designed, and silently. An absent guard and a
+guard that never had to fire leave identical evidence.
+`baron doctor` ([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)) is that
+silence's remedy: nine read-only checks — executable resolves, hook present,
+matcher covers every governed tool, persona and rules load, a synthetic denial
+fed to **the executable the hook names** really exits 2, malformed stdin fails
+closed, no exported override — exiting 1 on any FAIL with a remedy line each.
+That the denial probe *spawns the hook's own command* rather than calling the
+imported `baron.guard` is load-bearing: a project wired to a stale or hand-rolled
+`baron` is the same drift as a missing hook, and an in-process probe exercises
+the very module the bug assumes is fine. Doctor's own bound is printed on every
+run: it verifies **WIRING, not invocation**. It proves the install *can* enforce;
+whether the runtime actually called the hook is not observable from outside the
+runtime, and a command that implied otherwise would manufacture the very
+confidence that produced those merges.
 
 ## PR-locks
 

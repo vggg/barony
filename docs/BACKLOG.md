@@ -98,6 +98,34 @@ expiry candidates could fold into `baron status`).
 - **Other runtimes have no evidence seam.** The pydantic-ai adapter enforces in-process but
   emits nothing; the event stream is Claude-Code-only today, exactly as enforcement was
   before v1.6.0.
+**`open_pr` / `run_tests` denial parsing — STILL DEFERRED as of 2026-08-09, no observed
+need.** Re-examined while closing out the 2026-08-08 Barony/Nasiko evaluation. The
+trigger for adding detection is observed need (capability vocabulary design rule 4;
+ADR-004 §2.2), and there is no observed-need evidence anywhere in this repo or in that
+evaluation — its own contribution list does not include one. Implementing it now would
+break the stated rule and spend a `rules_version` bump on a hypothesis, so
+`capability-rules.v1.yaml` is unchanged and `rules_version` stays **1**. The deferral is
+pinned by `cli/tests/test_rules.py::test_open_pr_and_run_tests_stay_unparsed_deferred`,
+which fails if either verb quietly gains detection without the bump. **Recording the
+decision is the deliverable; re-deriving it as a proposal is not** (that note's
+CORRECTIONS block ¶2 documents that exact failure mode).
+
+**Guard self-test — DONE (2026-08-09).** The roadmap's highest-value hardening item
+shipped as `baron doctor` ([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)):
+nine wiring checks, exit 1 on any FAIL, with the WIRING-not-invocation caveat printed on
+every run. Still open in this section: the lock soft-timeout sweep (below) and the
+code-puppy hook seam.
+
+**Lock soft-timeout sweep — still open, and it needs its own ADR before it is built.**
+The pieces exist (`lock.list_locks` already computes `age_days`; `render_table` prints
+it) but `status.collect()` has no lock check, and adding one crosses a deliberate
+deferral recorded under *Consciously deferred inside M1–M3*: `baron status` reads local
+git state only and does not query the forge, while `lock.list_locks` requires a `Forge`.
+So the real question is architectural — **may `baron status` make network/forge calls?**
+— not one of effort. The shape to prefer whenever it is built: a WARN-only lock check
+gated behind the existing `--fetch` opt-in, threshold from a manifest key defaulting to
+24h, waiver-able via `_apply_waivers`, degrading silently when no forge is configured.
+An unconditional check is out: it would make an offline `baron status` hang or fail.
 
 ## pydantic-ai adapter — field validation + follow-ups (post-v1.6.0)
 

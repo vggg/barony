@@ -16,6 +16,7 @@ import typer
 from . import (
     clock,
     export as export_mod,
+    doctor as doctor_mod,
     guard as guard_mod,
     handoff as handoff_mod,
     indexer,
@@ -163,9 +164,15 @@ def init(
         f"  1. cd {dest.as_posix()}\n"
         "  2. baron validate .        # canonical specs — expect 0 errors\n"
         "  3. baron status            # divergence/staleness report (green when fresh)\n"
-        "  4. open your runtime at the collab root — canon/START.md routes you;\n"
-        "     each persona's kit is in agents/<slug>/runtime/ (see its README)\n"
-        "  5. every session: sync repos, read CONVENTIONS.md + COORDINATION.md,\n"
+        "  4. INSTALL each persona's runtime kit where its runtime starts —\n"
+        "     copy agents/<slug>/runtime/ into that working copy (see its README).\n"
+        "     Generating the kit is not installing it: the badminton-analyzer\n"
+        "     incident merged 15 PRs under a persona denied merge_pr because the\n"
+        "     guard hook was generated and never copied.\n"
+        "  5. baron doctor --dir <that working copy>   # proves the wiring; exit 1\n"
+        "     if the hook, executable, persona, or rules are missing (ADR-017)\n"
+        "  6. open your runtime there — canon/START.md routes you\n"
+        "  7. every session: sync repos, read CONVENTIONS.md + COORDINATION.md,\n"
         "     check _handoff/ (COORDINATION.md § Session-start checklist)\n"
         "\nedit next: agents/<slug>/persona.yaml scope blocks (init fills a generic\n"
         "placeholder scope), manifest.yaml description, and backlog.md."
@@ -1061,6 +1068,54 @@ def rules_explain(
             for line in decision.reason.splitlines():
                 typer.echo(f"  {line}")
     raise typer.Exit(0 if decision.allowed else 1)
+# --- doctor: guard wiring self-test -----------------------------------------------------
+
+
+@app.command()
+def doctor(
+    dir_: Path = typer.Option(
+        Path("."),
+        "--dir",
+        help="Project directory the runtime starts in (the one holding .claude/settings.json).",
+    ),
+    persona_file: Optional[Path] = typer.Option(
+        None,
+        "--persona-file",
+        help="Check this persona instead of the one the hook command names.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Self-test the `baron guard` WIRING — and fail loudly when it is missing.
+
+    The badminton-analyzer incident merged 15 PRs under a persona whose
+    `merge_pr` denial was believed enforced; the hook had never been installed,
+    so the denial had silently degraded to persona text. This command is that
+    silence's remedy: it checks that the hook's executable resolves, that a
+    PreToolUse hook in `.claude/settings.json` invokes `baron guard` with a
+    matcher covering every governed tool, that the named persona and the
+    capability-rules artifact load, that a synthetic denial fed to THAT
+    EXECUTABLE really exits 2, that malformed stdin fails closed (ADR-004 §2.3),
+    and that BARON_GUARD_OVERRIDE is not sitting exported. Exit 1 on any FAIL.
+
+    Honesty boundary: doctor verifies WIRING, not invocation. It proves the
+    install CAN enforce; it cannot observe whether Claude Code actually ran the
+    hook on a real tool call. A green doctor means "correctly wired", never
+    "enforcement happened". Two further bounds, both printed: the denial probes
+    spawn the hook's own command (`uv run`-style prefixes included) and fall back
+    to the in-process guard module only when no resolvable executable is named —
+    saying so when they do; and a bare executable name resolves against DOCTOR's
+    PATH, not the runtime's. Project-level settings only — a hook wired in
+    ~/.claude/settings.json is invisible here.
+    """
+    if not dir_.is_dir():
+        typer.echo(f"error: {dir_} is not a directory", err=True)
+        raise typer.Exit(2)
+    report = doctor_mod.run(dir_, persona_file=persona_file)
+    if json_out:
+        _echo_json(report.to_dict())
+    else:
+        typer.echo(doctor_mod.render(report))
+    raise typer.Exit(0 if report.ok else 1)
 
 
 # --- runtime hydrators ----------------------------------------------------------------
