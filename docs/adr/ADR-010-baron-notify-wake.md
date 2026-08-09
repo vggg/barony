@@ -111,10 +111,18 @@ defaults to the git identity as `baron handoff create` already does. Since `--fr
 allowlist and `wake_origin:` key on, an omitted value under a fail-closed gate would otherwise be
 an unspecified security decision — refuse rather than guess.
 
-**Push semantics:** `git push` of the current branch to its tracking remote, matching
-`ledger.py`'s existing behaviour. A non-fast-forward rejection is **not** retried and **not**
-forced — it aborts before the dispatch, reports, and leaves the handoff committed locally. A
-collab dir that is not a git repo, or has no remote, means no wake: deliver and say so.
+**Push semantics, and a hard platform constraint.** `repository_dispatch` runs the workflow from
+the repository's **default branch only** — so a handoff pushed to any other branch is invisible to
+the gate, which then cannot resolve the stem and fails closed *silently*. Notify therefore pushes
+to the **default branch** of the collab repo, and **refuses to wake** (delivering, and saying so)
+when the current branch is not it. This constraint is the platform's, not a choice, and it was
+missed by two revisions of this ADR.
+
+A non-fast-forward rejection is **not** retried and **not** forced — it aborts before the
+dispatch, reports, and leaves the handoff committed locally. (This deliberately differs from
+`ledger.py`, which pushes `origin HEAD` *and* retries on rejection; an earlier revision claimed to
+match it and was wrong on both counts.) A collab dir that is not a git repo, or has no remote,
+means no wake: deliver and say so.
 
 **Prerequisite this exposes.** `handoff.create` names files `YYYY-MM-DD-<slug>.md`, but the
 emitted `CONVENTIONS.md` documents `YYYY-MM-DD-HHMM-<from>-<topic-slug>.md`. Code and template
@@ -224,31 +232,40 @@ CLI-side check gates the *command*; the **dispatch** is what costs, and `gh api 
 reaches it without baron ever running. Gating only in `baron notify` would be fail-closed at the
 CLI and wide open at the spend point.
 
-#### The payload is a claim; the committed handoff is the record
+#### What the committed handoff does and does not prove
 
-The workflow **must not** read the acting persona from `client_payload`. Whoever fires the
-dispatch writes the payload, so a bypass simply asserts an allowed persona. Nor can it use
-`github.actor`: under the single-account constraint (ADR-002 §1) every persona is the same GitHub
-account, and the platform genuinely cannot tell them apart.
+The workflow **must not** read the acting persona from `client_payload`: whoever fires the
+dispatch writes it. Nor can it use `github.actor` — under the single-account constraint
+(ADR-002 §1) every persona is the same GitHub account.
 
-What it can trust is the handoff §3 step 2 **pushed before dispatching** — a git object with an
-author identity and a commit prefix. So the gate:
+So the gate reads the handoff that §3 step 2 pushed before dispatching: resolve the **stem** from
+the payload (a pointer, not an assertion) under `_handoff/`, then read `from:` and `wake_depth:`
+from the committed frontmatter.
 
-1. takes the handoff **stem** from the payload — a pointer, not an assertion;
-2. resolves it under `_handoff/` (and `_handoff/archive/`);
-3. reads `from:` from the **committed frontmatter**, cross-checked against the commit's author /
-   `commit_prefix`;
-4. looks it up in `notify.wake_allowed`, and reads `wake_depth:` from the same trusted source.
+**Stated plainly, because two revisions of this ADR overclaimed it: this is detection and audit,
+not authentication.** Three reasons, all checkable in the code today:
 
-A forged payload naming an allowed persona now fails: there is no handoff committed by that
-persona to back it. **This is the same rule ADR-008 §1 already enforces for verdicts** — the
-label is an index, the SHA-bound record is the evidence. Here the payload is the index and the
-committed handoff is the record.
+- `handoff.create` writes `from: {from_}` into the frontmatter *and* `{from_.lower()}:` into the
+  commit message **from the same `--from` argument in the same call** (`handoff.py`). A
+  "cross-check" between them compares a value with itself and cannot fail except on a hand-edit.
+- It passes no `--author`, so the commit author is ambient git config — the one shared account.
+- `POST /dispatches` requires **write** access, which is the same access a push requires. An actor
+  who can bypass baron can also run `baron notify --from librarian`, which manufactures exactly
+  the evidence the gate demands.
 
-*(An earlier revision justified fail-closed by citing ADR-004 §2.3. That citation was wrong and
-is withdrawn: ADR-004 §2.2 says in terms that guard "is a capability gate, **not an allowlist**"
-and passes unknown input. §5.5 is an allowlist, which is a different mechanism; the ADR-008
-parallel above is the one that actually holds.)*
+The ADR-008 §1 parallel does **not** rescue this. There the SHA is minted by git from content the
+reader does not control; here the index and the record are written by one actor in one command.
+
+**What it genuinely buys** — and the reason to keep it — is the ADR-004 §2.2 target class: it
+stops the honest and accidental case, catches configuration drift, and turns any bypass into a
+committed, attributable git artifact that a human can find afterwards. That is worth having. It
+is not a control against a determined actor.
+
+**Dependency: ADR-011 (agent identity at spawn — PR #32, not yet merged).** Per-persona commit signing is what
+would make "who wrote this handoff" a fact rather than an assertion, and ADR-011 records that
+`from:` has already been forged in practice (a stand-in wrote `from: Iris`, 2026-08-01). Until it
+lands, §5.5's gate is bounded as above. When it lands, this section should be revisited rather
+than left claiming more than it did on the day it shipped.
 
 #### Two jobs, so a refusal is cheap
 
