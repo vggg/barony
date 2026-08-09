@@ -76,7 +76,7 @@ Nine keys. The first eight are the frozen contract; `meta` is the open bag.
 | `kind` | string | one of `adr`, `decision`, `finding`, `handoff` |
 | `title` | string | ledger heading text, ADR/handoff `# ` H1, or the index-table cell |
 | `path` | string | **repo-root-relative**, posix (see below) |
-| `commit_sha` | string | the commit whose content was parsed — **always non-empty** (§3.2) |
+| `commit_sha` | string | the commit whose content was parsed — **always non-empty**, under every flag including `--allow-dirty` (§3.2) |
 | `status` | string \| null | handoff frontmatter / ADR status; **null for findings and decisions** |
 | `body` | string | the entry prose, frontmatter stripped |
 | `links` | list | `{type: url\|path\|wikilink\|ref, target}` |
@@ -118,8 +118,27 @@ The three rejected alternatives:
 - *Refuse the whole export when anything is dirty.* One uncommitted handoff should not
   destroy the other 283 records.
 
-`--allow-dirty` overrides the gate for local iteration and stamps `meta.dirty` on every
-affected record, so the caveat travels with the data instead of with the invocation.
+`--allow-dirty` relaxes the gate **for modified tracked sources only**, stamping
+`meta.dirty: "modified"` on each affected record so the caveat travels with the data instead
+of with the invocation. It deliberately does **not** cover untracked sources: those have no
+commit to name, and emitting them would mean an empty `commit_sha`, contradicting the §3.1
+invariant and the first rejected alternative above. The honest reading of the flag is
+"modified too", never "uncited too" — locked by
+`test_allow_dirty_still_refuses_untracked_sources`.
+
+**Implementation note — `git status --porcelain -z` is mandatory, not stylistic.** Plain
+`--porcelain` C-quotes any path containing a non-ASCII byte, a space, a quote or a control
+character (`"_handoff/2026-01-02-caf\303\251.md"`), while `git ls-files -z` returns the raw
+UTF-8 name. Reconciling the two by stripping quote characters leaves the octal escapes
+intact, so the names never compare equal, the file tests **clean**, and it is emitted with a
+SHA that does not match its bytes — the gate fails *open*, producing exactly the
+confidently-wrong citation this section rejects, and only on the filenames no ASCII fixture
+covers. `-z` emits raw unquoted paths and removes the failure mode at source;
+`-c core.quotePath=false` was rejected because it fixes only the non-ASCII half and leaves
+spaces and quotes escaped. The consequence to parse for: under `-z` there is no `' -> '`
+separator, and a rename/copy spans two NUL-terminated fields (`XY <dest>\0<src>\0`).
+Regression-tested with a literal non-ASCII filename, because the original ASCII-only gate
+tests passed while the bug was live.
 
 ### 3.3 Determinism
 
@@ -211,8 +230,10 @@ vocabulary frozen keeps this one loose).
   this: the ingest path is LLM- and embedding-backed, so it requires credentials, and an
   end-to-end integration could not have been verified in this workstream regardless of scope.
 - The export's own numbers, by contrast, are measured: 284 records (62 decisions, 62
-  findings, 160 handoffs) from `baddie-analyzer-collab`, and 9 ADRs from this repo, every SHA
-  resolving with `git cat-file -e`.
+  findings, 160 handoffs) from `baddie-analyzer-collab`, and 10 ADRs from this repo
+  (ADR-015 is itself exported). All 284 citations were checked by **byte-equality** —
+  `git show <sha>:<path>` compared against the file on disk, 0 mismatches — not merely by
+  `git cat-file -e`, which a miscited record also passes.
 
 ## 7. Known limitations
 

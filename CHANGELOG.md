@@ -19,8 +19,12 @@ open `meta` bag. No new dependency (still typer + pyyaml), no network, no plugin
   failing that test are **skipped and named** in `skipped[]` with a reason and a lost-record
   count — never emitted with a SHA that resolves but returns different text, which is the
   failure mode that would poison a downstream index with confidently-wrong citations.
-  `--allow-dirty` overrides the gate and stamps `meta.dirty` on the affected records, so the
-  caveat travels with the data rather than with the invocation.
+  `--allow-dirty` relaxes the gate for **modified tracked** sources only, stamping
+  `meta.dirty` so the caveat travels with the data rather than with the invocation; untracked
+  sources are skipped regardless, keeping `commit_sha` non-empty in every record ever emitted.
+  The gate reads `git status --porcelain -z`: plain `--porcelain` C-quotes non-ASCII and
+  spaced paths, which made the gate fail *open* on those files (fixed, regression-tested with
+  a literal non-ASCII filename — see ADR-015 §3.2).
 - **Both real ledger entry-forms parse.** Full `### F40 — title (date, author)` blocks *and*
   bare `| F40 | title |` index rows, with the heading form winning for the same ID — the
   shape badminton-analyzer's migrated F1–F39 table actually has. Entries with no trailing
@@ -32,7 +36,8 @@ open `meta` bag. No new dependency (still typer + pyyaml), no network, no plugin
   deliberately dropped (it is a function of today). Locked by a test; without it nothing
   downstream can sync incrementally.
 - Measured on real repos: 284 records (62 decisions / 62 findings / 160 handoffs) out of
-  `baddie-analyzer-collab`, 9 ADRs out of this one, every SHA resolving with `git cat-file -e`.
+  `baddie-analyzer-collab`, all 284 citations verified by **byte-equality** (`git show
+  <sha>:<path>` vs the file on disk, 0 mismatches) rather than by mere resolvability.
 
 ### Not shipped, deliberately — the knowledge-substrate adapter (`AGENT-TASKS.md` 3.4)
 

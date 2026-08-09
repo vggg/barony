@@ -295,8 +295,10 @@ an open, kind-specific `meta`. Primary key is `(kind, id)`. `path` is
 untracked or has uncommitted edits is **skipped and named** in `skipped[]` — never
 emitted with a SHA that resolves but returns different text. So
 `git show <commit_sha>:<path>` always returns the exact bytes the record was
-parsed from. `--allow-dirty` relaxes that for local iteration and stamps
-`meta.dirty` on the affected records.
+parsed from. `--allow-dirty` relaxes that for **modified tracked** sources only,
+stamping `meta.dirty` on the affected records; untracked sources stay skipped
+under every flag, because `commit_sha` is never empty and a file with no commit
+has nothing to cite.
 
 Both real ledger entry-forms parse (`### F40 — title (date, author)` blocks and
 bare `| F40 | title |` index rows; the heading wins for the same ID). `status` is

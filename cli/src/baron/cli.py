@@ -530,7 +530,11 @@ def export(
     allow_dirty: bool = typer.Option(
         False,
         "--allow-dirty",
-        help="Emit records from uncommitted/modified sources too (their citation will NOT verify).",
+        help=(
+            "Also emit records from MODIFIED tracked sources, stamped `meta.dirty` "
+            "(their citation resolves but returns the committed text, not what was "
+            "parsed). Untracked sources are still skipped — they have no commit to cite."
+        ),
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
@@ -544,8 +548,9 @@ def export(
 
     A source that is untracked or has uncommitted edits is **skipped and named**
     (`skipped[]`), never emitted with a SHA that does not match its content.
-    `--allow-dirty` overrides that and stamps `meta.dirty` on the affected
-    records.
+    `--allow-dirty` relaxes that for modified tracked sources only, stamping
+    `meta.dirty` on the affected records; an untracked source is skipped
+    regardless, because `commit_sha` is never empty.
 
     This is a plain read — no knowledge backend, no plugin seam, no network
     ([ADR-015](../docs/adr/ADR-015-baron-export.md)). `baron export --json | jq

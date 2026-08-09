@@ -144,6 +144,29 @@ def _by_key(result: export.Export) -> dict[tuple[str, str], export.Record]:
     return {(r.kind, r.id): r for r in result.records}
 
 
+def assert_no_miscitation(git_root: Path, result: export.Export) -> None:
+    """Every emitted record's citation must reproduce the bytes that were parsed.
+
+    This is the assertion the whole citation gate exists to satisfy, and it is
+    strictly stronger than `git cat-file -e`: a miscited record — one whose
+    source was edited after its last commit — has a SHA that resolves perfectly
+    and returns *different text*. Only byte-equality catches that, so the gate
+    tests call this rather than checking resolvability.
+
+    `meta.dirty` records are exempt: `--allow-dirty` is the documented opt-out
+    from exactly this property, and the stamp is how the caveat travels.
+    """
+    for record in result.records:
+        assert record.commit_sha, f"{record.kind}:{record.id} has no commit_sha"
+        if record.meta.get("dirty"):
+            continue
+        shown = run_git(git_root, "show", f"{record.commit_sha}:{record.path}")
+        assert shown == (git_root / record.path).read_text(encoding="utf-8"), (
+            f"{record.kind}:{record.id} cites {record.commit_sha[:8]}:{record.path}, "
+            "which resolves but returns different bytes than were parsed"
+        )
+
+
 # --- coverage --------------------------------------------------------------------------
 
 
@@ -257,6 +280,72 @@ def test_modified_source_is_skipped_by_name_not_miscited(collab: Path) -> None:
     assert result.skipped[0].records == 5
     # Everything else still exports — one dirty file is not a global failure.
     assert {r.kind for r in result.records} == {"adr", "decision", "handoff"}
+    assert_no_miscitation(collab, result)
+
+
+def test_modified_source_with_a_non_ascii_path_is_skipped(collab: Path) -> None:
+    """Regression: the citation gate must not fail open on a quoted path.
+
+    Without `-z`, `git status --porcelain` renders any path containing a
+    non-ASCII byte, a space or a quote in C-quoted form —
+    `"_handoff/2026-01-02-caf\\303\\251.md"` — while `git ls-files -z` returns
+    the raw UTF-8 name. Reconciling the two by stripping quotes leaves the octal
+    escapes intact, the two names never compare equal, and the file silently
+    tests *clean*: it is emitted with the SHA of its last commit while the body
+    holds the newer, uncommitted text. That is precisely the confidently-wrong
+    citation ADR-015 §3.2 rejects, and every ASCII-named fixture passes while it
+    is live — hence this test.
+    """
+    rel = "_handoff/2026-01-02-café.md"
+    commit_file(collab, rel, HANDOFF_OPEN, "seed: non-ascii handoff")
+    assert ("handoff", "2026-01-02-café") in _by_key(export.collect(collab))
+
+    (collab / rel).write_text(
+        HANDOFF_OPEN + "\nEdited after the commit, never staged.\n", encoding="utf-8"
+    )
+    result = export.collect(collab)
+
+    assert (rel, "modified") in [(s.path, s.reason) for s in result.skipped]
+    assert ("handoff", "2026-01-02-café") not in _by_key(result)
+    assert_no_miscitation(collab, result)
+
+
+def test_parse_porcelain_z_handles_renames_and_raw_paths() -> None:
+    """A unit test, because the two-field rename form is not reachable through
+    `_source_state`'s pathspec (candidates are files that exist, so a rename
+    *source* is never in the pathspec, and git then degrades the entry to `A`).
+    The parser still has to handle it: `-z` renders a rename as
+    `XY <dest>\\0<src>\\0` with no ` -> ` separator, and a parser that does not
+    consume the second field would treat the bare source path as the next
+    entry — slicing `entry[3:]` off a raw filename and inventing a dirty path
+    that does not exist. Verified against real git output in ADR-015 §3.2."""
+    payload = (
+        " M findings/index.md\0"
+        "R  docs/adr/ADR-001-new.md\0docs/adr/ADR-001-old.md\0"
+        "?? _handoff/2026-01-02-café.md\0"
+    )
+    assert export._parse_porcelain_z(payload) == {
+        "findings/index.md",
+        "docs/adr/ADR-001-new.md",
+        "docs/adr/ADR-001-old.md",  # the rename source, from its own field
+        "_handoff/2026-01-02-café.md",  # raw UTF-8, never C-quoted under -z
+    }
+
+
+def test_staged_but_uncommitted_source_is_skipped(collab: Path) -> None:
+    """`git add` without `git commit` leaves a tracked file that `git log` cannot
+    name a commit for. The belt-and-braces branch must catch it, or the record
+    ships with an empty `commit_sha`."""
+    (collab / "docs" / "adr" / "ADR-003-staged.md").write_text(
+        "# ADR-003: Staged, never committed\n", encoding="utf-8"
+    )
+    run_git(collab, "add", "--", "docs/adr/ADR-003-staged.md")
+    result = export.collect(collab)
+    assert ("adr", "ADR-003") not in _by_key(result)
+    assert ("docs/adr/ADR-003-staged.md", "uncommitted") in [
+        (s.path, s.reason) for s in result.skipped
+    ]
+    assert_no_miscitation(collab, result)
 
 
 def test_untracked_source_is_skipped(collab: Path) -> None:
@@ -268,6 +357,7 @@ def test_untracked_source_is_skipped(collab: Path) -> None:
         (s.path, s.reason) for s in result.skipped
     ]
     assert ("handoff", "2026-07-08-never-committed") not in _by_key(result)
+    assert_no_miscitation(collab, result)
 
 
 def test_allow_dirty_emits_but_marks_the_record(collab: Path) -> None:
@@ -279,6 +369,27 @@ def test_allow_dirty_emits_but_marks_the_record(collab: Path) -> None:
     assert result.skipped == []
     # ADRs were untouched, so they stay clean and unmarked.
     assert all("dirty" not in r.meta for r in result.records if r.kind == "adr")
+
+
+def test_allow_dirty_still_refuses_untracked_sources(collab: Path) -> None:
+    """ADR-015 §3.1: `commit_sha` is **always non-empty**. An untracked file has
+    no commit to name, so `--allow-dirty` cannot cover it — the flag means
+    "modified too", not "uncited too". Emitting an empty SHA here would break the
+    one format invariant the CHANGELOG advertises."""
+    (collab / "_handoff" / "2026-07-08-never-committed.md").write_text(
+        HANDOFF_OPEN, encoding="utf-8"
+    )
+    (collab / "findings" / "index.md").write_text(FINDINGS + "\nlocal edit\n", encoding="utf-8")
+    result = export.collect(collab, allow_dirty=True)
+
+    assert ("handoff", "2026-07-08-never-committed") not in _by_key(result)
+    assert [(s.path, s.reason) for s in result.skipped] == [
+        ("_handoff/2026-07-08-never-committed.md", "uncommitted")
+    ]
+    # The modified source, which does have a commit, is emitted and stamped.
+    assert all(r.meta["dirty"] == "modified" for r in result.records if r.kind == "finding")
+    assert all(r.commit_sha for r in result.records)
+    assert all(r.meta.get("dirty") != "uncommitted" for r in result.records)
 
 
 def test_collab_below_the_git_root_still_produces_a_working_citation(tmp_path: Path) -> None:

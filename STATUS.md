@@ -46,8 +46,9 @@ is the substance:** a source that is untracked or dirty is skipped and named rat
 emitted with a SHA that resolves but returns different text, so `git show <sha>:<path>` always
 reproduces a record's bytes. That discharges 3.4's "every retrieval result must carry
 path + commit SHA" independently of any backend. Measured: 284 records out of
-`baddie-analyzer-collab` (62 decisions / 62 findings / 160 handoffs), 9 ADRs out of this repo,
-every SHA resolving. No new dependency; still typer + pyyaml.
+`baddie-analyzer-collab` (62 decisions / 62 findings / 160 handoffs), all 284 citations
+verified by byte-equality (`git show <sha>:<path>` vs disk, 0 mismatches). No new dependency;
+still typer + pyyaml.
 
 **Deliberately not shipped:** the backend contract interface, a `baron.knowledge` entry-point
 group, and any semantic-memory adapter — 3.4 is gated on 3.3 (which does not exist), and an

@@ -21,8 +21,10 @@ The citation contract (ADR-015 §3): a record is emitted only when its source
 file is **tracked and unmodified**, so ``git show <commit_sha>:<path>`` returns
 byte-for-byte the text that was parsed. Sources failing that test are skipped
 and reported by name — never silently dropped, never emitted with a SHA that
-does not match their content. ``--allow-dirty`` relaxes the gate for local
-iteration and marks every affected record ``meta.dirty: true``.
+does not match their content. ``--allow-dirty`` relaxes the gate for *modified*
+sources only, stamping ``meta.dirty: "modified"`` on each affected record;
+untracked sources stay skipped under every flag, because ``commit_sha`` is
+always non-empty and a file with no commit has nothing to cite.
 """
 
 from __future__ import annotations
@@ -322,6 +324,41 @@ def _repo_prefix(root: Path) -> str:
     return proc.stdout.strip() if proc.returncode == 0 else ""
 
 
+def _parse_porcelain_z(payload: str) -> set[str]:
+    """Paths reported dirty by ``git status --porcelain -z``.
+
+    ``-z`` is not a convenience here, it is the correctness requirement. Without
+    it, git C-quotes any path containing a non-ASCII byte, a space, a quote or a
+    control character — ``"_handoff/2026-01-02-caf\\303\\251.md"`` — while
+    ``git ls-files -z`` returns the raw UTF-8 name. Undoing that quoting by hand
+    means reimplementing git's escaping; getting it wrong makes the two names
+    compare unequal, which silently marks a *modified* file **clean** and emits
+    it with a SHA that does not match its bytes. The gate would fail open on
+    exactly the files nobody tests with. ``-z`` emits raw, unquoted paths and
+    removes the problem at the source (``-c core.quotePath=false`` fixes only
+    the non-ASCII half, leaving spaces and quotes still escaped).
+
+    The other ``-z`` consequence: there is **no ``' -> '`` separator**. A
+    rename/copy entry spans two NUL-terminated fields, ``XY <dest>\\0<src>\\0``.
+    Both are recorded — the destination is what we would read, and the source no
+    longer holds the content its last commit says it does.
+    """
+    fields = payload.split("\0")
+    dirty: set[str] = set()
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:  # "XY " + at least one path character
+            continue
+        xy, path = entry[:2], entry[3:]
+        dirty.add(path)
+        if ("R" in xy or "C" in xy) and i < len(fields):
+            dirty.add(fields[i])  # the rename/copy source, its own field
+            i += 1
+    return dirty
+
+
 def _source_state(root: Path, rels: list[str], prefix: str) -> dict[str, str]:
     """Map each collab-relative source path to "clean" | "modified" | "uncommitted".
 
@@ -334,16 +371,9 @@ def _source_state(root: Path, rels: list[str], prefix: str) -> dict[str, str]:
     tracked_proc = git(root, "ls-files", "-z", "--", *rels, check=False)
     tracked = {p for p in tracked_proc.stdout.split("\0") if p}
     status_proc = git(
-        root, "status", "--porcelain", "--untracked-files=all", "--", *rels, check=False
+        root, "status", "--porcelain", "-z", "--untracked-files=all", "--", *rels, check=False
     )
-    dirty: set[str] = set()
-    for line in status_proc.stdout.splitlines():
-        if len(line) < 4:
-            continue
-        entry = line[3:].strip()
-        if " -> " in entry:  # rename/copy: the destination is what we read
-            entry = entry.split(" -> ", 1)[1]
-        dirty.add(entry.strip('"'))
+    dirty = _parse_porcelain_z(status_proc.stdout)
     out: dict[str, str] = {}
     for rel in rels:
         top_rel = f"{prefix}{rel}"
@@ -521,7 +551,11 @@ def collect(
             # Belt and braces: a file reported clean but with no commit touching
             # it is not citable, whatever the reason.
             condition = "uncommitted"
-        if condition != "clean" and not allow_dirty:
+        # `uncommitted` is skipped unconditionally — `--allow-dirty` cannot cover
+        # it. A file with no commit has no SHA to name, and `commit_sha` being
+        # always non-empty is the format invariant (ADR-015 §3.1). So the flag
+        # means "modified too", never "uncited too".
+        if condition == "uncommitted" or (condition != "clean" and not allow_dirty):
             key = (f"{prefix}{rel}", condition)
             skipped_counts[key] = skipped_counts.get(key, 0) + 1
             continue
