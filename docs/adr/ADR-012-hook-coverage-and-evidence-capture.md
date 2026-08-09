@@ -138,15 +138,28 @@ them is an exfiltration surface, not telemetry.
 
 ## 4. Decision — the producer contract
 
+> **SUPERSEDED IN PART BY ADR-013 §2, at the ops-plane merge (2026-08-09).** The
+> signature below was *provisional*: it was written while `baron.events` was an
+> unlanded parallel workstream, and this section always said the row format
+> belongs to that module. The plane shipped with an `Event` value object and
+> `emit(event, cwd=None)` instead. **ADR-013's shape is authoritative**; guard's
+> `emit_event()` is now a thin adapter onto it. The three decisions this section
+> actually owns — open `kind`s, a frozen `baron.` namespace, emit-on-allow — all
+> stand. Two specifics were corrected and are marked inline below.
+
 `baron.events` (the sink protocol, `BARON_EVENTS_SINK`, the on-disk row format) is
 a **separate workstream**. Guard is a producer only and reaches it through exactly
 one late-bound call, so a baron build without the event plane degrades to a
 no-op rather than an `ImportError` at hook time:
 
 ```python
+# PROVISIONAL, as specified here. NOT what shipped — see the note above.
 baron.events.emit(kind: str,
                   attributes: dict[str, object],
                   *, trace_id: str | None = None) -> None
+
+# ACTUAL, per ADR-013 §2. guard.emit_event() adapts onto this.
+baron.events.emit(event: baron.events.Event, cwd: pathlib.Path | None = None) -> None
 ```
 
 **Event `kind` is an open dotted string, not a closed enum.** The capability
@@ -157,8 +170,20 @@ kind costs nothing and a closed enum would make every plugin event a bug report.
 and there is no runtime warning for unregistered kinds — it would fire constantly
 and teach people to ignore guard output.
 
+`guard.EVENT_KINDS` is now required by test to **equal** `baron.events.KNOWN_KINDS`
+— one registry, not two. That collapses the provisional `guard.allow` / `guard.deny`
+kinds into ADR-013's single `guard.decision` carrying `baron.outcome`; the
+information is identical and the consumer joins on one span name.
+
 What **is** frozen is the **`baron.` attribute-key namespace**, because that is
-what `skills/multi-agent-audit/scripts/ingest_otel.py` actually parses. Keys guard
+much of what `skills/multi-agent-audit/scripts/ingest_otel.py` parses. **CORRECTION
+(merge, 2026-08-09):** the original text said *every* key guard writes is
+`baron.`-prefixed, and a test asserted it. That was wrong in the opposite
+direction — the ingester joins on the **bare** keys `agent.name`, `tool.name` and
+`session.id` (its `AGENT_KEYS` / `TOOL_NAME_KEYS` / `SESSION_ATTR_KEYS`), which
+ADR-013 makes fixed slots on every row. Prefixing them would have broken the join
+the stream exists to serve. The frozen set is therefore the `baron.` namespace
+**plus** `events.version` and ADR-013's `FIXED_ATTR_KEYS`. Keys guard
 writes: `baron.events_version`, `baron.hook_event`, `baron.session_id`,
 `baron.cwd`, `baron.agent_id`, `baron.agent_type`, `baron.permission_mode`,
 `baron.tool_name`, `baron.target`, `baron.persona`, `baron.verbs`, `baron.reason`,
@@ -173,13 +198,26 @@ fidelity measurement needed and could not answer.
 
 ### 4.1 Honesty about what is tested
 
-The event plane had not landed when this shipped. Everything above is verified
-against `cli/tests/fake_events.py`, a contract double implementing the signature.
-That proves the **producer** side — kinds, attributes, trace correlation, fail-open
-— and proves **nothing** about interoperability with the real plane.
-`test_real_event_plane_matches_the_producer_contract` skips today and starts
-failing the moment `baron.events` exists with an incompatible `emit`. Said plainly
-so nobody reads the green suite as an integration claim.
+*Original text, kept for the record:* "The event plane had not landed when this
+shipped. Everything above is verified against `cli/tests/fake_events.py`, a
+contract double implementing the signature. That proves the **producer** side —
+kinds, attributes, trace correlation, fail-open — and proves **nothing** about
+interoperability with the real plane. `test_real_event_plane_matches_the_producer_contract`
+skips today and starts failing the moment `baron.events` exists with an
+incompatible `emit`."
+
+**As of the ops-plane merge that bound is narrower, and the canary did its job.**
+The plane landed, the canary stopped skipping, and it caught exactly the
+divergence it was built for. The double was rewritten onto the real signature and
+now re-exports the real `Event`, `KNOWN_KINDS` and `FIXED_ATTR_KEYS`, so it cannot
+silently drift again.
+
+What is still NOT proven by the green suite: the producer tests use the double's
+own writer, not `baron.sinks.disk`. Real-sink behaviour is covered separately by
+`test_sinks.py` and by the ADR-013 section of `test_guard.py`, which drive the
+actual disk sink. No test yet drives a real Claude Code process against a
+scaffolded repo end to end — `baron doctor` (ADR-017) is the nearest thing, and it
+probes enforcement, not evidence.
 
 ## 5. Decision — generated wiring, and why it is safe to land
 

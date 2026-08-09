@@ -88,6 +88,51 @@ def test_unknown_field_is_warning_not_error(tmp_path: Path) -> None:
     assert any(f.check == "unknown-field" and f.severity == "warning" for f in found)
 
 
+MINIMAL_MANIFEST = """\
+project:
+  name: demo
+  description: one line
+paths:
+  strategy: relative
+repos:
+  - id: code
+    path: .
+    role: code
+backlog:
+  source: file
+  location: BACKLOG.md
+personas:
+  - slug: dara
+    spec: dara.yaml
+"""
+
+
+def test_events_block_is_additive_and_warning_free(tmp_path: Path) -> None:
+    """ADR-013 §7. Unknown fields are a WARNING here (only `adapters` is opaque),
+    so an `events:` block would have made noise in every manifest that used it.
+    It is in MANIFEST_SPEC precisely so it does not — with `options` opaque,
+    because those keys are the named sink's, not this schema's."""
+    copy = tmp_path / "manifest.yaml"
+    copy.write_text(
+        MINIMAL_MANIFEST + "events:\n  sink: disk\n  options:\n    rotate: daily\n",
+        encoding="utf-8",
+    )
+    found = validate_file(copy)
+    assert errors(found) == [], [f.message for f in found]
+    assert [f for f in found if f.check == "unknown-field"] == []
+
+
+def test_a_genuinely_unknown_manifest_block_still_warns(tmp_path: Path) -> None:
+    """The control for the test above: the schema is not simply permissive."""
+    copy = tmp_path / "manifest.yaml"
+    copy.write_text(
+        MINIMAL_MANIFEST + "evvents:\n  sink: disk\n",
+        encoding="utf-8",
+    )
+    found = validate_file(copy)
+    assert any(f.check == "unknown-field" for f in found)
+
+
 def test_discovery_skips_templates_but_validates_fixtures() -> None:
     findings, files, skipped = validate_path(REPO_ROOT / "tests" / "examples")
     assert TESS in files and REX in files

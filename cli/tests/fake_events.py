@@ -1,42 +1,45 @@
-"""A stand-in for the ``baron.events`` plane, used as a CONTRACT DOUBLE.
+"""A recording stand-in for ``baron.events``, used as a CONTRACT DOUBLE.
 
-Why this exists, stated plainly (ADR-012 §4): the event plane
-(``baron.events``, ``BARON_EVENTS_SINK``, the sink protocol, the on-disk row
-format) is a SEPARATE workstream that had not landed when the hook producer
-was written. Guard therefore reaches the plane through exactly one late-bound
-call and this module implements the agreed signature so the producer side can
-be tested end-to-end today:
+Why this still exists, stated plainly. It was written (ADR-012 §4) while the
+event plane was a SEPARATE, UNLANDED workstream, and it implemented the
+signature ADR-012 guessed at::
 
-    baron.events.emit(kind: str,
-                      attributes: dict[str, object],
-                      *, trace_id: str | None = None) -> None
+    baron.events.emit(kind, attributes, *, trace_id=None)
 
-**What this proves and what it does not.** It proves guard emits the right
-kinds, the right ``baron.*`` attributes, and one shared trace id per session,
-and that emission failures never change an exit code. It does NOT prove
-interoperability with the real plane — that is asserted separately by
-``test_events_contract.py::test_real_event_plane_matches_the_producer_contract``,
-which skips until ``baron.events`` actually exists and fails loudly the moment
-it exists with a different signature.
+The plane has since landed (ADR-013) with a different and better shape: an
+:class:`baron.events.Event` value object and ``emit(event, cwd=None)``. ADR-012
+§4 always said the row format belongs to ``baron.events``, so the plane's shape
+wins and this double was rewritten to it — it now re-exports the REAL
+:class:`~baron.events.Event` and implements the REAL ``emit`` signature, so it
+can no longer drift from the contract without failing to import.
 
-The disk behaviour here mirrors what the producer needs from the real sink:
-``BARON_EVENTS_SINK=disk`` writes one flat JSONL row per event to
-``.baron/events.jsonl``, in the shape ``ingest_otel.record_from_flat`` already
-parses (``span_name`` / ``trace_id`` / ``start_timestamp`` / ``attributes``).
-Any other value (including the default) is a no-op, mirroring the real plane's
-null default. An unknown sink name raises — that is how the fail-open test
-gets a realistic failure to swallow.
+**What this proves and what it does not.** It proves the hook layer emits the
+right kinds, the right attributes, one shared trace id per session, and that
+emission failures never change an exit code. It deliberately keeps its own
+tiny disk writer so these producer tests stay independent of which sink is
+installed; the REAL sink stack is covered by ``test_sinks.py`` and by the
+ADR-013 section of ``test_guard.py``, which runs against ``baron.sinks.disk``.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
+# Re-exported so the double cannot drift from the plane, and so tests that
+# import ``baron.events`` while the double is installed still see the real
+# frozen constants.
+from baron.events import (  # noqa: F401
+    EVENTS_VERSION,
+    FIXED_ATTR_KEYS,
+    KNOWN_KINDS,
+    ROW_KEYS,
+    Event,
+)
+
 SINK_ENV = "BARON_EVENTS_SINK"
+DEBUG_ENV = "BARON_EVENTS_DEBUG"
 RELATIVE_PATH = Path(".baron") / "events.jsonl"
 
 #: Every emit() call this process saw, in order — the in-memory assertion surface.
@@ -47,32 +50,38 @@ def reset() -> None:
     CALLS.clear()
 
 
-def emit(kind: str, attributes: dict, *, trace_id: str | None = None) -> None:
-    CALLS.append({"kind": kind, "attributes": dict(attributes), "trace_id": trace_id})
-    sink = os.environ.get(SINK_ENV) or "null"
+def sink_name() -> str:
+    return (os.environ.get(SINK_ENV) or "null").strip() or "null"
+
+
+def emit(event: Event, cwd: Path | None = None) -> None:
+    """The REAL signature. Records, then optionally writes one flat JSONL row."""
+    row = event.to_row()
+    CALLS.append(
+        {
+            "kind": event.kind,
+            "actor": event.actor,
+            "subject": event.subject,
+            "outcome": event.outcome,
+            "attributes": dict(row["attributes"]),
+            "trace_id": event.trace_id,
+        }
+    )
+    sink = sink_name()
     if sink == "null":
         return
     if sink != "disk":
+        # A realistic failure for the fail-open tests to swallow.
         raise ValueError(f"unknown event sink {sink!r}")
-    now = datetime.now(timezone.utc).isoformat()
-    row = {
-        "span_name": kind,
-        "kind": "event",
-        "event.name": kind,
-        "trace_id": trace_id,
-        "span_id": uuid.uuid4().hex[:16],
-        "start_timestamp": now,
-        "end_timestamp": now,
-        "attributes": attributes,
-    }
-    path = Path(os.environ.get("BARON_EVENTS_DIR") or Path.cwd()) / RELATIVE_PATH
+    root = Path(os.environ.get("BARON_EVENTS_DIR") or cwd or Path.cwd())
+    path = root / RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(row) + "\n")
 
 
 def rows(root: Path) -> list[dict]:
-    """Read back the JSONL the disk sink wrote under ``root``."""
+    """Read back the JSONL this double wrote under ``root``."""
     path = root / RELATIVE_PATH
     if not path.is_file():
         return []

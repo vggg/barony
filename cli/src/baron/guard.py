@@ -82,7 +82,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-from . import clock
+from . import clock, events
 from .gitutil import default_branch, git, is_git_repo
 from .rules import CapabilityRules, RulesError, load_rules
 
@@ -157,8 +157,7 @@ EVENTS_VERSION = 1
 #: ambiguity means mis-enforcement). This tuple is the documented registry and
 #: is pinned by a test; it is not a runtime validation gate.
 EVENT_KINDS = (
-    "guard.allow",
-    "guard.deny",
+    "guard.decision",
     "guard.override",
     "session.start",
     "session.end",
@@ -184,7 +183,16 @@ def _debug(message: str) -> None:
         print(f"baron guard [events]: {message}", file=sys.stderr)
 
 
-def emit_event(kind: str, attributes: dict, *, trace_id: str | None = None) -> None:
+def emit_event(
+    kind: str,
+    attributes: dict,
+    *,
+    actor: str = "unknown",
+    subject: str = "",
+    outcome: str = "ok",
+    trace_id: str | None = None,
+    cwd: Path | None = None,
+) -> None:
     """Append one observation to the event plane. NEVER raises. NEVER blocks.
 
     Cross-workstream boundary: the sink, its config (``BARON_EVENTS_SINK``) and
@@ -193,11 +201,13 @@ def emit_event(kind: str, attributes: dict, *, trace_id: str | None = None) -> N
     build without the events plane installed degrades to a silent no-op rather
     than an ImportError at hook time.
 
-    The contract this calls against (ADR-012 §4)::
-
-        baron.events.emit(kind: str,
-                          attributes: dict[str, object],
-                          *, trace_id: str | None = None) -> None
+    The contract this calls against is ADR-013's, not ADR-012's. ADR-012 §4
+    specified ``emit(kind, attributes, *, trace_id=None)`` while the events
+    plane was still unlanded and stated that the row format belongs to
+    :mod:`baron.events`; the plane shipped with an :class:`~baron.events.Event`
+    value object instead. Honouring that delegation is why this adapter exists
+    rather than a second wire shape — see ADR-012 §4 (superseded-by note) and
+    ADR-013 §2.
     """
     try:
         from . import events as events_mod  # type: ignore[attr-defined]
@@ -206,16 +216,38 @@ def emit_event(kind: str, attributes: dict, *, trace_id: str | None = None) -> N
         return
     payload = {"baron.events_version": EVENTS_VERSION, **attributes}
     try:
-        events_mod.emit(kind, payload, trace_id=trace_id)
+        events_mod.emit(
+            events_mod.Event(
+                kind=kind,
+                actor=actor,
+                subject=subject,
+                outcome=outcome,
+                attributes=payload,
+                trace_id=trace_id,
+            ),
+            cwd,
+        )
     except Exception as exc:  # fail OPEN: a broken sink must not brick a session
         _debug(f"emit failed for {kind}: {type(exc).__name__}: {exc}")
 
 
+def _payload_cwd(payload: dict) -> Path | None:
+    """The repo a hook payload describes — handed to the sink via ``bind()``."""
+    raw = payload.get("cwd")
+    return Path(str(raw)) if raw else None
+
+
 def _base_attrs(payload: dict) -> dict:
-    """The ``baron.*`` attributes every event carries. The key namespace is
-    FROZEN (ADR-012 §4) — it is what the audit skill's ingest actually parses."""
+    """The attributes every hook-sourced event carries.
+
+    The ``baron.*`` key namespace is FROZEN (ADR-012 §4). ``session.id`` is
+    NOT under that prefix on purpose: it is one of ADR-013's fixed wire slots
+    and one of the keys ``ingest_otel.py`` joins on (``SESSION_ATTR_KEYS``), so
+    prefixing it would break the join the stream exists to support.
+    """
     attrs: dict[str, object] = {
         "baron.hook_event": str(payload.get("hook_event_name") or PRE_TOOL_USE),
+        "session.id": str(payload.get("session_id") or ""),
     }
     for key, attr in (
         ("session_id", "baron.session_id"),
@@ -686,7 +718,11 @@ def _handle_session_start(payload: dict) -> None:
         if value:
             attrs[attr] = str(value)
     emit_event(
-        "session.start", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+        "session.start",
+        attrs,
+        subject=str(payload.get("source") or "session"),
+        trace_id=_trace_id(str(payload.get("session_id") or "")),
+        cwd=_payload_cwd(payload),
     )
 
 
@@ -704,7 +740,11 @@ def _handle_session_end(payload: dict) -> None:
     if reason:
         attrs["baron.end_reason"] = str(reason)
     emit_event(
-        "session.end", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+        "session.end",
+        attrs,
+        subject=str(payload.get("reason") or "session"),
+        trace_id=_trace_id(str(payload.get("session_id") or "")),
+        cwd=_payload_cwd(payload),
     )
 
 
@@ -721,8 +761,13 @@ def _handle_post_tool_use(payload: dict) -> None:
     duration = payload.get("duration_ms")
     if isinstance(duration, (int, float)):
         attrs["baron.duration_ms"] = duration
+    attrs["tool.name"] = attrs["baron.tool_name"]
     emit_event(
-        "tool.post", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+        "tool.post",
+        attrs,
+        subject=str(attrs["baron.tool_name"]),
+        trace_id=_trace_id(str(payload.get("session_id") or "")),
+        cwd=_payload_cwd(payload),
     )
 
 
@@ -737,8 +782,14 @@ def _handle_post_tool_failure(payload: dict) -> None:
     duration = payload.get("duration_ms")
     if isinstance(duration, (int, float)):
         attrs["baron.duration_ms"] = duration
+    attrs["tool.name"] = attrs["baron.tool_name"]
     emit_event(
-        "tool.failure", attrs, trace_id=_trace_id(str(payload.get("session_id") or ""))
+        "tool.failure",
+        attrs,
+        subject=str(attrs["baron.tool_name"]),
+        outcome="error",
+        trace_id=_trace_id(str(payload.get("session_id") or "")),
+        cwd=_payload_cwd(payload),
     )
 
 
@@ -765,40 +816,78 @@ def _dispatch_evidence(hook_event: str, payload: dict) -> None:
         _debug(f"{hook_event} handler failed: {type(exc).__name__}: {exc}")
 
 
-# --- entry point ------------------------------------------------------------------------
+# --- observation (ADR-013) ------------------------------------------------------------
+#
+# Emission is ONE-WAY. Nothing below can allow, deny, or change an exit code:
+# every call goes through _observe(), which swallows everything. Guard is
+# fail-CLOSED (ADR-004 §2.3); evidence emission is deliberately fail-OPEN, so a
+# broken sink can never turn "log this" into "deny everything".
 
 
-def _emit_guard_decision(
-    kind: str,
-    payload: dict,
+def _enforcement(verbs: tuple[str, ...]) -> str:
+    """Label the mapped verbs honestly, DERIVED from the rules artifact.
+
+    ``detection: command`` / ``file-op`` means guard actually parses for the
+    verb → ``"enforced"``. ``detection: none`` means the boundary is carried by
+    persona instructions only → ``"instructed"``. Never hardcode this:
+    ``capability-rules.v1.yaml`` sets ``detection: none`` for ``open_pr`` and
+    ``run_tests``, and stamping those "enforced" is exactly the overclaiming
+    ADR-002/ADR-008 forbid.
+    """
+    if not verbs:
+        return "not-applicable"
+    try:
+        table = _rules().verbs
+    except GuardError:
+        return "unknown"  # the rules artifact is broken; do not guess a label
+    detections = {table.get(verb, {}).get("detection", "none") for verb in verbs}
+    return "enforced" if detections & {"command", "file-op"} else "instructed"
+
+
+def _observe(
     *,
-    trace_id: str | None,
+    kind: str,
+    actor: str,
+    subject: str,
+    outcome: str,
     tool: str,
-    target: str,
-    decision: Decision | None = None,
-    persona_slug: str = "",
+    session_id: str,
+    cwd: Path,
+    verbs: tuple[str, ...] = (),
     reason: str = "",
+    error: str = "",
 ) -> None:
-    """One ``guard.*`` observation for a PreToolUse outcome. Never raises.
+    """Emit one observation event. Never raises, never affects the verdict.
 
-    Emitted for ALLOWS as well as denies: a stream that only records denials
-    cannot answer "how often did the boundary hold?", which is the question the
-    0.53 operational-fidelity measurement actually needed.
+    Routes through :func:`emit_event`, the ONE late-bound door guard uses to
+    reach the plane (ADR-012 §4). Binding ``baron.events`` at module import
+    instead would make a baron build without the plane an ImportError at hook
+    time — the failure mode the late import exists to prevent.
     """
     try:
-        attrs = _base_attrs(payload)
-        attrs["baron.tool_name"] = tool
-        attrs["baron.target"] = target[:500]
-        if persona_slug:
-            attrs["baron.persona"] = persona_slug
-        if decision is not None and decision.verbs:
-            attrs["baron.verbs"] = ",".join(decision.verbs)
-        text = reason or (decision.reason if decision is not None else "")
-        if text:
-            attrs["baron.reason"] = text[:1000]
-        emit_event(kind, attrs, trace_id=trace_id)
-    except Exception as exc:  # producing evidence must not change the verdict
-        _debug(f"decision event {kind} failed: {type(exc).__name__}: {exc}")
+        attributes: dict[str, object] = {
+            "tool.name": tool,
+            "session.id": session_id,
+            "baron.capability.verb": ",".join(verbs),
+            "baron.enforcement": _enforcement(verbs),
+            "baron.reason": reason,
+        }
+        if error:
+            attributes["baron.error"] = error
+        emit_event(
+            kind,
+            attributes,
+            actor=actor or "unknown",
+            subject=subject,
+            outcome=outcome,
+            trace_id=_trace_id(session_id),
+            cwd=cwd,
+        )
+    except Exception:  # belt and braces: emit_event already swallows
+        return None
+
+
+# --- entry point ----------------------------------------------------------------------
 
 
 def _remedy() -> str:
@@ -838,10 +927,18 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     Evidence paths fail OPEN and silently (``BARON_EVENTS_DEBUG=1`` to see
     them). The asymmetry is deliberate: a guard that cannot decide must deny,
     but an event sink that cannot write must not take the session with it.
+
+    Fail-closed: any internal error is a deny with actionable stderr — unless
+    BARON_GUARD_OVERRIDE is set, which allows AND logs.
+
+    Additionally emits one observation event per verdict (ADR-013). That path
+    is fail-OPEN and cannot change the returned exit code — see :func:`_observe`.
     """
     override = os.environ.get(OVERRIDE_ENV)
     tool = "?"
     target = "?"
+    actor = "unknown"
+    session_id = ""
     cwd = Path.cwd()
     payload: dict = {}
     session_trace: str | None = None
@@ -864,6 +961,7 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
 
         session_trace = _trace_id(str(payload.get("session_id") or ""))
         tool = str(payload.get("tool_name", "?"))
+        session_id = str(payload.get("session_id") or "")
         tool_input = payload.get("tool_input")
         if tool_input is None:
             tool_input = {}
@@ -880,15 +978,10 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         )
 
         if tool != "Bash" and tool not in WRITE_TOOLS:
-            # unknown tools pass: a capability gate, not an allowlist
-            _emit_guard_decision(
-                "guard.allow",
-                payload,
-                trace_id=session_trace,
-                tool=tool,
-                target=target,
-                reason="tool is outside guard's evaluated set",
-            )
+            # Unknown tools pass: a capability gate, not an allowlist. No event
+            # either — guard reached no verdict, and one row per Read/Grep would
+            # bury the verdicts this stream exists to record. A PostToolUse
+            # observer (kind ``tool.post``) is the right home for that traffic.
             return 0, ""
 
         if persona_file is None:
@@ -896,6 +989,7 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
                 f"no persona file — pass --persona-file or set {PERSONA_ENV}"
             )
         persona = load_persona(persona_file)
+        actor = persona.slug or persona_file.name
         if tool == "Bash":
             decision = evaluate_bash(str(tool_input.get("command") or ""), cwd, persona)
         else:
@@ -903,82 +997,58 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     except GuardError as exc:
         if override:
             log_override(cwd, tool, target, f"[fail-closed bypass] {override}")
-            _emit_guard_decision(
-                "guard.override",
-                payload,
-                trace_id=session_trace,
-                tool=tool,
-                target=target,
-                reason=f"[fail-closed bypass] {exc}",
+            _observe(
+                kind="guard.override", actor=actor, subject=target,
+                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                reason=f"[fail-closed bypass] {override}", error=str(exc),
             )
             return 0, ""
-        _emit_guard_decision(
-            "guard.deny",
-            payload,
-            trace_id=session_trace,
-            tool=tool,
-            target=target,
-            reason=f"fail closed: {exc}",
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="error",
+            tool=tool, session_id=session_id, cwd=cwd, reason=str(exc),
+            error=str(exc),
         )
         return 2, f"baron guard: DENY (fail closed) — {exc}\n{_remedy()}"
     except Exception as exc:  # fail-closed on internal bugs, never fail-open
+        detail = f"{type(exc).__name__}: {exc}"
         if override:
             log_override(cwd, tool, target, f"[internal-error bypass] {override}")
-            _emit_guard_decision(
-                "guard.override",
-                payload,
-                trace_id=session_trace,
-                tool=tool,
-                target=target,
-                reason=f"[internal-error bypass] {type(exc).__name__}: {exc}",
+            _observe(
+                kind="guard.override", actor=actor, subject=target,
+                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                reason=f"[internal-error bypass] {override}", error=detail,
             )
             return 0, ""
-        _emit_guard_decision(
-            "guard.deny",
-            payload,
-            trace_id=session_trace,
-            tool=tool,
-            target=target,
-            reason=f"internal error, fail closed: {type(exc).__name__}: {exc}",
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="error",
+            tool=tool, session_id=session_id, cwd=cwd, reason=detail, error=detail,
         )
         return 2, (
             f"baron guard: DENY (internal error, fail closed) — "
-            f"{type(exc).__name__}: {exc}\n{_remedy()}"
+            f"{detail}\n{_remedy()}"
         )
 
     if decision.allowed:
-        _emit_guard_decision(
-            "guard.allow",
-            payload,
-            trace_id=session_trace,
-            tool=tool,
-            target=target,
-            decision=decision,
-            persona_slug=persona.slug,
+        _observe(
+            kind="guard.decision", actor=actor, subject=target, outcome="allow",
+            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+            reason=decision.reason,
         )
         return 0, ""
     if override:
         log_override(cwd, tool, target, override)
-        _emit_guard_decision(
-            "guard.override",
-            payload,
-            trace_id=session_trace,
-            tool=tool,
-            target=target,
-            decision=decision,
-            persona_slug=persona.slug,
+        _observe(
+            kind="guard.override", actor=actor, subject=target, outcome="override",
+            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+            reason=override,
         )
         return 0, ""
-    persona_name = persona.slug or persona_file.name
-    _emit_guard_decision(
-        "guard.deny",
-        payload,
-        trace_id=session_trace,
-        tool=tool,
-        target=target,
-        decision=decision,
-        persona_slug=persona.slug,
+    _observe(
+        kind="guard.decision", actor=actor, subject=target, outcome="deny",
+        tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
+        reason=decision.reason,
     )
+    persona_name = persona.slug or persona_file.name
     reason = decision.reason.replace("\n", "\n  ")  # indent continuation lines
     return 2, (
         f"baron guard: DENY {tool} for persona '{persona_name}' ({persona_file})\n"

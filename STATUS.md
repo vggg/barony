@@ -59,6 +59,29 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Shipped (unreleased) — observation plane: `baron.events` + `baron.sinks` (ADR-013)
+
+One `Event` shape for guard verdicts, session boundaries, ledger writes, decisions and tool
+outcomes, plus a three-member `Sink` Protocol and the `baron.sinks` entry-point group
+(mirroring `baron.forges`). Built-ins: `null` (**the default** — baron writes nothing unless
+`BARON_EVENTS_SINK` says so) and `disk` (append-only, date-rotated JSONL under
+`.baron/events/`, stdlib `json` only per ADR-003).
+
+**Honest bounds, stated up front.** Enforcement stays fail-CLOSED; emission is deliberately
+fail-OPEN and silent, because a full disk inside a PreToolUse hook would otherwise meet
+guard's fail-closed policy and deny every tool call. Events are **observation, never
+enforcement** — nothing on this path can change a verdict, and a test pins both guard exit
+codes with `events.emit` raising. `.baron/events/` is gitignored while
+`.baron/guard-override.log` stays **tracked**: overrides are evidence, events are telemetry.
+No OpenTelemetry dependency — the row shape is what `ingest_otel.py` already parses, verified
+by a test that re-derives its key lists.
+
+Only **one** call site is wired (guard's verdict path); ledger, session and decision have the
+contract available and adopt it on their own schedule. The `events:` manifest block is
+declared in the schema (canon v1.3) so it does not warn, but **no command reads it** —
+wiring it means measuring a manifest parse on guard's per-tool-call hot path, which is a
+follow-up with its own ADR.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the

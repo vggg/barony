@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from baron import guard
-
 from conftest import commit_file, clone, init_bare, run_git
+
+from baron import guard
 
 DEV_PERSONA = """\
 persona: Dara
@@ -123,14 +123,25 @@ def run_guard(
     *,
     override: str | None = None,
     env_persona: Path | None = None,
+    events_sink: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in ("BARON_GUARD_OVERRIDE", "BARON_PERSONA_FILE")
+        # BARON_EVENTS_* are filtered so a developer who exports a sink cannot
+        # change what these tests observe (ADR-013: the default is silent).
+        if k
+        not in (
+            "BARON_GUARD_OVERRIDE",
+            "BARON_PERSONA_FILE",
+            "BARON_EVENTS_SINK",
+            "BARON_EVENTS_DEBUG",
+        )
     }
     if override is not None:
         env["BARON_GUARD_OVERRIDE"] = override
+    if events_sink is not None:
+        env["BARON_EVENTS_SINK"] = events_sink
     if env_persona is not None:
         env["BARON_PERSONA_FILE"] = str(env_persona)
     args = [sys.executable, "-m", "baron.cli", "guard"]
@@ -441,6 +452,7 @@ def test_env_persona_file_is_honored(
     assert "push_main" in proc.stderr
 
 
+
 # --- ADR-012: hook_event_name dispatch ------------------------------------------------
 #
 # The invariant this whole section protects: ONLY PreToolUse may return exit 2.
@@ -572,3 +584,186 @@ def test_evidence_handlers_cover_only_non_blocking_events() -> None:
     assert guard.PRE_TOOL_USE not in guard.EVIDENCE_HANDLERS
     unknown = sorted(set(guard.EVIDENCE_HANDLERS) - set(guard.KNOWN_HOOK_EVENTS))
     assert not unknown, f"handler for an event Claude Code does not emit: {unknown}"
+
+
+# --- ADR-013: observation events on the verdict path ----------------------------------
+#
+# These assert the event stream, never the verdict. Every verdict test above runs
+# unmodified and must stay that way: emission is additive and consequence-free.
+
+
+def _rows(root: Path) -> list[dict]:
+    """Every JSONL row the disk sink wrote under ``root``, in file order."""
+    out: list[dict] = []
+    for path in sorted((root / ".baron" / "events").glob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            out.append(json.loads(line))
+    return out
+
+
+def test_denied_call_emits_one_deny_event(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    proc = run_guard(
+        personas["dev"],
+        hook("Bash", {"command": "git push origin main"}, tmp_path),
+        events_sink="disk",
+    )
+    assert proc.returncode == 2, proc.stderr
+
+    rows = _rows(tmp_path)
+    assert len(rows) == 1, rows
+    row = rows[0]
+    assert row["span_name"] == "guard.decision"
+    attrs = row["attributes"]
+    assert attrs["baron.outcome"] == "deny"
+    assert attrs["baron.capability.verb"] == "push_main"
+    assert attrs["baron.enforcement"] == "enforced"
+    assert attrs["baron.actor"] == "dara"
+    assert attrs["agent.name"] == "dara"
+    assert attrs["tool.name"] == "Bash"
+    assert attrs["session.id"] == "test"
+    assert attrs["baron.subject"] == "git push origin main"
+    assert attrs["events.version"] == 1
+    assert (tmp_path / ".baron/events/.gitignore").read_text(encoding="utf-8") == "*\n"
+
+
+def test_allowed_call_emits_one_allow_event(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    proc = run_guard(
+        personas["dev"],
+        hook("Bash", {"command": "git push origin dara/42-fix"}, tmp_path),
+        events_sink="disk",
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    rows = _rows(tmp_path)
+    assert len(rows) == 1, rows
+    assert rows[0]["span_name"] == "guard.decision"
+    assert rows[0]["attributes"]["baron.outcome"] == "allow"
+
+
+def test_override_emits_an_override_event_and_leaves_the_tracked_log_alone(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    """The tab-separated TRACKED override log stays byte-for-byte what it was."""
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    proc = run_guard(
+        personas["dev"],
+        hook("Bash", {"command": "git push origin main"}, cwd),
+        override="hotfix F51, owner approved in chat",
+        events_sink="disk",
+    )
+    assert proc.returncode == 0, proc.stderr
+
+    line = (cwd / ".baron" / "guard-override.log").read_text(encoding="utf-8")
+    fields = line.rstrip("\n").split("\t")
+    assert len(fields) == 4
+    assert fields[1:] == [
+        "Bash",
+        "git push origin main",
+        "hotfix F51, owner approved in chat",
+    ]
+
+    rows = _rows(cwd)
+    assert len(rows) == 1, rows
+    assert rows[0]["span_name"] == "guard.override"
+    assert rows[0]["attributes"]["baron.outcome"] == "override"
+
+
+def test_fail_closed_path_emits_an_error_event(tmp_path: Path) -> None:
+    """A fail-closed deny is still observed — with the honest "not-applicable"
+    enforcement label, because no verb was ever mapped."""
+    proc = run_guard(
+        tmp_path / "missing.yaml",
+        hook("Bash", {"command": "git push origin main"}, tmp_path),
+        events_sink="disk",
+    )
+    assert proc.returncode == 2
+    assert "persona file not found" in proc.stderr
+
+    rows = _rows(tmp_path)
+    assert len(rows) == 1, rows
+    attrs = rows[0]["attributes"]
+    assert rows[0]["span_name"] == "guard.decision"
+    assert attrs["baron.outcome"] == "error"
+    assert attrs["baron.enforcement"] == "not-applicable"
+    assert attrs["baron.actor"] == "unknown"
+    assert "persona file not found" in str(attrs["baron.error"])
+
+
+def test_with_the_sink_unset_the_baron_tree_is_untouched(
+    personas: dict[str, Path], tmp_path: Path
+) -> None:
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    proc = run_guard(
+        personas["dev"], hook("Bash", {"command": "git push origin main"}, tmp_path)
+    )
+    assert proc.returncode == 2
+    after = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    assert before == after
+    assert not (tmp_path / ".baron").exists()
+
+
+def test_sink_failure_does_not_change_guard_exit_code(
+    personas: dict[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guard is fail-CLOSED; evidence emission is fail-OPEN (ADR-013 §4).
+
+    A sink that raises must not brick a session — and must not silently flip a
+    deny into an allow either. Both exit codes are pinned.
+    """
+    from baron import events as events_mod
+    from baron import guard as guard_mod
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("sink is on fire")
+
+    monkeypatch.setattr(events_mod, "emit", explode)
+    monkeypatch.delenv("BARON_GUARD_OVERRIDE", raising=False)
+
+    deny = guard_mod.process(
+        json.dumps(hook("Bash", {"command": "git push origin main"}, tmp_path)),
+        personas["dev"],
+    )
+    assert deny[0] == 2
+    assert "push_main" in deny[1]
+
+    allow = guard_mod.process(
+        json.dumps(hook("Bash", {"command": "git push origin dara/42-fix"}, tmp_path)),
+        personas["dev"],
+    )
+    assert allow == (0, "")
+
+
+def test_enforcement_label_is_derived_never_hardcoded() -> None:
+    """capability-rules.v1.yaml sets ``detection: none`` for open_pr / run_tests.
+    Labelling those "enforced" is the overclaiming ADR-002/ADR-008 forbid."""
+    from baron import guard as guard_mod
+
+    assert guard_mod._enforcement(("push_main",)) == "enforced"
+    assert guard_mod._enforcement(("write_path",)) == "enforced"
+    assert guard_mod._enforcement(("open_pr",)) == "instructed"
+    assert guard_mod._enforcement(("run_tests",)) == "instructed"
+    assert guard_mod._enforcement(()) == "not-applicable"
+    # A mixed call is enforced if ANY mapped verb is mechanically detected.
+    assert guard_mod._enforcement(("open_pr", "push_main")) == "enforced"
+
+
+def test_every_verb_in_the_rules_artifact_gets_the_label_its_detection_implies() -> None:
+    """Drift guard: a new detection value must not silently become "instructed"."""
+    from baron import guard as guard_mod
+    from baron.rules import load_rules
+
+    verbs = load_rules().verbs
+    detections = {entry.get("detection", "none") for entry in verbs.values()}
+    assert detections <= {"none", "command", "file-op"}, detections
+    for verb, entry in verbs.items():
+        expected = (
+            "enforced"
+            if entry.get("detection") in ("command", "file-op")
+            else "instructed"
+        )
+        assert guard_mod._enforcement((verb,)) == expected, verb

@@ -5,10 +5,14 @@ Boundary being tested, said honestly: ``baron.events`` (the sink protocol,
 not landed when this was written. Guard reaches it through exactly ONE
 late-bound call, so everything here runs against ``tests/fake_events.py``, a
 contract double implementing the agreed signature. That proves the producer
-side — kinds, ``baron.*`` attributes, trace correlation, fail-open — and
-proves nothing about the real plane, which
-``test_real_event_plane_matches_the_producer_contract`` will start checking
-the moment it exists.
+side — kinds, attributes, trace correlation, fail-open.
+
+POST-MERGE NOTE: the plane has landed (ADR-013). The double was rewritten to
+the REAL ``emit(event, cwd=None)`` signature and re-exports the REAL
+``Event``, so it can no longer drift from the contract silently, and the wire
+shape asserted below is ADR-013's — ADR-012 §4 always delegated the row format
+to ``baron.events``. ``test_real_event_plane_matches_the_producer_contract``
+is now a live assertion rather than a skipped canary.
 """
 
 from __future__ import annotations
@@ -215,12 +219,13 @@ def test_pretooluse_allow_and_deny_both_emit(
     code, stderr = guard.process(deny, persona_file)
     assert code == 2 and "push_main" in stderr
 
-    assert [c["kind"] for c in fake_events.CALLS] == ["guard.allow", "guard.deny"]
+    assert [c["kind"] for c in fake_events.CALLS] == ["guard.decision"] * 2
+    assert [c["outcome"] for c in fake_events.CALLS] == ["allow", "deny"]
     denial = fake_events.CALLS[1]["attributes"]
-    assert denial["baron.persona"] == "dara"
-    assert denial["baron.verbs"] == "push_main"
-    assert denial["baron.tool_name"] == "Bash"
-    assert denial["baron.target"] == "git push origin main"
+    assert denial["baron.actor"] == "dara"
+    assert denial["baron.capability.verb"] == "push_main"
+    assert denial["tool.name"] == "Bash"
+    assert denial["baron.subject"] == "git push origin main"
     # Correlation: the denial lands in the same trace as the session events.
     assert fake_events.CALLS[1]["trace_id"] == guard._trace_id("sess-abc-123")
 
@@ -257,8 +262,8 @@ def test_fail_closed_deny_still_emits(tmp_path: Path, events) -> None:
     )
     assert code == 2
     (call,) = fake_events.CALLS
-    assert call["kind"] == "guard.deny"
-    assert "fail closed" in call["attributes"]["baron.reason"]
+    assert call["kind"] == "guard.decision" and call["outcome"] == "error"
+    assert "persona file" in call["attributes"]["baron.reason"]
 
 
 def test_every_emitted_kind_is_in_the_documented_registry(
@@ -288,20 +293,38 @@ def test_every_emitted_kind_is_in_the_documented_registry(
         guard.process(text, persona_file)
     emitted = {c["kind"] for c in fake_events.CALLS}
     assert emitted <= set(guard.EVENT_KINDS), emitted - set(guard.EVENT_KINDS)
-    assert "guard.deny" in emitted and "guard.allow" in emitted
+    assert "guard.decision" in emitted
+    assert {c["outcome"] for c in fake_events.CALLS} >= {"allow", "deny"}
+    # The registry guard publishes must not drift from the plane's own.
+    import baron.events as real_events
+    assert set(guard.EVENT_KINDS) == set(real_events.KNOWN_KINDS)
 
 
 def test_baron_attribute_namespace_is_frozen(
     tmp_path: Path, persona_file: Path, events
 ) -> None:
-    """Every attribute key guard writes lives under ``baron.`` — that prefix is
-    what the audit skill's ingest joins on, so a stray bare key is a silent miss."""
+    """Every attribute key guard writes is either under ``baron.`` or one of
+    ADR-013's fixed wire slots.
+
+    CORRECTED AT MERGE. This test used to assert that EVERY key is
+    ``baron.``-prefixed, on the reasoning that the prefix is what the audit
+    skill joins on. That was wrong in the other direction: ``ingest_otel.py``
+    joins on the BARE keys ``agent.name`` / ``tool.name`` / ``session.id``
+    (its ``AGENT_KEYS`` / ``TOOL_NAME_KEYS`` / ``SESSION_ATTR_KEYS``), and
+    ADR-013 makes them fixed slots on every row. Prefixing them would break
+    the join. What is frozen is the ``baron.`` namespace plus this closed set.
+    """
+    import baron.events as real_events
+
     guard.process(
         _payload("PostToolUse", tmp_path, tool_name="Bash", tool_response={}),
         persona_file,
     )
     (call,) = fake_events.CALLS
-    stray = [k for k in call["attributes"] if not k.startswith("baron.")]
+    allowed = set(real_events.FIXED_ATTR_KEYS) | {"events.version"}
+    stray = [
+        k for k in call["attributes"] if not k.startswith("baron.") and k not in allowed
+    ]
     assert not stray, stray
 
 
@@ -394,30 +417,29 @@ def test_events_debug_makes_the_silence_diagnosable(
 # --- the cross-workstream contract ---------------------------------------------------
 
 #: The signature guard calls. Changing it here is a breaking change to a
-#: contract another workstream implements — ADR-012 §4.
-PRODUCER_CONTRACT = "(kind, attributes, *, trace_id=None)"
+#: contract another workstream owns — ADR-013 §2 (superseding the provisional
+#: one ADR-012 §4 guessed at while the plane was unlanded).
+PRODUCER_CONTRACT = "(event, cwd=None)"
 
 
 def test_the_double_implements_the_documented_contract() -> None:
     """The double is only worth something if it is the shape guard promises."""
     sig = inspect.signature(fake_events.emit)
-    assert list(sig.parameters) == ["kind", "attributes", "trace_id"]
-    assert sig.parameters["trace_id"].kind is inspect.Parameter.KEYWORD_ONLY
-    sig.bind("guard.deny", {"baron.events_version": 1}, trace_id="0" * 32)
+    assert list(sig.parameters) == ["event", "cwd"]
+    sig.bind(fake_events.Event(kind="guard.decision"), None)
 
 
 def test_real_event_plane_matches_the_producer_contract() -> None:
-    """Merge canary. Skips while ``baron.events`` does not exist; the moment the
-    events workstream lands, this fails loudly if its ``emit`` cannot take the
-    call guard actually makes. Positional kind + attributes, keyword trace_id."""
-    events_mod = pytest.importorskip(
-        "baron.events", reason="event plane not landed yet (separate workstream)"
-    )
+    """Merge canary, now LIVE. The plane has landed, so this no longer skips:
+    it fails loudly if ``baron.events.emit`` stops accepting the call guard
+    actually makes, or if the double drifts away from the real ``Event``."""
+    events_mod = pytest.importorskip("baron.events")
     sig = inspect.signature(events_mod.emit)
     try:
-        sig.bind("guard.deny", {"baron.events_version": 1}, trace_id="0" * 32)
-    except TypeError as exc:  # pragma: no cover - only after the merge
+        sig.bind(events_mod.Event(kind="guard.decision"), None)
+    except TypeError as exc:  # pragma: no cover - contract break
         pytest.fail(
             f"baron.events.emit{sig} cannot accept guard's call "
             f"{PRODUCER_CONTRACT}: {exc}"
         )
+    assert fake_events.Event is events_mod.Event, "the double drifted from the plane"

@@ -56,15 +56,71 @@ could not produce the data that measurement needs.
   freshly scaffolded repo with these hooks wired behaves identically to one without them.
   That safety property is what makes the generated-settings change landable.
 
-**Honesty boundary.** The event plane (`baron.events`, `BARON_EVENTS_SINK`, the sink
-protocol) is a separate workstream that had not landed. Guard is a producer only, reaching it
-through one late-bound call, and everything here is verified against
-`cli/tests/fake_events.py` — a contract double implementing the agreed signature. That proves
-the producer side and **nothing** about interoperability with the real plane;
-`test_real_event_plane_matches_the_producer_contract` skips today and fails loudly the moment
-`baron.events` exists with an incompatible `emit`. Do not read the green suite as an
-integration claim. Enforcement labels are unchanged: evidence hooks enforce nothing, and
+**Honesty boundary.** The event plane (ADR-013, below) landed in this same release, so
+guard's producer side is no longer verified against a stand-in alone. At merge the two
+workstreams disagreed on the wire shape — ADR-012 §4 had provisionally specified
+`emit(kind, attributes, *, trace_id=None)` and `guard.*` kinds while the plane was unlanded,
+and ADR-013 shipped an `Event` value object with a single `guard.decision` kind carrying
+`baron.outcome`. **ADR-013's shape won**, because ADR-012 §4 had itself delegated the row
+format to `baron.events`; guard's `emit_event()` is now an adapter onto it and
+`test_real_event_plane_matches_the_producer_contract` is a live assertion rather than a
+skipped canary. Two ADR-012 test claims were corrected in the process: emitted kinds are now
+required to equal `baron.events.KNOWN_KINDS`, and "every attribute key is `baron.`-prefixed"
+was wrong in the other direction — `ingest_otel.py` joins on the BARE keys `agent.name` /
+`tool.name` / `session.id`, so those are fixed slots and prefixing them would break the join.
+Enforcement labels are unchanged: evidence hooks enforce nothing, and
 `enforced-with-baron (instructed otherwise)` still describes exactly five verbs.
+
+### Added — the observation plane: one event shape, pluggable sinks (ADR-013)
+
+Baron had no event stream. It had six unrelated, per-command emissions: guard's override log
+(overrides only — ordinary verdicts were printed and discarded), `ledger.add_entry()`
+returning an int, `SessionBrief.to_dict()` printed under `--json` and dropped, and so on.
+Every consumer the roadmap names — fleet-health (AGENT-TASKS 3.2), the knowledge substrate
+(3.4), "Logfire or Phoenix wired" — needs one shape and one configurable destination first.
+
+- **`baron.events`** — `EVENTS_VERSION = 1`, a frozen `Event(kind, actor, subject, outcome,
+  attributes, ts, trace_id, span_id)`, and `to_row()` producing one flat JSON object per
+  line. Timestamps come from `clock.now()`, never `datetime.now()`, so the `BARON_NOW`
+  backfill hatch reaches events; a test pins it by injecting a clock.
+- **`baron.sinks`** — a `@runtime_checkable` `Sink` Protocol (`name`, `emit`, `close`),
+  `get_sink()` structurally identical to `get_forge()`, plus `disk` (append-only JSONL,
+  date-rotated, stdlib `json` only per ADR-003) and `null` (**the default** — baron writes
+  nothing unless `BARON_EVENTS_SINK` says so).
+- **`baron.sinks` entry-point group** in `cli/pyproject.toml`, mirroring `baron.forges`.
+  Both built-ins are declared there and a test loads them through real
+  `importlib.metadata` discovery, not a fake.
+- **Guard's verdict path emits**, and only guard's. One event per allow / deny / override /
+  fail-closed error. The tab-separated **tracked** `.baron/guard-override.log` is
+  byte-for-byte unchanged — it is cited in `_remedy()`'s user-facing text; events are
+  additive. All 24 pre-existing guard tests pass unmodified.
+- **`events:` manifest block** added to `MANIFEST_SPEC` and `manifest.schema.md` (v1.3) so a
+  manifest can carry the config without tripping `baron validate`'s unknown-field warning.
+  **Reserved, not read**: `BARON_EVENTS_SINK` is the only live selector. Labelled as such in
+  the schema comment, the canon, and ADR-013 §7 rather than quietly implied.
+
+Three decisions worth reading ADR-013 for:
+
+- **Enforcement fails CLOSED; evidence fails OPEN.** `events.emit()` swallows every
+  exception. Without that, a full disk inside a PreToolUse hook would meet guard's
+  fail-closed policy and deny every tool call — a session bricked by a logging destination.
+  `BARON_EVENTS_DEBUG=1` surfaces swallowed errors; it is off by default because guard's
+  stderr is fed to the model on exit 2 and noise there degrades the denial message.
+  `test_sink_failure_does_not_change_guard_exit_code` pins both exit codes.
+- **The event stream is gitignored; the override log stays tracked.** The `.gitignore` the
+  disk sink writes contains `*` and lives *inside* `.baron/events/`, deliberately not at
+  `.baron/` level — an ignore there would silently un-track `guard-override.log` in every
+  downstream repo. A test asserts it stays tracked.
+- **No OpenTelemetry dependency, ever.** ADR-003 holds. The five top-level row keys are each
+  the first entry of `ingest_otel.py`'s flat key lists, so the existing audit skill reads
+  baron's stream with zero new code. A test re-derives those keys from the script and fails
+  if either side drifts.
+
+`baron.enforcement` on an event is DERIVED from the rules artifact's `detection` field
+(`command`/`file-op` → `enforced`, `none` → `instructed`), never hardcoded — a test walks
+every verb in `capability-rules.v1.yaml` and asserts the label its detection implies.
+`open_pr` and `run_tests` are `detection: none`, and calling them enforced is precisely the
+overclaiming ADR-002/ADR-008 forbid.
 
 ## [1.10.0] — 2026-08-04
 
