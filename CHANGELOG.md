@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+> **Reviewers start at [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).** This
+> release consolidates five parallel hardening workstreams. Two decisions are BLOCKING and
+> need the owner: which observation plane survives (`baron.enforcement` is measurably wrong
+> in two directions today — ADR-013 §9.1), and whether Cognee is a projection or an
+> authoritative source (ADR-015 §4.1).
+>
+> **ADR-014 is deliberately absent from `docs/adr/`.** A sixth workstream (`harden/otel`)
+> built a second, incompatible observation plane; it is NOT merged and its branch is intact
+> at `harden/otel`. The number is reserved for it. See DECISIONS-FOR-REVIEW §D.
+
 ### Added — `baron guard` taps the wider Claude Code hook surface (ADR-012)
 
 `baron guard` was wired to exactly one hook event (`PreToolUse`, ADR-004), and

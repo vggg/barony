@@ -269,6 +269,34 @@ importable, tested contract to adopt on their own schedule.
 The tab-separated `.baron/guard-override.log` is byte-for-byte unchanged. It is cited in
 `guard._remedy()`'s user-facing text and in the docs; events are strictly additive.
 
+## 9.1 MEASURED DEFECT in `baron.enforcement` (ops-plane merge, 2026-08-09)
+
+Recorded here rather than fixed, because fixing it decides a question the owner has not
+answered yet (see `docs/DECISIONS-FOR-REVIEW.md`, decision **D1**). **Do not read
+`baron.enforcement` as trustworthy until D1 is resolved.**
+
+`_enforcement()` derives the label from the rules artifact's `detection` field for the
+verbs attached to a `Decision`. That describes **the verb**, not **this evaluation** — and
+the two come apart in both directions. Measured against the merged code, not argued:
+
+| call | `Decision.verbs` | emitted `baron.enforcement` | what actually happened |
+|---|---|---|---|
+| `Write ../../../outside.md` | `('write_path',)` | **`enforced`** | Structural refusal. Guard blocked it because the path escapes the repo root; **no capability adjudicated it** and every persona is denied identically. Over-counts. |
+| `Write src/x.py`, persona holds `write_code` | `()` | **`not-applicable`** | A genuine, persona-dependent adjudication — a persona without `write_code` is denied here. Under-counts. |
+| `Write _handoff/x.md` | `()` | `not-applicable` | Correct: universal zone, persona-independent. |
+
+So a consumer aggregating on `baron.enforcement` books structural refusals as capability
+enforcement and misses real capability allows. `harden/otel` (ADR-014, NOT merged) diagnosed
+exactly this and fixed it with a `Decision.adjudicated` flag set at each return site — "a
+rule matched AND the outcome turned on the acting persona" — which is the correct basis.
+
+One criticism ADR-014 makes does **not** currently bite: it argues `instructed` asserts a
+control guard never measured. True in principle, unreachable in practice — every verb guard
+can attach to a `Decision` (`write_code`, `write_path`, `edit_other_personas`, `push_main`,
+`force_push`, `merge_pr`) has `detection: command|file-op`, so `instructed` is not emitted on
+any real row. Verified by walking the artifact. It would become reachable the moment guard
+learns to parse for `open_pr` or `run_tests`.
+
 ## 10. Consequences
 
 **Good.** One shape for six categories of thing that happens. The audit skill can read

@@ -4,6 +4,11 @@ Tracks current progress and deferred candidates. Update on every PR that ships a
 `CONTRIBUTING.md`). Full release history lives in `CHANGELOG.md`; the v0→v1 migration story
 lives in [`docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md`](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md).
 
+> **CONSOLIDATION IN REVIEW (2026-08-09).** `harden/ops-plane` merges five hardening
+> workstreams; a sixth (`harden/otel`) is NOT merged because it is a second, incompatible
+> observation plane. Two BLOCKING owner decisions are open. Start at
+> [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).
+
 ## P1 — pilot hardening promoted into the canonical templates — COMPLETE (unreleased)
 
 The ordered queue is [`AGENT-TASKS.md`](AGENT-TASKS.md). `baron init` flows one-way
