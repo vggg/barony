@@ -69,9 +69,14 @@ wrong about the blocker. It is now a rule LIST (`CommandRule`/`PathRule`, stable
 provenance), with every legacy accessor preserved as a derived property; `guard.py` and
 `runtimes/pydantic_ai.py` are **byte-identical** across the change. New
 `baron rules list|validate|diff|explain` (all `--json`): `list` labels enforcement in three
-honest states (`guard` / `tool-omission` = the adapter's, not guard's / `instructed`), and
-`explain` is a dry run of the real evaluators with a test pinning its verdict to
-`guard.evaluate_bash`'s `Decision`.
+honest states (`guard` / `adapter-dependent` / `instructed`) of which only `guard` earns
+the word `enforced` — `read_code` and `read_collab` are `adapter-dependent` and label
+`instructed`, because the shipped pydantic-ai adapter builds `FileSystem` unconditionally
+and a test that hydrates a persona denying `read_code` measures the read tools still
+present. `explain` is a dry run of the real evaluators with a test pinning its verdict to
+`guard.evaluate_bash`'s `Decision`. The parser refuses unrecognised document content
+(unknown rule, unknown key, unknown or wrong matcher, missing built-in rule) rather than
+ignoring it.
 
 **Not shipped:** the `.baron/rules.yaml` loader. `validate --file` parses a candidate but
 does not activate it — baron still loads packaged rules only. The one-way doors

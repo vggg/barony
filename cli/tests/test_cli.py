@@ -146,12 +146,43 @@ def test_rules_list_json_emits_exactly_the_frozen_verbs() -> None:
     assert "git.push.force_flags" in by_verb["force_push"]["rules"]
 
 
+def test_rules_list_json_qualifies_the_label_in_the_payload() -> None:
+    """The caveat must be IN the document, not only in the human table.
+
+    Machine consumers are the ones most likely to trust `label` unread; a
+    footer printed by the text renderer does not reach them.
+    """
+    import json
+
+    from baron import rules as rules_mod
+
+    result = runner.invoke(app, ["rules", "list", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["label_caveat"] == rules_mod.LABEL_CAVEAT
+
+    by_verb = {row["verb"]: row for row in payload["verbs"]}
+    for verb in ("read_code", "read_collab"):
+        row = by_verb[verb]
+        assert row["enforcement"] == "adapter-dependent"
+        # The honest label: nothing baron ships enforces these.
+        assert row["label"] == "instructed"
+        assert row["caveat"] == rules_mod.LABEL_CAVEAT
+    # Verbs that need no qualifying do not carry a stray one.
+    assert "caveat" not in by_verb["force_push"]
+    assert "caveat" not in by_verb["open_pr"]
+    # And no row anywhere claims enforcement without guard detection.
+    for row in payload["verbs"]:
+        if row["label"] == "enforced":
+            assert row["detection"] != "none", row
+
+
 def test_rules_list_table_names_the_honesty_caveat() -> None:
     result = runner.invoke(app, ["rules", "list"])
     assert result.exit_code == 0, result.output
     assert "force_push" in result.output
-    assert "tool-omission" in result.output
-    assert "not guard's" in result.output
+    assert "adapter-dependent" in result.output
+    assert "no adapter baron ships does" in result.output
 
 
 def test_rules_validate_passes_on_the_shipped_artifact() -> None:
@@ -181,6 +212,90 @@ def test_rules_validate_reports_a_missing_file(tmp_path: Path) -> None:
     )
     assert result.exit_code == 2, result.output
     assert "cannot read rules file" in result.output
+
+
+#: A rule this baron does not implement, spliced into the packaged artifact.
+#: NOT a substitution of an existing value — that is the shape every other
+#: fixture here has, and it is why this hole survived a round: `validate`
+#: printed "valid" and `diff` printed "identical to the packaged artifact"
+#: while quietly discarding the rule.
+_ADDED_RULE_YAML = (
+    "        evil_new_rule:\n"
+    "          verb: force_push\n"
+    "          matcher: totally_bogus_matcher\n"
+    '          flags: ["--sneaky"]\n'
+)
+
+
+def _artifact_with_an_added_rule(tmp_path: Path) -> Path:
+    fixture = tmp_path / "added-rule.yaml"
+    text = _packaged_artifact_text()
+    doctored = text.replace("        plus_refspec:", _ADDED_RULE_YAML + "        plus_refspec:", 1)
+    assert doctored != text, "fixture substitution did not apply"
+    fixture.write_text(doctored, encoding="utf-8")
+    return fixture
+
+
+def test_rules_validate_refuses_a_document_that_adds_a_rule(tmp_path: Path) -> None:
+    fixture = _artifact_with_an_added_rule(tmp_path)
+    result = runner.invoke(app, ["rules", "validate", "--file", str(fixture)])
+    assert result.exit_code == 2, result.output
+    assert "evil_new_rule" in result.output
+    assert "valid" not in result.output
+
+
+def test_rules_diff_refuses_a_document_that_adds_a_rule(tmp_path: Path) -> None:
+    """The regression that matters: `diff` must never call a document with
+    unrecognised content "identical to the packaged artifact"."""
+    fixture = _artifact_with_an_added_rule(tmp_path)
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture)])
+    assert result.exit_code == 2, result.output
+    assert "evil_new_rule" in result.output
+    assert "identical" not in result.output
+
+
+def test_rules_validate_refuses_an_unknown_matcher(tmp_path: Path) -> None:
+    """The closed-matcher refusal, reachable from DOCUMENT input.
+
+    Before round 2 the matcher was hardcoded in the parser, so this check could
+    only ever fire against a developer edit to the builtin table — the ADR
+    claimed a validation that no user input could trigger.
+    """
+    fixture = tmp_path / "bad-matcher.yaml"
+    fixture.write_text(
+        _packaged_artifact_text().replace(
+            "matcher: flag_present", "matcher: totally_bogus_matcher", 1
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["rules", "validate", "--file", str(fixture)])
+    assert result.exit_code == 2, result.output
+    assert "unknown matcher" in result.output
+
+
+def test_rules_diff_reports_an_added_verb(tmp_path: Path) -> None:
+    """An added VERB is reportable (unlike an added rule, which is refused):
+    the frozen-vocabulary check is a policy check, not a parse refusal."""
+    import json
+
+    fixture = tmp_path / "extra-verb.yaml"
+    fixture.write_text(
+        _packaged_artifact_text().replace(
+            "verbs:\n", "verbs:\n  wild_verb:\n    class: sub-tool\n    detection: none\n", 1
+        ),
+        encoding="utf-8",
+    )
+    result = runner.invoke(app, ["rules", "diff", "--file", str(fixture), "--json"])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["verbs_added"] == ["wild_verb"]
+    assert payload["rules_added"] == []
+
+    # ...and `validate` fails the frozen-vocabulary check (exit 1, not a refusal).
+    result = runner.invoke(app, ["rules", "validate", "--file", str(fixture)])
+    assert result.exit_code == 1, result.output
+    assert "FAIL" in result.output
+    assert "wild_verb" in result.output
 
 
 def test_rules_diff_identical_and_changed(tmp_path: Path) -> None:

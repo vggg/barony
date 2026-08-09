@@ -31,6 +31,19 @@ deferred and what one-way doors it has to settle first.
 understand rather than silently mis-enforce them; a refusal reaches guard as a
 :class:`RulesError` and guard fails CLOSED.
 
+**Refuse, don't ignore.** The same principle applies inside the document. The
+parser enumerates the keys and rules the document actually carries and refuses
+any it does not implement — an unrecognised key at any level, a rule slot this
+baron has no matcher for, an unknown ``matcher`` (or one other than the matcher
+guard implements for that rule), a missing built-in rule, a missing required
+parameter. Silently dropping an unrecognised rule is the worst failure mode an
+enforcement artifact has: the document says a thing is blocked and nothing
+blocks it.
+
+**Enforcement labelling is measured, not asserted.** :meth:`CapabilityRules.label`
+returns ``enforced`` only where guard mechanically checks the verb. See
+:data:`LABEL_CAVEAT` for why the whole-tool read verbs do not qualify.
+
 The prose contract for consumers lives in the skill:
 ``skills/barony/references/capability-rules.md``.
 """
@@ -121,17 +134,38 @@ SPEC_DIR_VERB = "edit_other_personas"
 
 # --- enforcement labelling -------------------------------------------------------------
 # House rule (ADR-002/ADR-008): never claim enforcement that was not mechanised.
-# Three honest states, not two:
+# Three states describing WHO could enforce a verb — but only one of them earns
+# the word "enforced" (see `label`), because only one of them is something baron
+# itself does.
 
 #: guard mechanically checks this verb (detection is `command` or `file-op`).
+#: This is the ONLY state that labels as `enforced`.
 ENFORCEMENT_GUARD = "guard"
-#: no guard detection, but the class is whole-tool — the RUNTIME ADAPTER can
-#: enforce it by omitting the tool. Not guard's enforcement, and only real on a
-#: runtime with an allow-list.
-ENFORCEMENT_TOOL_OMISSION = "tool-omission"
-#: no guard detection and sub-tool class — the denial is prose in the persona
+#: No guard detection, but the class is whole-tool, so a runtime adapter with a
+#: tool allow-list *could* enforce it by omitting the tool. Whether any adapter
+#: actually does is a property of that adapter, not of this table — and the one
+#: adapter baron ships does NOT (see :data:`LABEL_CAVEAT`). Labels as
+#: `instructed`, because nothing baron ships enforces it.
+ENFORCEMENT_ADAPTER_DEPENDENT = "adapter-dependent"
+#: No guard detection and sub-tool class — the denial is prose in the persona
 #: body and nothing checks it.
 ENFORCEMENT_INSTRUCTED = "instructed"
+
+#: Why `adapter-dependent` does not mean `enforced`. MEASURED, not assumed:
+#: `cli/tests/test_pydantic_ai.py::test_denying_read_code_does_not_omit_read_tools`
+#: hydrates a persona that denies `read_code` and asserts the read tools are
+#: still there. If an adapter ever does omit them, that test is what changes
+#: first, and the label follows it — not the other way round.
+LABEL_CAVEAT = (
+    "`enforced` means baron's guard mechanically checks the call. "
+    "`adapter-dependent` verbs are NOT checked by guard and are NOT enforced by "
+    "the pydantic-ai adapter baron ships: it constructs FileSystem "
+    "unconditionally, so read_file/list_directory/search_files remain available "
+    "to a persona that denies read_code (measured by "
+    "test_denying_read_code_does_not_omit_read_tools). A runtime with a tool "
+    "allow-list could enforce them by omitting the tool; no adapter baron ships "
+    "does, so they label as `instructed`."
+)
 
 
 class RulesError(RuntimeError):
@@ -236,21 +270,26 @@ class CapabilityRules:
     # --- enforcement labelling ----------------------------------------------
 
     def enforcement(self, verb: str) -> str:
-        """How `verb` is actually enforced — see the ENFORCEMENT_* constants."""
+        """Who *could* enforce `verb` — see the ENFORCEMENT_* constants."""
         entry = self.verbs.get(verb, {})
         if entry.get("detection", "none") != "none":
             return ENFORCEMENT_GUARD
         if entry.get("class") == "whole-tool":
-            return ENFORCEMENT_TOOL_OMISSION
+            return ENFORCEMENT_ADAPTER_DEPENDENT
         return ENFORCEMENT_INSTRUCTED
 
     def label(self, verb: str) -> str:
-        """The blunt two-state label: ``enforced`` or ``instructed``."""
-        return (
-            "instructed"
-            if self.enforcement(verb) == ENFORCEMENT_INSTRUCTED
-            else "enforced"
-        )
+        """The blunt two-state label: ``enforced`` or ``instructed``.
+
+        ``enforced`` iff guard mechanically checks the verb. ``adapter-dependent``
+        deliberately labels ``instructed``: no adapter baron ships omits the
+        tools that would make it real (:data:`LABEL_CAVEAT`).
+        """
+        return "enforced" if self.enforcement(verb) == ENFORCEMENT_GUARD else "instructed"
+
+    def caveat(self, verb: str) -> str:
+        """The honesty qualifier for `verb`'s label, or ``""`` if none applies."""
+        return LABEL_CAVEAT if self.enforcement(verb) == ENFORCEMENT_ADAPTER_DEPENDENT else ""
 
     # --- derived legacy accessors (pre-ADR-016 names, unchanged types) -------
 
@@ -322,9 +361,218 @@ def _strs(value: object, where: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+# --- strict document grammar -----------------------------------------------------------
+# ADR-016 §5.4's refuse-don't-ignore rule applies to the document itself: the
+# parser enumerates the keys actually PRESENT and refuses any it does not
+# recognise. Silently dropping an unrecognised rule is the worst possible
+# failure mode for an enforcement artifact — the document says a thing is
+# blocked and nothing blocks it.
+
+
+def _mapping(value: object, where: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise RulesError(f"capability-rules: {where} must be a mapping")
+    return {str(k): v for k, v in value.items()}
+
+
+def _only(mapping: dict[str, object], allowed: frozenset[str], where: str) -> None:
+    """Refuse any key `where` does not recognise (never ignore it)."""
+    unknown = sorted(set(mapping) - allowed)
+    if unknown:
+        raise RulesError(
+            f"capability-rules: {where} has unrecognised key(s) "
+            f"{', '.join(repr(k) for k in unknown)} — refusing rather than "
+            f"silently ignoring them (recognised: {', '.join(sorted(allowed))})"
+        )
+
+
+_TOP_LEVEL_KEYS = frozenset(
+    {"rules_version", "vocabulary", "ambiguity_policy", "verbs", "commands", "file_ops"}
+)
+_VERB_ENTRY_KEYS = frozenset({"class", "detection", "notes"})
+_FILE_OPS_KEYS = frozenset({"universal_write_components", "spec_dir_component"})
+
+
+@dataclass(frozen=True)
+class _CommandSlot:
+    """A built-in command-rule slot: a document key guard knows how to read.
+
+    ``matcher`` is the matcher :mod:`baron.guard` *actually implements* for this
+    slot. The document must name the same one (or the artifact would be
+    describing a check nobody performs), so the field is validated against this,
+    not merely against the closed set.
+    """
+
+    program: str
+    subcommand: tuple[str, ...]  # () = the rule supplies its own
+    matcher: str
+    params: tuple[str, ...]  # required parameter keys, beyond verb/matcher
+
+
+#: rule id -> slot. The ids are structural: ``<section prefix><document key>``.
+_COMMAND_SLOTS: dict[str, _CommandSlot] = {
+    RULE_PUSH_FORCE_FLAGS: _CommandSlot(
+        "git", ("push",), MATCHER_FLAG_PRESENT, ("flags", "flag_prefixes")
+    ),
+    RULE_PUSH_PLUS_REFSPEC: _CommandSlot(
+        "git", ("push",), MATCHER_REFSPEC_PREFIX, ("prefix",)
+    ),
+    RULE_PUSH_ALL_BRANCHES: _CommandSlot(
+        "git", ("push",), MATCHER_FLAG_PRESENT, ("flags",)
+    ),
+    RULE_PUSH_DEFAULT_BRANCH: _CommandSlot(
+        "git", ("push",), MATCHER_REFSPEC_DEFAULT_BRANCH, ("fallback_branches",)
+    ),
+    RULE_MERGE_ON_DEFAULT_BRANCH: _CommandSlot(
+        "git", ("merge",), MATCHER_CURRENT_BRANCH_IS_DEFAULT, ()
+    ),
+    RULE_GH_PR_MERGE: _CommandSlot("gh", (), MATCHER_SUBCOMMAND_PRESENT, ("subcommand",)),
+}
+
+#: (document path to the rules block, rule-id prefix). Enumerated so that a
+#: rules block appearing anywhere else in the document is refused too.
+_COMMAND_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("commands.git.push.rules", "git.push."),
+    ("commands.git.merge.rules", "git.merge."),
+    ("commands.gh.rules", "gh."),
+)
+
+
+def _matcher_of(body: dict[str, object], rule_id: str, slot: _CommandSlot) -> str:
+    """Read the rule's ``matcher`` from the document and validate it.
+
+    Optional but AUTHORITATIVE. Absent -> the slot's matcher (so a document
+    written against an earlier v1 parser still reads identically). Present ->
+    it must be in the closed set AND must be the matcher guard implements for
+    this slot; anything else is refused, because accepting it would print an
+    enforcement label over a check nobody performs.
+    """
+    raw = body.get("matcher")
+    if raw is None:
+        return slot.matcher
+    if not isinstance(raw, str):
+        raise RulesError(f"capability-rules: {rule_id}.matcher must be a string")
+    if raw not in COMMAND_MATCHERS:
+        raise RulesError(
+            f"capability-rules: rule {rule_id!r} names unknown matcher {raw!r} — "
+            f"no consumer can enforce it (known: {', '.join(sorted(COMMAND_MATCHERS))})"
+        )
+    if raw != slot.matcher:
+        raise RulesError(
+            f"capability-rules: rule {rule_id!r} declares matcher {raw!r} but guard "
+            f"implements {slot.matcher!r} for that rule — refusing to describe a "
+            "check that is not the one performed"
+        )
+    return raw
+
+
+def _command_rule(
+    rule_id: str, body: dict[str, object], verbs: dict[str, dict[str, str]]
+) -> CommandRule:
+    slot = _COMMAND_SLOTS[rule_id]
+    _only(body, frozenset({"verb", "matcher", *slot.params}), rule_id)
+    verb = body.get("verb")
+    if not isinstance(verb, str) or verb not in verbs:
+        raise RulesError(
+            f"capability-rules: {rule_id}.verb missing or not in the verbs table"
+        )
+    missing = [p for p in slot.params if p not in body]
+    if missing:
+        raise RulesError(
+            f"capability-rules: rule {rule_id!r} is missing required key(s) "
+            f"{', '.join(repr(m) for m in missing)}"
+        )
+    subcommand = slot.subcommand or _strs(body.get("subcommand"), f"{rule_id}.subcommand")
+    prefix = body.get("prefix", "")
+    if "prefix" in slot.params and not isinstance(prefix, str):
+        raise RulesError(f"capability-rules: {rule_id}.prefix must be a string")
+    return CommandRule(
+        id=rule_id,
+        program=slot.program,
+        subcommand=subcommand,
+        matcher=_matcher_of(body, rule_id, slot),
+        verb=verb,
+        flags=_strs(body["flags"], f"{rule_id}.flags") if "flags" in slot.params else (),
+        flag_prefixes=(
+            _strs(body["flag_prefixes"], f"{rule_id}.flag_prefixes")
+            if "flag_prefixes" in slot.params
+            else ()
+        ),
+        prefix=str(prefix) if "prefix" in slot.params else "",
+        fallback_branches=(
+            _strs(body["fallback_branches"], f"{rule_id}.fallback_branches")
+            if "fallback_branches" in slot.params
+            else ()
+        ),
+    )
+
+
+def _dig(data: dict[str, object], path: str) -> dict[str, object]:
+    """Walk a dotted document path, requiring a mapping at every level."""
+    node: dict[str, object] = data
+    for i, part in enumerate(path.split(".")):
+        if part not in node:
+            raise RulesError(f"capability-rules: missing section {path!r}")
+        node = _mapping(node[part], ".".join(path.split(".")[: i + 1]))
+    return node
+
+
+def _parse_command_rules(
+    data: dict[str, object], verbs: dict[str, dict[str, str]]
+) -> tuple[CommandRule, ...]:
+    """Build the command rules from the keys the DOCUMENT actually carries."""
+    commands = _mapping(data.get("commands"), "commands")
+    _only(commands, frozenset({"git", "gh"}), "commands")
+    git = _mapping(commands.get("git", {}), "commands.git")
+    _only(git, frozenset({"global_value_options", "push", "merge"}), "commands.git")
+    _only(
+        _mapping(git.get("push", {}), "commands.git.push"),
+        frozenset({"value_options", "rules"}),
+        "commands.git.push",
+    )
+    _only(
+        _mapping(git.get("merge", {}), "commands.git.merge"),
+        frozenset({"rules"}),
+        "commands.git.merge",
+    )
+    _only(
+        _mapping(commands.get("gh", {}), "commands.gh"),
+        frozenset({"rules"}),
+        "commands.gh",
+    )
+
+    rules: list[CommandRule] = []
+    for path, prefix in _COMMAND_SECTIONS:
+        block = _dig(data, path)
+        for key in block:
+            rule_id = f"{prefix}{key}"
+            if rule_id not in _COMMAND_SLOTS:
+                raise RulesError(
+                    f"capability-rules: {path}.{key} is not a rule this baron "
+                    f"implements — refusing rather than silently ignoring it "
+                    f"(implemented here: "
+                    f"{', '.join(sorted(k for k in _COMMAND_SLOTS if k.startswith(prefix)))})"
+                )
+            rules.append(_command_rule(rule_id, _mapping(block[key], rule_id), verbs))
+
+    found = {rule.id for rule in rules}
+    absent = sorted(set(_COMMAND_SLOTS) - found)
+    if absent:
+        raise RulesError(
+            f"capability-rules: document omits built-in rule(s) "
+            f"{', '.join(repr(a) for a in absent)} — guard reads them, so an "
+            "artifact without them cannot be enforced"
+        )
+    # Table order is the order `baron rules` prints and `guard` documents.
+    order = list(_COMMAND_SLOTS)
+    return tuple(sorted(rules, key=lambda r: order.index(r.id)))
+
+
 def _parse(data: object) -> CapabilityRules:
     if not isinstance(data, dict):
         raise RulesError("capability-rules: top level is not a mapping")
+    data = {str(k): v for k, v in data.items()}
+    _only(data, _TOP_LEVEL_KEYS, "capability-rules")
     version = data.get("rules_version")
     if version != SUPPORTED_RULES_VERSION:
         raise RulesError(
@@ -342,36 +590,15 @@ def _parse(data: object) -> CapabilityRules:
         raise RulesError("capability-rules: no verbs table")
     verbs: dict[str, dict[str, str]] = {}
     for verb, entry in verbs_raw.items():
-        if not isinstance(entry, dict):
-            raise RulesError(f"capability-rules: verbs.{verb} is not a mapping")
-        verbs[str(verb)] = {k: str(v) for k, v in entry.items()}
+        entry_map = _mapping(entry, f"verbs.{verb}")
+        _only(entry_map, _VERB_ENTRY_KEYS, f"verbs.{verb}")
+        verbs[str(verb)] = {k: str(v) for k, v in entry_map.items()}
 
-    commands = data.get("commands")
-    if not isinstance(commands, dict):
-        raise RulesError("capability-rules: no commands table")
-    git = commands.get("git") or {}
-    push = git.get("push") or {}
-    push_rules = push.get("rules") or {}
-    merge_rules = (git.get("merge") or {}).get("rules") or {}
-    gh_rules = (commands.get("gh") or {}).get("rules") or {}
-    force = push_rules.get("force_flags") or {}
-    plus = push_rules.get("plus_refspec") or {}
-    allb = push_rules.get("all_branches") or {}
-    dflt = push_rules.get("default_branch_target") or {}
-    on_default = merge_rules.get("on_default_branch") or {}
-    pr_merge = gh_rules.get("pr_merge") or {}
+    git = _mapping(_mapping(data.get("commands"), "commands").get("git", {}), "commands.git")
+    push = _mapping(git.get("push", {}), "commands.git.push")
 
-    file_ops = data.get("file_ops")
-    if not isinstance(file_ops, dict):
-        raise RulesError("capability-rules: no file_ops table")
-
-    def verb_of(rule: object, where: str) -> str:
-        verb = rule.get("verb") if isinstance(rule, dict) else None
-        if not isinstance(verb, str) or verb not in verbs:
-            raise RulesError(
-                f"capability-rules: {where}.verb missing or not in the verbs table"
-            )
-        return verb
+    file_ops = _mapping(data.get("file_ops"), "file_ops")
+    _only(file_ops, _FILE_OPS_KEYS, "file_ops")
 
     if SPEC_DIR_VERB not in verbs:
         raise RulesError(
@@ -379,60 +606,7 @@ def _parse(data: object) -> CapabilityRules:
             "the verbs table"
         )
 
-    command_rules = (
-        CommandRule(
-            id=RULE_PUSH_FORCE_FLAGS,
-            program="git",
-            subcommand=("push",),
-            matcher=MATCHER_FLAG_PRESENT,
-            verb=verb_of(force, "push.rules.force_flags"),
-            flags=_strs(force.get("flags"), "push.rules.force_flags.flags"),
-            flag_prefixes=_strs(
-                force.get("flag_prefixes"), "push.rules.force_flags.flag_prefixes"
-            ),
-        ),
-        CommandRule(
-            id=RULE_PUSH_PLUS_REFSPEC,
-            program="git",
-            subcommand=("push",),
-            matcher=MATCHER_REFSPEC_PREFIX,
-            verb=verb_of(plus, "push.rules.plus_refspec"),
-            prefix=str(plus.get("prefix", "+")),
-        ),
-        CommandRule(
-            id=RULE_PUSH_ALL_BRANCHES,
-            program="git",
-            subcommand=("push",),
-            matcher=MATCHER_FLAG_PRESENT,
-            verb=verb_of(allb, "push.rules.all_branches"),
-            flags=_strs(allb.get("flags"), "push.rules.all_branches.flags"),
-        ),
-        CommandRule(
-            id=RULE_PUSH_DEFAULT_BRANCH,
-            program="git",
-            subcommand=("push",),
-            matcher=MATCHER_REFSPEC_DEFAULT_BRANCH,
-            verb=verb_of(dflt, "push.rules.default_branch_target"),
-            fallback_branches=_strs(
-                dflt.get("fallback_branches"),
-                "push.rules.default_branch_target.fallback_branches",
-            ),
-        ),
-        CommandRule(
-            id=RULE_MERGE_ON_DEFAULT_BRANCH,
-            program="git",
-            subcommand=("merge",),
-            matcher=MATCHER_CURRENT_BRANCH_IS_DEFAULT,
-            verb=verb_of(on_default, "merge.rules.on_default_branch"),
-        ),
-        CommandRule(
-            id=RULE_GH_PR_MERGE,
-            program="gh",
-            subcommand=_strs(pr_merge.get("subcommand"), "gh.rules.pr_merge.subcommand"),
-            matcher=MATCHER_SUBCOMMAND_PRESENT,
-            verb=verb_of(pr_merge, "gh.rules.pr_merge"),
-        ),
-    )
+    command_rules = _parse_command_rules(data, verbs)
 
     spec_dir_component = str(file_ops.get("spec_dir_component", ""))
     path_rules = (
@@ -452,14 +626,15 @@ def _parse(data: object) -> CapabilityRules:
         ),
     )
 
-    for rule in command_rules:
-        if rule.matcher not in COMMAND_MATCHERS:
-            raise RulesError(
-                f"capability-rules: rule {rule.id!r} names unknown matcher "
-                f"{rule.matcher!r} — no consumer can enforce it"
-            )
+    # Command-rule matchers are validated against the closed set in
+    # `_matcher_of`, from the document. PATH-rule matchers are NOT
+    # document-supplied — `file_ops` is a flat block whose keys name the
+    # scoping semantics directly, so there is nowhere for a document to state a
+    # matcher and nothing for it to get wrong. This loop is therefore a
+    # developer-edit guard only, and is deliberately labelled as one rather than
+    # counted as document validation (ADR-016 §3.2).
     for path_rule in path_rules:
-        if path_rule.matcher not in PATH_MATCHERS:
+        if path_rule.matcher not in PATH_MATCHERS:  # pragma: no cover - dev-edit guard
             raise RulesError(
                 f"capability-rules: rule {path_rule.id!r} names unknown matcher "
                 f"{path_rule.matcher!r} — no consumer can enforce it"
@@ -481,6 +656,43 @@ def _parse(data: object) -> CapabilityRules:
             ),
         },
     )
+
+
+def diff_rules(base: CapabilityRules, other: CapabilityRules) -> dict[str, object]:
+    """Structural diff of two parsed rule tables, joined on rule id.
+
+    Pure and side-effect free so ``baron rules diff`` is a renderer over it and
+    the add/remove branches can be exercised directly against constructed
+    values. That matters: **no document can currently produce a rule addition or
+    removal** — the built-in rule set is closed and every slot is mandatory, so
+    a document with an extra rule is refused at parse time and one with a rule
+    missing is too. ``rules_added`` / ``rules_removed`` exist for the deferred
+    project-rules loader (ADR-016 §5) and are covered by unit tests over
+    constructed :class:`CapabilityRules`, not by a document fixture.
+    """
+    base_rules = {rule.id: rule for rule in base.rules}
+    other_rules = {rule.id: rule for rule in other.rules}
+    header: list[str] = []
+    if base.rules_version != other.rules_version:
+        header.append(f"rules_version {base.rules_version} -> {other.rules_version}")
+    if base.vocabulary != other.vocabulary:
+        header.append(f"vocabulary {base.vocabulary} -> {other.vocabulary}")
+    if base.ambiguity_policy != other.ambiguity_policy:
+        header.append(
+            f"ambiguity_policy {base.ambiguity_policy} -> {other.ambiguity_policy}"
+        )
+    return {
+        "header": header,
+        "rules_added": sorted(set(other_rules) - set(base_rules)),
+        "rules_removed": sorted(set(base_rules) - set(other_rules)),
+        "rules_changed": sorted(
+            rid
+            for rid in set(base_rules) & set(other_rules)
+            if base_rules[rid] != other_rules[rid]
+        ),
+        "verbs_added": sorted(set(other.verbs) - set(base.verbs)),
+        "verbs_removed": sorted(set(base.verbs) - set(other.verbs)),
+    }
 
 
 def parse_text(text: str, *, origin: str = "<text>") -> CapabilityRules:

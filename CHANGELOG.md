@@ -21,13 +21,27 @@ additional rule.** The data was external; the shape was not extensible.
   (`git.push.force_flags`, `gh.pr_merge`, `file_ops.spec_dir`, …), a `matcher` from a
   **closed** set, a `verb`, and a `source` provenance tag. Eight built-in rules; the ids are
   the public handle `baron rules explain` prints and `baron rules diff` joins on.
-- **The matcher set is closed on purpose.** `flag_present`, `refspec_prefix`,
-  `refspec_default_branch`, `current_branch_is_default`, `subcommand_present`,
-  `universal_write`, `spec_dir`. A rule naming anything else is **refused at parse time** —
-  it is a rule no consumer can honestly enforce, and accepting it would print an `enforced`
-  label over nothing. This makes the BACKLOG's cheap/expensive split mechanical instead of
-  aspirational: a new modality (file size, time window, rate limit, anything semantic) is
-  new detection code in `guard.py`, not a config line.
+- **The matcher set is closed on purpose, and the document names its matcher.**
+  `flag_present`, `refspec_prefix`, `refspec_default_branch`,
+  `current_branch_is_default`, `subcommand_present` (command rules); `universal_write`,
+  `spec_dir` (path rules). Each command rule in `capability-rules.v1.yaml` now states its
+  `matcher`, and the parser refuses one outside the closed set *and* one that is not the
+  matcher guard implements for that rule id — a document claiming `force_flags` is matched
+  by `subcommand_present` describes a check nobody performs. The field is optional but
+  authoritative: absent it defaults to guard's matcher, so a v1 document written before this
+  change still parses identically. Rule **ids** come from the document too (a rule's id is
+  its position, `commands.git.push.rules.<key>` → `git.push.<key>`). This makes the
+  BACKLOG's cheap/expensive split mechanical instead of aspirational: a new modality (file
+  size, time window, rate limit, anything semantic) is new detection code in `guard.py`, not
+  a config line. *Honest limit:* path-rule matchers are **not** document-supplied —
+  `file_ops` is a flat block whose keys name the semantics directly, so the closed-set check
+  over `PATH_MATCHERS` is a developer-edit guard and is labelled as one.
+- **Unrecognised content is refused, never ignored.** The parser enumerates the keys and
+  rules the document actually carries and refuses any it does not implement — at the top
+  level, in `verbs.<verb>`, throughout `commands.*`, and in `file_ops` — as well as a
+  document that omits a built-in rule or a required rule parameter. Silently dropping an
+  unrecognised rule is the worst failure mode an enforcement artifact has: the document says
+  a thing is blocked and nothing blocks it.
 - **Behaviour preservation is the acceptance criterion, not a claim about it.**
   `cli/src/baron/guard.py` and `cli/src/baron/runtimes/pydantic_ai.py` are **byte-identical**
   across this change. All fifteen pre-existing accessors survive as derived read-only
@@ -38,12 +52,17 @@ additional rule.** The data was external; the shape was not extensible.
 - **`baron rules list|validate|diff|explain`** — the read-only audit surface. Until now the
   only way to ask baron what it enforces was to read the YAML by hand, which the project's
   own measured 0.53 operational fidelity says is not good enough. All four take `--json`.
-- **`list` reports enforcement in three states, not two.** `guard` (guard mechanically
-  checks it) / `tool-omission` (guard does NOT parse for it — a runtime with a tool
-  allow-list enforces it by omitting the tool, which is the *adapter's* enforcement, not
-  guard's, and only real on a runtime that has an allow-list) / `instructed` (nothing checks
-  it — `open_pr`, `run_tests`, by design). `label` collapses the first two to `enforced`;
-  the table prints the caveat as a footer. Two states could not say this honestly.
+- **`list` reports enforcement in three states, but only one of them is `enforced`.**
+  `guard` (guard mechanically checks it) / `adapter-dependent` (guard does NOT parse for it;
+  a runtime with a tool allow-list *could* enforce it by omitting the tool, but no adapter
+  baron ships does) / `instructed` (nothing checks it — `open_pr`, `run_tests`, by design).
+  `label` says `enforced` **only** for `guard`; `adapter-dependent` labels `instructed`. The
+  qualifier is carried in the `--json` payload (`label_caveat` at the top level, `caveat`
+  per affected verb) as well as the table footer — machine consumers are the ones most
+  likely to trust `label` unread. The label is gated by a **measurement**:
+  `test_denying_read_code_does_not_omit_read_tools` hydrates a persona denying `read_code`
+  through `pydantic_ai.plan()` and asserts the read tools are still present, so the claim
+  cannot drift ahead of the adapters.
 - **`explain` is a dry run of the real decision.** It calls `guard.evaluate_bash` /
   `guard.evaluate_write`, and `test_rules_explain_matches_guard_evaluate_bash_exactly` pins
   its JSON verdict to the evaluator's `Decision` for the same input, so a second
@@ -51,9 +70,18 @@ additional rule.** The data was external; the shape was not extensible.
   evaluate. Honest limit, stated in `--help`: it lists the rules that *can* imply each verb,
   not the single rule instance that matched — re-deriving that in the CLI would mean a
   second parser that could drift from the first.
-- **Two new fail-closed parse refusals**: an unknown `vocabulary` (previously the field was
-  not read at all) and a duplicate rule id. Both join the existing unknown-`rules_version`
-  refusal; guard turns all three into an exit-2 DENY.
+- **New fail-closed parse refusals, all reachable from document input**: an unknown
+  `vocabulary` (previously the field was not read at all); a rule the parser does not
+  implement; an unrecognised key; an unknown matcher; a matcher other than the one guard
+  implements for that rule; a missing built-in rule; a missing required rule parameter.
+  These join the existing unknown-`rules_version` refusal; guard turns every one into an
+  exit-2 DENY. (The duplicate-rule-id check is a `CapabilityRules` invariant reachable only
+  via `dataclasses.replace()`, not from a document — it guards the deferred loader and
+  developer edits, and is counted as such rather than as document validation.)
+- **`rules diff` delegates to `rules.diff_rules()`**, a pure function, so its
+  `rules_added` / `rules_removed` branches can be unit-tested against constructed values.
+  No document can currently produce either (an extra rule is refused, a missing one is too);
+  they exist for the deferred loader.
 
 ### Not shipped, deliberately — the project-level rules loader
 

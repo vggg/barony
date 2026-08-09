@@ -165,9 +165,23 @@ flat record with one field per built-in rule, and a fixed field per rule cannot
 hold an *additional* rule. The data was external; the shape was not extensible.
 ADR-016 fixed the shape (a rule LIST of typed `CommandRule`/`PathRule` with
 stable ids and a **closed** matcher set — the cheap/expensive split above, made
-mechanical: an unknown matcher is refused at parse time) and shipped
-`baron rules list|validate|diff|explain` as the audit/diagnostic surface.
+mechanical: command rules name their `matcher` in the document, and one outside
+the closed set, or one other than the matcher guard implements for that rule, is
+refused at parse time) and shipped `baron rules list|validate|diff|explain` as
+the audit/diagnostic surface. The parser also refuses any rule or key it does
+not implement rather than ignoring it — the property the loader will need most,
+since a project rules file that is quietly half-applied is worse than none.
 `guard.py` was byte-identical across the change.
+
+The honesty label named above needed correcting in the same round: `enforced`
+now means *guard mechanically checks it* and nothing else. `read_code` /
+`read_collab` were briefly labelled `enforced` on the theory that a whole-tool
+verb is enforced by tool omission — but the shipped pydantic-ai adapter builds
+`FileSystem` unconditionally, so a persona denying `read_code` keeps its read
+tools. They label `instructed`, gated by a test that hydrates such a persona and
+inspects the toolset. When the loader lands, user rules inherit the same rule:
+`enforced` only for shapes guard mechanically checks, measured rather than
+argued.
 
 Still open, and each is a one-way door (ADR-016 §5, needs its own ADR): the
 `.baron/rules.yaml` loader itself, add-only/deny-only precedence, explicit

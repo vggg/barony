@@ -61,16 +61,32 @@ real decision, not a second implementation, and a test pins its verdict to the e
 `Decision`. It reports the rules that *can* imply each verb, not the single rule instance
 that matched; guard's own `reason` names the concrete inference.
 
-**Enforcement is reported in three states, not two** (the ADR-002/ADR-008 honesty rule):
+**Enforcement is reported in three states — but only one of them is `enforced`**
+(the ADR-002/ADR-008 honesty rule):
 
-| State | Meaning |
-|---|---|
-| `guard` | guard mechanically checks it (`detection` is `command` or `file-op`) |
-| `tool-omission` | guard does NOT parse for it; the class is whole-tool, so a runtime with a tool allow-list enforces it by omitting the tool — the **adapter's** enforcement, not guard's |
-| `instructed` | nothing checks it (`open_pr`, `run_tests`, by design) |
+| State | Meaning | `label` |
+|---|---|---|
+| `guard` | guard mechanically checks it (`detection` is `command` or `file-op`) | `enforced` |
+| `adapter-dependent` | guard does NOT parse for it; the class is whole-tool, so a runtime with a tool allow-list *could* enforce it by omitting the tool — but **no adapter baron ships does** | `instructed` |
+| `instructed` | nothing checks it (`open_pr`, `run_tests`, by design) | `instructed` |
 
-`label` collapses the first two to `enforced` for callers wanting a binary; `enforcement`
-is the field to trust.
+`read_code` and `read_collab` are the `adapter-dependent` pair. The pydantic-ai adapter
+constructs `FileSystem` unconditionally, so a persona that *denies* `read_code` still gets
+`read_file` / `list_directory` / `search_files`. Calling that "enforced by tool omission"
+would be a claim about what a runtime could in principle do, printed as a fact about what
+baron does — so it labels `instructed`, and a test that hydrates such a persona and
+inspects the toolset is what gates the label.
+
+`--json` carries the qualifier in the payload (`label_caveat` at the top level, `caveat` on
+each affected verb), not only in the table footer.
+
+**Refuse, don't ignore.** The parser enumerates the keys and rules a document actually
+carries and refuses any it does not implement — an unrecognised key, a rule this baron does
+not implement, an unknown `matcher` (or one other than the matcher guard implements for
+that rule), a missing built-in rule. Silently dropping an unrecognised rule is the worst
+failure mode an enforcement artifact has: the document says a thing is blocked and nothing
+blocks it. Each command rule states its `matcher` in the document; the field is optional
+but authoritative — absent it defaults to guard's, present it is validated, never trusted.
 
 ## Project-level custom rules — NOT loaded (yet)
 

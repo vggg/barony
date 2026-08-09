@@ -12,6 +12,7 @@ from dataclasses import replace
 from importlib.resources import files
 from pathlib import Path
 
+import pytest
 import yaml
 
 from baron import guard, rules
@@ -227,16 +228,52 @@ def test_duplicate_rule_ids_are_refused() -> None:
         raise AssertionError("duplicate rule ids were accepted")
 
 
-def test_enforcement_labels_are_honest() -> None:
-    """Three states, not two — a whole-tool verb guard does not parse is
-    enforced by the ADAPTER (tool omission), which is not guard's claim."""
+def test_only_guard_checked_verbs_are_labelled_enforced() -> None:
+    """`enforced` is claimed for a verb IFF guard mechanically checks it.
+
+    Derived from `detection`, which is the only property of the artifact that
+    corresponds to code that actually runs. The previous version of this test
+    pinned the enforcement constants against themselves, which is why it
+    green-lit labelling `read_code` as `enforced` — a claim
+    `test_denying_read_code_does_not_omit_read_tools` (in test_pydantic_ai.py)
+    measures to be false.
+    """
     loaded = rules.load_rules()
-    assert loaded.enforcement("force_push") == rules.ENFORCEMENT_GUARD
-    assert loaded.label("force_push") == "enforced"
-    assert loaded.enforcement("read_code") == rules.ENFORCEMENT_TOOL_OMISSION
-    assert loaded.enforcement("open_pr") == rules.ENFORCEMENT_INSTRUCTED
-    assert loaded.label("open_pr") == "instructed"
-    assert loaded.label("run_tests") == "instructed"
+    for verb, entry in loaded.verbs.items():
+        guard_checks = entry.get("detection", "none") != "none"
+        assert loaded.label(verb) == ("enforced" if guard_checks else "instructed"), (
+            f"{verb}: detection={entry.get('detection')!r} but "
+            f"label={loaded.label(verb)!r}"
+        )
+        assert (loaded.enforcement(verb) == rules.ENFORCEMENT_GUARD) is guard_checks
+
+    # Every verb guard checks must be reachable by at least one rule OR by the
+    # file-op precedence chain (write_code / write_path are decided by the
+    # chain as a whole, not by a single named rule).
+    chain_decided = {"write_code", "write_path"}
+    for verb, entry in loaded.verbs.items():
+        if entry.get("detection") == "command":
+            assert [r for r in loaded.rules if r.verb == verb], f"{verb}: no rule"
+        elif entry.get("detection") == "file-op" and verb not in chain_decided:
+            assert [r for r in loaded.rules if r.verb == verb], f"{verb}: no rule"
+
+
+def test_adapter_dependent_verbs_are_qualified_not_claimed() -> None:
+    """A verb no shipped enforcer checks must carry the caveat, not a claim."""
+    loaded = rules.load_rules()
+    adapter_dependent = [
+        v for v in loaded.verbs if loaded.enforcement(v) == rules.ENFORCEMENT_ADAPTER_DEPENDENT
+    ]
+    # These are the whole-tool/no-detection verbs; if this set ever empties or
+    # grows, the caveat text in rules.LABEL_CAVEAT needs re-measuring.
+    assert adapter_dependent == ["read_code", "read_collab"]
+    for verb in adapter_dependent:
+        assert loaded.label(verb) == "instructed"
+        assert loaded.caveat(verb) == rules.LABEL_CAVEAT
+    for verb in ("force_push", "open_pr", "write_code"):
+        assert loaded.caveat(verb) == ""
+    assert "read_code" in rules.LABEL_CAVEAT
+    assert "pydantic-ai" in rules.LABEL_CAVEAT
 
 
 # --- version / vocabulary negotiation --------------------------------------------------
@@ -263,6 +300,97 @@ def test_parse_text_refuses_an_unknown_vocabulary() -> None:
         raise AssertionError("an unknown vocabulary was accepted")
 
 
+#: Every substitution below turns the SHIPPED artifact into a document the
+#: parser must refuse. Reachability is the point: before ADR-016's round-2 fix
+#: the closed-matcher check could only fire against a developer edit to the
+#: builtin table, and an added rule was silently discarded.
+REFUSED_DOCUMENTS: dict[str, tuple[str, str, str]] = {
+    # name: (find, replace, expected fragment of the refusal)
+    "added rule": (
+        "        plus_refspec:",
+        "        evil_new_rule:\n"
+        "          verb: force_push\n"
+        "          matcher: flag_present\n"
+        '          flags: ["--sneaky"]\n'
+        "        plus_refspec:",
+        "evil_new_rule",
+    ),
+    "unknown matcher": (
+        "matcher: flag_present",
+        "matcher: totally_bogus_matcher",
+        "unknown matcher",
+    ),
+    "matcher guard does not implement for that rule": (
+        "matcher: flag_present",
+        "matcher: subcommand_present",
+        "guard implements",
+    ),
+    "unknown top-level key": (
+        "rules_version: 1",
+        "rules_version: 1\nsneaky: true",
+        "'sneaky'",
+    ),
+    "unknown verb-entry key": (
+        "    class: whole-tool",
+        "    class: whole-tool\n    enforced: true",
+        "'enforced'",
+    ),
+    "unknown file_ops key": (
+        '  spec_dir_component: "agents"',
+        '  spec_dir_component: "agents"\n  evil_scope: ["/"]',
+        "'evil_scope'",
+    ),
+    "unknown command program": (
+        "  gh:\n",
+        "  kubectl:\n    rules: {}\n  gh:\n",
+        "'kubectl'",
+    ),
+    "removed built-in rule": (
+        "        plus_refspec:\n"
+        "          verb: force_push\n"
+        "          matcher: refspec_prefix\n"
+        '          prefix: "+"\n',
+        "",
+        "omits built-in rule",
+    ),
+    "rule missing a required parameter": (
+        '          flags: ["--all", "--branches", "--mirror"]\n',
+        "",
+        "missing required key",
+    ),
+}
+
+
+@pytest.mark.parametrize("name", sorted(REFUSED_DOCUMENTS))
+def test_unrecognised_document_content_is_refused_not_ignored(name: str) -> None:
+    """ADR-016 §5.4 refuse-don't-ignore, exercised from DOCUMENT input.
+
+    Silently dropping an unrecognised rule is the worst failure mode an
+    enforcement artifact has: the document says a thing is blocked and nothing
+    blocks it.
+    """
+    find, replace, expected = REFUSED_DOCUMENTS[name]
+    doctored = _artifact_text().replace(find, replace, 1)
+    assert doctored != _artifact_text(), f"{name}: substitution did not apply"
+    try:
+        rules.parse_text(doctored, origin=name)
+    except rules.RulesError as exc:
+        assert expected in str(exc), f"{name}: {exc}"
+    else:  # pragma: no cover - the assertion above must fire
+        raise AssertionError(f"{name} was accepted")
+
+
+def test_matcher_is_optional_but_authoritative() -> None:
+    """A document may omit `matcher` (it then gets the one guard implements);
+    if it states one, it is validated rather than trusted."""
+    without = _artifact_text().replace("          matcher: flag_present\n", "", 1)
+    assert without != _artifact_text()
+    parsed = rules.parse_text(without, origin="no-matcher")
+    # Identical to the shipped table: the omitted field defaults to guard's.
+    assert parsed == rules.load_rules()
+    assert parsed.rule(rules.RULE_PUSH_FORCE_FLAGS).matcher == rules.MATCHER_FLAG_PRESENT
+
+
 def test_parse_file_refuses_unparseable_yaml(tmp_path: Path) -> None:
     bad = tmp_path / "rules.yaml"
     bad.write_text("rules_version: [1\n", encoding="utf-8")
@@ -281,6 +409,64 @@ def test_parse_file_reports_a_missing_file(tmp_path: Path) -> None:
         assert "cannot read rules file" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("a missing rules file was accepted")
+
+
+# --- diff_rules: the branches no DOCUMENT can reach ------------------------------------
+# `rules diff`'s added/removed branches cannot fire from a document today: the
+# builtin rule set is closed and every slot is mandatory, so an extra rule is
+# refused at parse time and a missing one is too (see REFUSED_DOCUMENTS). Every
+# CLI diff fixture is therefore a *substitution* on the packaged artifact — which
+# is exactly the hole that let an added rule go unnoticed. These exercise the
+# branches directly against constructed values so the renderer is not the only
+# thing standing between the loader (ADR-016 §5) and a wrong diff.
+
+
+def _plus_rule(loaded: rules.CapabilityRules, rule: rules.CommandRule) -> rules.CapabilityRules:
+    return replace(loaded, command_rules=(*loaded.command_rules, rule))
+
+
+def test_diff_rules_detects_an_added_rule() -> None:
+    base = rules.load_rules()
+    extra = rules.CommandRule(
+        id="gh.release_delete",
+        program="gh",
+        subcommand=("release", "delete"),
+        matcher=rules.MATCHER_SUBCOMMAND_PRESENT,
+        verb="merge_pr",
+        source="project",
+    )
+    delta = rules.diff_rules(base, _plus_rule(base, extra))
+    assert delta["rules_added"] == ["gh.release_delete"]
+    assert delta["rules_removed"] == []
+    assert delta["rules_changed"] == []
+    assert delta["header"] == []
+    # ...and the reverse direction reports it as a removal.
+    reverse = rules.diff_rules(_plus_rule(base, extra), base)
+    assert reverse["rules_removed"] == ["gh.release_delete"]
+    assert reverse["rules_added"] == []
+
+
+def test_diff_rules_detects_changed_rules_verbs_and_header() -> None:
+    base = rules.load_rules()
+    other = replace(
+        base,
+        ambiguity_policy="permissive",
+        verbs={**base.verbs, "wild_verb": {"class": "sub-tool", "detection": "none"}},
+        command_rules=tuple(
+            replace(r, verb="push_main") if r.id == rules.RULE_GH_PR_MERGE else r
+            for r in base.command_rules
+        ),
+    )
+    delta = rules.diff_rules(base, other)
+    assert delta["rules_changed"] == [rules.RULE_GH_PR_MERGE]
+    assert delta["verbs_added"] == ["wild_verb"]
+    assert delta["verbs_removed"] == []
+    assert any("ambiguity_policy" in line for line in delta["header"])
+
+
+def test_diff_rules_is_empty_for_identical_tables() -> None:
+    base = rules.load_rules()
+    assert not any(rules.diff_rules(base, base).values())
 
 
 def test_guard_reads_packaged_data_only() -> None:

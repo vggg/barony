@@ -568,17 +568,22 @@ def _verb_rows(loaded: rules_mod.CapabilityRules) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for verb in CAPABILITY_VERBS:
         entry = loaded.verbs.get(verb, {})
-        rows.append(
-            {
-                "verb": verb,
-                "class": entry.get("class", ""),
-                "detection": entry.get("detection", "none"),
-                "enforcement": loaded.enforcement(verb),
-                "label": loaded.label(verb),
-                "rules": _rules_for_verb(loaded, verb),
-                "notes": entry.get("notes", "").strip(),
-            }
-        )
+        row: dict[str, object] = {
+            "verb": verb,
+            "class": entry.get("class", ""),
+            "detection": entry.get("detection", "none"),
+            "enforcement": loaded.enforcement(verb),
+            "label": loaded.label(verb),
+            "rules": _rules_for_verb(loaded, verb),
+            "notes": entry.get("notes", "").strip(),
+        }
+        # The qualifier travels WITH the row, not just in a human-readable
+        # footer: machine consumers are the ones most likely to trust `label`
+        # unread. Absent when the label needs no qualifying.
+        caveat = loaded.caveat(verb)
+        if caveat:
+            row["caveat"] = caveat
+        rows.append(row)
     return rows
 
 
@@ -592,41 +597,46 @@ def rules_list(
     """List the verb table: class, detection modality, and the honest label.
 
     `enforcement` is three-state on purpose (ADR-002 honesty rule):
-    `guard` = guard mechanically checks it; `tool-omission` = guard does NOT
-    parse for it, the runtime ADAPTER enforces it by omitting the tool (only
-    real on a runtime with an allow-list); `instructed` = nothing checks it,
-    the denial is prose in the persona body. `label` collapses the first two
-    to `enforced`.
+    `guard` = guard mechanically checks it; `adapter-dependent` = guard does
+    NOT parse for it and neither does any adapter baron ships, though a runtime
+    with a tool allow-list could; `instructed` = nothing checks it, the denial
+    is prose in the persona body.
+
+    `label` says `enforced` ONLY for `guard`. `adapter-dependent` labels
+    `instructed` because nothing baron ships enforces it — see the `caveat`
+    field (JSON) or the footer (table).
     """
     loaded = _load_rules_or_exit(file)
     rows = _verb_rows(loaded)
+    qualified = [row for row in rows if row.get("caveat")]
     if json_out:
-        _echo_json(
-            {
-                "rules_version": loaded.rules_version,
-                "vocabulary": loaded.vocabulary,
-                "ambiguity_policy": loaded.ambiguity_policy,
-                "verbs": rows,
-            }
-        )
+        payload: dict[str, object] = {
+            "rules_version": loaded.rules_version,
+            "vocabulary": loaded.vocabulary,
+            "ambiguity_policy": loaded.ambiguity_policy,
+            # Document-level too, so a consumer reading only the envelope still
+            # sees what `label` does and does not promise.
+            "label_caveat": rules_mod.LABEL_CAVEAT,
+            "verbs": rows,
+        }
+        _echo_json(payload)
         return
     typer.echo(
         f"capability-rules v{loaded.rules_version} "
         f"({loaded.vocabulary}, ambiguity: {loaded.ambiguity_policy})"
     )
-    typer.echo(f"{'VERB':<21}{'CLASS':<12}{'DETECTION':<11}{'ENFORCEMENT':<15}LABEL")
+    typer.echo(f"{'VERB':<21}{'CLASS':<12}{'DETECTION':<11}{'ENFORCEMENT':<19}LABEL")
     for row in rows:
         typer.echo(
             f"{row['verb']:<21}{row['class']:<12}{row['detection']:<11}"
-            f"{row['enforcement']:<15}{row['label']}"
+            f"{row['enforcement']:<19}{row['label']}"
         )
         rule_ids = row["rules"]
         if rule_ids:
             typer.echo(f"{'':<21}rules: {', '.join(rule_ids)}")  # type: ignore[arg-type]
-    typer.echo(
-        "note: `tool-omission` is the runtime adapter's enforcement, not guard's — "
-        "guard does not parse for those verbs."
-    )
+    if qualified:
+        verbs = ", ".join(str(row["verb"]) for row in qualified)
+        typer.echo(f"\nnote ({verbs}): {rules_mod.LABEL_CAVEAT}")
 
 
 @rules_app.command("validate")
@@ -644,10 +654,13 @@ def rules_validate(
 ) -> None:
     """Parse a rules artifact and report the negotiation + integrity checks.
 
-    Exit 0 clean, 1 if a check fails, 2 if the document is refused outright
-    (unreadable, not YAML, unknown `rules_version`/`vocabulary`, unknown
-    matcher, duplicate rule id) — the same refusal guard turns into a
-    fail-closed DENY.
+    Exit 0 clean, 1 if a check fails, 2 if the document is refused outright —
+    the same refusal guard turns into a fail-closed DENY. A document is refused
+    when it is unreadable, not YAML, names an unsupported
+    `rules_version`/`vocabulary`, carries a key or a rule this baron does not
+    implement, names an unknown matcher (or one other than the matcher guard
+    implements for that rule), or omits a built-in rule. Unrecognised content is
+    never dropped silently.
     """
     loaded = _load_rules_or_exit(file)
     origin = file.as_posix() if file is not None else f"packaged {rules_mod.RULES_RESOURCE}"
@@ -697,12 +710,27 @@ def rules_validate(
     check(
         "matchers known",
         True,
-        "every rule names a matcher guard implements (parser-enforced)",
+        f"{len(loaded.command_rules)} command rules name a matcher in the closed "
+        "set AND the one guard implements (parser-enforced, from the document); "
+        "path-rule matchers are structural, not document-supplied",
+    )
+    check(
+        "no unrecognised content",
+        True,
+        "every key and rule in the document is one this baron implements "
+        "(parser-enforced: unknown content is refused, never ignored)",
     )
 
     failed = [c for c in checks if not c["ok"]]
     if json_out:
-        _echo_json({"source": origin, "ok": not failed, "checks": checks})
+        _echo_json(
+            {
+                "source": origin,
+                "ok": not failed,
+                "checks": checks,
+                "label_caveat": rules_mod.LABEL_CAVEAT,
+            }
+        )
     else:
         typer.echo(f"source: {origin}")
         for c in checks:
@@ -724,44 +752,32 @@ def rules_diff(
     """Diff a candidate rules document against the packaged artifact.
 
     Joins on rule id. Exit 0 if identical, 1 if they differ, 2 if either side
-    is refused. A clean diff is NOT an adoption path: baron still loads only
-    the packaged artifact (ADR-016 §5).
+    is refused. A candidate carrying a rule or key this baron does not
+    implement is REFUSED (exit 2), not reported as an addition — so `identical`
+    can never be printed over content that was quietly dropped.
+
+    A clean diff is NOT an adoption path: baron still loads only the packaged
+    artifact (ADR-016 §5).
     """
     base = _load_rules_or_exit(None)
     other = _load_rules_or_exit(file)
 
     base_rules = {rule.id: rule for rule in base.rules}
     other_rules = {rule.id: rule for rule in other.rules}
-    added = sorted(set(other_rules) - set(base_rules))
-    removed = sorted(set(base_rules) - set(other_rules))
-    changed = sorted(
-        rid for rid in set(base_rules) & set(other_rules) if base_rules[rid] != other_rules[rid]
-    )
-    verbs_added = sorted(set(other.verbs) - set(base.verbs))
-    verbs_removed = sorted(set(base.verbs) - set(other.verbs))
-    header: list[str] = []
-    if base.rules_version != other.rules_version:
-        header.append(f"rules_version {base.rules_version} -> {other.rules_version}")
-    if base.vocabulary != other.vocabulary:
-        header.append(f"vocabulary {base.vocabulary} -> {other.vocabulary}")
-    if base.ambiguity_policy != other.ambiguity_policy:
-        header.append(
-            f"ambiguity_policy {base.ambiguity_policy} -> {other.ambiguity_policy}"
-        )
+    delta = rules_mod.diff_rules(base, other)
+    header = delta["header"]
+    added = delta["rules_added"]
+    removed = delta["rules_removed"]
+    changed = delta["rules_changed"]
+    verbs_added = delta["verbs_added"]
+    verbs_removed = delta["verbs_removed"]
 
     payload = {
         "base": f"packaged {rules_mod.RULES_RESOURCE}",
         "candidate": file.as_posix(),
-        "header": header,
-        "rules_added": added,
-        "rules_removed": removed,
-        "rules_changed": changed,
-        "verbs_added": verbs_added,
-        "verbs_removed": verbs_removed,
+        **delta,
     }
-    differs = bool(
-        header or added or removed or changed or verbs_added or verbs_removed
-    )
+    differs = any(delta.values())
     if json_out:
         _echo_json({**payload, "identical": not differs})
     elif not differs:
@@ -838,15 +854,18 @@ def rules_explain(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2)
 
-    verbs = [
-        {
+    verbs = []
+    for verb in decision.verbs:
+        entry: dict[str, object] = {
             "verb": verb,
             "enforcement": loaded.enforcement(verb),
             "label": loaded.label(verb),
             "candidate_rules": _rules_for_verb(loaded, verb),
         }
-        for verb in decision.verbs
-    ]
+        caveat = loaded.caveat(verb)
+        if caveat:
+            entry["caveat"] = caveat
+        verbs.append(entry)
     if json_out:
         _echo_json(
             {

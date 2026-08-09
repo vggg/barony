@@ -330,17 +330,25 @@ baron rules explain 'git push --force origin main' --persona-file agents/dev/per
 baron rules explain agents/other/persona.yaml --write --persona-file agents/dev/persona.yaml
 ```
 
-- **`list`** reports enforcement in **three** states, not two: `guard` (guard
-  mechanically checks it), `tool-omission` (guard does NOT parse for it — a
-  runtime with a tool allow-list enforces it by omitting the tool, which is the
-  *adapter's* enforcement, not guard's), `instructed` (nothing checks it —
-  `open_pr`, `run_tests`). `label` collapses the first two to `enforced`;
-  `enforcement` is the field to trust.
+- **`list`** reports enforcement in **three** states, but only one of them is
+  `enforced`: `guard` (guard mechanically checks it → `enforced`),
+  `adapter-dependent` (guard does NOT parse for it; a runtime with a tool
+  allow-list *could* enforce it by omitting the tool, but no adapter baron ships
+  does → `instructed`), `instructed` (nothing checks it — `open_pr`,
+  `run_tests`). `read_code` / `read_collab` are the `adapter-dependent` pair:
+  the pydantic-ai adapter builds `FileSystem` unconditionally, so a persona
+  denying `read_code` still gets the read tools. `--json` carries the qualifier
+  in the payload (`label_caveat`, plus `caveat` per affected verb), not just the
+  table footer.
 - **`validate`** exits 0 clean, 1 if a check fails, **2 if the document is
   refused outright** — unreadable, not YAML, unknown `rules_version` or
-  `vocabulary`, unknown matcher, duplicate rule id. That refusal is the same one
-  guard turns into a fail-closed DENY.
-- **`diff`** exits 0 identical / 1 differs / 2 refused.
+  `vocabulary`, a rule or key this baron does not implement, an unknown matcher
+  (or one other than the matcher guard implements for that rule), a missing
+  built-in rule. That refusal is the same one guard turns into a fail-closed
+  DENY. Unrecognised content is never dropped silently.
+- **`diff`** exits 0 identical / 1 differs / 2 refused. A candidate carrying a
+  rule this baron does not implement is **refused**, not reported as an
+  addition — `identical` can never be printed over content that was discarded.
 - **`explain`** is a **dry run of the real decision**: it calls
   `guard.evaluate_bash` / `guard.evaluate_write`, not a reimplementation, and a
   test pins its verdict to the evaluator's `Decision` so the two cannot drift.

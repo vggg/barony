@@ -22,6 +22,7 @@ related:
 | **Extends** | [ADR-004](ADR-004-baron-guard-enforcement.md) §2.2 and addendum §4.1 (the rules artifact) |
 | **Answers** | `docs/BACKLOG.md` § *Considered directions → User-extensible guard rules* (2026-07-28) — the **cheap** half, in two steps, of which this is step 1 |
 | **Does NOT decide** | Whether projects may define their own verbs (§6.1), or the project-rules loader's precedence semantics (§5) |
+| **Revised** | 2026-08-09 (round 2) — §3.2, §4.1 and §7 corrected after review. Three claims in the first draft overstated what was mechanised: the closed-matcher refusal was unreachable from document input, `read_code`/`read_collab` were labelled `enforced` on the strength of an adapter behaviour that does not exist, and §7 counted two new document-reachable refusals where there was one. Corrections are marked inline. |
 
 ## 1. Summary
 
@@ -40,7 +41,9 @@ This ADR decides two things and deliberately defers a third:
    and `path_rules: tuple[PathRule, ...]`, each rule carrying a stable `id`, a
    `matcher` from a closed set, a `verb`, and a `source` provenance tag. Every
    pre-existing flat name survives as a derived read-only property with the
-   identical name and type.
+   identical name and type. The parser reads rule ids and command-rule matchers
+   **from the document** and refuses any key or rule it does not implement
+   (§3.2).
 2. **A `baron rules` command surface** — `list`, `validate`, `diff`, `explain`.
    Diagnostic and read-only. `explain` is a *dry run of the real decision*: it
    calls `guard.evaluate_bash` / `guard.evaluate_write`, so it cannot drift from
@@ -104,16 +107,50 @@ The eight built-in rules are
 `git.push.default_branch_target`, `git.merge.on_default_branch`, `gh.pr_merge`,
 `file_ops.universal_write`, `file_ops.spec_dir`.
 
-### 3.2 The matcher set is CLOSED
+### 3.2 The matcher set is CLOSED, and the document names its matcher
 
 `flag_present`, `refspec_prefix`, `refspec_default_branch`,
-`current_branch_is_default`, `subcommand_present`, `universal_write`,
-`spec_dir`. A rule naming a matcher outside the set is **refused at parse
-time**, because it is a rule no consumer can honestly enforce — accepting it
-would print an `enforced` label over nothing. This is the closed half of the
-BACKLOG's cheap/expensive split made mechanical: adding a matcher (file size,
-time window, rate limit, anything semantic) is new detection code in
-`guard.py`, gated on observed need per vocabulary design rule 4.
+`current_branch_is_default`, `subcommand_present` (command rules);
+`universal_write`, `spec_dir` (path rules). Adding a matcher (file size, time
+window, rate limit, anything semantic) is new detection code in `guard.py`,
+gated on observed need per vocabulary design rule 4 — this is the closed half
+of the BACKLOG's cheap/expensive split made mechanical.
+
+**Command rules carry `matcher` in the document.** Each rule in
+`capability-rules.v1.yaml` states the matcher it is checked with, and the
+parser validates it two ways:
+
+1. it must be in the closed set — otherwise no consumer can enforce it, and
+   accepting it would print an `enforced` label over nothing;
+2. it must be *the matcher guard actually implements for that rule id* — a
+   document that says `force_flags` is matched by `subcommand_present` is
+   describing a check nobody performs, which is the same lie one layer down.
+
+The field is **optional but authoritative**: absent, the rule gets guard's
+matcher (so a v1 document written before this change still parses identically,
+and the grammar did not break under a fixed version number); present, it is
+validated, never trusted.
+
+**Rule ids come from the document too** — a rule's id is its position,
+`commands.git.push.rules.<key>` → `git.push.<key>`. The parser enumerates the
+keys the document actually carries and refuses any it does not implement (§5.4
+applied to the artifact itself), so the id space is closed by the same
+mechanism that closes the rule set.
+
+**Honest limit.** Path-rule matchers are **not** document-supplied. `file_ops`
+is a flat block (`universal_write_components`, `spec_dir_component`) whose keys
+name the scoping semantics directly; there is nowhere for a document to state a
+matcher and so nothing for it to get wrong. The closed-set check over
+`PATH_MATCHERS` is therefore a developer-edit guard, and is labelled as one in
+the code rather than counted as document validation.
+
+*Round-2 correction.* As first shipped, `matcher` and `id` were hardcoded in
+the parser and the closed-set check was unreachable from any document — it
+could only fire against a developer edit to the builtin table. The claim
+"a rule naming a matcher outside the set is refused at parse time" was true of
+the code path and false of the user-facing behaviour. It is now true of both,
+and `test_unrecognised_document_content_is_refused_not_ignored` exercises it
+from document input.
 
 Contrast with the event-`kind` decision taken elsewhere in this hardening round
 (open dotted string): that is an OBSERVATION namespace where an unrecognised
@@ -154,20 +191,48 @@ asserts the pair agrees. Moving it into the artifact is a v2 change.
 | `rules diff --file <candidate> [--json]` | Join a candidate document against the packaged artifact on rule id | 0 identical / 1 differs / 2 refused |
 | `rules explain <target> --persona-file <p> [--write] [--cwd] [--json]` | What guard would decide for one call, and why | 0 would pass / 1 would be DENIED / 2 guard could not evaluate |
 
-### 4.1 Three-state enforcement labelling, not two
+### 4.1 Three-state enforcement, but only ONE of them is `enforced`
 
-The house rule is that enforcement is honestly labelled. Two states are not
-enough to be honest here, so `rules list` reports three:
+The house rule is that enforcement is honestly labelled. `rules list` reports
+three states for *who could* enforce a verb:
 
 - **`guard`** — guard mechanically checks it (`detection` is `command` or `file-op`).
-- **`tool-omission`** — guard does NOT parse for it, but the class is
-  whole-tool, so a runtime with a tool allow-list enforces it by omitting the
-  tool. That is the *adapter's* enforcement, not guard's, and it is only real
-  on a runtime that has an allow-list. The table prints that caveat as a footer.
+- **`adapter-dependent`** — guard does NOT parse for it, but the class is
+  whole-tool, so a runtime with a tool allow-list *could* enforce it by omitting
+  the tool. Whether any adapter does is a property of that adapter, not of this
+  table.
 - **`instructed`** — nothing checks it. `open_pr` and `run_tests`, by design.
 
-`label` collapses the first two to `enforced` for the callers that want a
-binary, but `enforcement` is the field to trust.
+**`label` says `enforced` only for `guard`.** `adapter-dependent` labels
+`instructed`, because no adapter baron ships enforces it.
+
+*Round-2 correction — this ADR previously got this wrong.* The third state was
+called `tool-omission` and `label` collapsed it to `enforced`, so
+`baron rules list` claimed `read_code` and `read_collab` were enforced. They are
+not. The pydantic-ai adapter baron ships constructs `FileSystem`
+unconditionally (`# FileSystem: always present (reads)`) and
+`BaronGuardCapability.check` returns `None` for every read tool, so a persona
+that *denies* `read_code` still gets `read_file`, `list_directory`,
+`search_files`, `find_files` and `file_info`. The claim was reasoning from the
+vocabulary's enforceability *class* — what a runtime could in principle do —
+and printing it as a fact about what baron does. That is exactly the failure
+mode ADR-002 exists to prevent, and the project's measured 0.53 operational
+fidelity is what it looks like at scale.
+
+The fix is not just a renamed constant. The label is now **gated by a
+measurement**: `test_denying_read_code_does_not_omit_read_tools` hydrates a
+persona denying `read_code` through `pydantic_ai.plan()`, asserts the read tools
+are present on the toolset and that the in-process guard vetoes none of them,
+and *then* asserts the label is `instructed`. If an adapter ever does omit read
+tools, that assertion fails first and the label follows it — never the reverse.
+`test_only_guard_checked_verbs_are_labelled_enforced` independently derives the
+expected label from `detection` for every verb, so no verb can be labelled
+`enforced` without guard detection behind it.
+
+The qualifier travels in the **JSON payload**, not only the human table: a
+top-level `label_caveat` plus a per-row `caveat` on the affected verbs. Machine
+consumers are the ones most likely to trust `label` unread, and a footer printed
+by the text renderer never reaches them.
 
 ### 4.2 `explain` reuses the real evaluators
 
@@ -254,16 +319,42 @@ set (§3.2) is what keeps this decision explicit instead of accidental.
   decision inspectable without constructing a hook payload by hand.
 - `diff` gives a project a way to see exactly how a candidate rules document
   departs from the shipped one — the review surface the loader will need.
-- Two new parse-time refusals that did not exist: unknown `vocabulary`, and
-  duplicate rule id. Both are fail-closed, consistent with ADR-004 §2.3.
+- New parse-time refusals, all fail-closed and consistent with ADR-004 §2.3.
+  Reachable **from document input**, which is the only kind that counts:
+  unknown `vocabulary`; a rule the parser does not implement; a key the parser
+  does not recognise (top level, `verbs.<verb>`, `commands.*`, `file_ops`); an
+  unknown matcher; a matcher other than the one guard implements for that rule;
+  a missing built-in rule; a rule missing a required parameter.
+  `test_unrecognised_document_content_is_refused_not_ignored` covers each.
+
+  *Round-2 correction.* This section previously claimed "two new parse-time
+  refusals … unknown `vocabulary`, and duplicate rule id". That was one, not
+  two. The duplicate-rule-id check is a `__post_init__` invariant on
+  `CapabilityRules` reachable only via `dataclasses.replace()` — ids were
+  hardcoded, so no document could produce a duplicate. It is still a real
+  invariant (and still tested, by `test_duplicate_rule_ids_are_refused`), but it
+  guards the deferred loader and developer edits, not user input. Only the
+  unknown-`vocabulary` refusal was document-reachable as shipped.
 
 **Costs and limits.**
-- `rules.py` more than tripled in size (160 → 526 lines) for zero behaviour
-  change. That is the price of a shape that can grow; it is paid once.
+- `rules.py` grew from 160 to ~720 lines for zero behaviour change. Roughly
+  half of that is the strict document grammar (§3.2) rather than the rule-list
+  shape itself. That is the price of a shape that can grow and a parser that
+  refuses what it cannot honour; it is paid once.
 - Each legacy accessor is now a dict lookup rather than an attribute read.
   Guard calls a handful per token over an eight-entry index; not measurable
   against the subprocess spawn the hook already costs.
 - `explain`'s rule attribution is by verb, not by matched instance (§4.2).
+- `diff`'s `rules_added` / `rules_removed` **cannot fire from a document**. The
+  built-in rule set is closed and every slot is mandatory, so a candidate with
+  an extra rule is refused and one with a rule missing is refused too. They
+  exist for the deferred loader (§5) and are exercised by unit tests over
+  constructed `CapabilityRules` values (`test_diff_rules_detects_an_added_rule`),
+  not by a document fixture. The diff computation was extracted to
+  `rules.diff_rules()` — a pure function — precisely so those branches are
+  testable without a document that cannot exist. This gap is what let the
+  round-1 hole survive: every CLI diff fixture was a *string substitution* on
+  the packaged artifact, so no test ever added a rule.
 - `rules list` shows no rule ids for `write_code` / `write_path`: those are
   decided by the whole file-op precedence chain in `guard.py`, not by one named
   rule. The `notes` field carries the explanation; the table does not.
