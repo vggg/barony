@@ -399,7 +399,9 @@ backed it. Recorded rather than quietly fixed, per ADR-002/ADR-008.
   Only **pydantic-ai** was measured; the `claude` and `code-puppy` kits are prompt/config
   templates whose tool exposure belongs to the host runtime and is **unmeasured**. The label
   is unchanged (absent a measurement, `instructed` is the honest default) but the reason is
-  now "unmeasured", not a claim about untested code.
+  now "unmeasured", not a claim about untested code. *(Superseded later in this same
+  release by ADR-020 — the other three adapters were measured and the "unmeasured" scoping
+  is retired. See the ADR-020 entry below.)*
 - **The circular label test is replaced.** `test_only_guard_checked_verbs_are_labelled_enforced`
   derived its expectation from `detection` — the field under test — and ran only against
   `load_rules()`, so it restated the document back to itself and green-lit the
@@ -510,6 +512,72 @@ failure mode of that note (its own CORRECTIONS block, ¶2).
   in the repo or the evaluation, and the vocabulary's design rule 4 / ADR-004 §2.2 make
   observed need the trigger. `capability-rules.v1.yaml` is unchanged and `rules_version`
   stays 1.
+
+### Changed — the read-verb posture label now rests on FOUR measured adapters ([ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md))
+
+The owner's **D3 decision**, executed. `baron rules list` printed `instructed` for
+`read_code` / `read_collab` on the strength of one measurement (`pydantic-ai`) while
+speaking for four adapters; ADR-016 §4.1's round-3 wording admitted this by calling the
+other three **unmeasured**. Honest, and a stopping point rather than a resting place —
+prose saying "the others are unmeasured" fails no test when a fifth adapter lands.
+
+**The printed label does not change.** What changes is that the evidence is now the same
+size as the claim.
+
+- **Three new static emission measurements.** `claude`, `code-puppy` and `generic` each get
+  one: baron is handed two persona specs identical but for the two read verbs, generates a
+  runtime kit from each, and the kits are inspected for any construct a runtime reads as a
+  tool allow/deny list. `claude` emits exactly one machine-readable artifact
+  (`.claude/settings.json`) and every key at every depth is hook wiring — no `permissions`,
+  no `allowedTools`/`disallowedTools`, no `.claude/agents/<slug>.md` subagent, and no
+  repo-level `.claude/` either. `code-puppy` and `generic` emit no machine-readable
+  artifact at all. In every case the machine-readable surface is **byte-identical across
+  the A/B pair** while the prose carries the denial: nothing baron emits is even a function
+  of the denial, which is what `instructed` means.
+- **Why this was cheap, when ADR-016 §8 costed it as "a larger piece of work".** The
+  needed direction is negative, and negatives here are static: proving baron emits no
+  enforcement mechanism is an inspection of what `baron init` generates. Only proving one
+  *exists* would have needed a live runtime.
+- **`pydantic-ai` keeps its live gate, untouched.** Its kit is executable Python, so the
+  harness refuses to clear it statically and names
+  `test_denying_read_code_does_not_omit_read_tools` instead. A harness that quietly cleared
+  it would be manufacturing the fourth measurement rather than making it.
+- **`rules.READ_VERB_MEASUREMENTS`** — one entry per shipped adapter, naming the evidence
+  and the test behind it. `LABEL_CAVEAT` is built **from** it, so the published caveat
+  cannot drift from the measurements, and a test asserts the keys equal
+  `scaffold.ADAPTERS`: **a fifth adapter breaks the label's basis until it is measured.**
+  That is the anti-drift lock the round-3 wording structurally could not provide.
+- **The honest bound is published with the label**: the measured claim is *baron emits no
+  mechanism capable of omitting the read tools*, **not** *the runtime cannot enforce them*.
+  A hand-written `permissions.deny`, or the Tier-3 subagent the `claude` and `code-puppy`
+  HYDRATE.md recipes describe, does enforce them — and is outside what `baron rules list`
+  speaks for. Those HYDRATE tables still print `enforced` for the read verbs and are **not
+  wrong**: they describe an artifact a human hand-authors, which baron never generates.
+  Recorded as a known divergence (ADR-020 §7), not resolved by editing one table to match
+  the other.
+- **Caveat rendering.** `--json` still publishes the full `LABEL_CAVEAT` (claim + all four
+  measurements) top-level and per row. The human table prints the new
+  `LABEL_CAVEAT_SUMMARY` — same claim, same bound, no evidence — then one
+  `measured — <adapter>: …` line each; a test asserts the summary is a literal prefix of
+  the full string so the short form can never soften into a paraphrase. Four measurements
+  inlined into one paragraph is a wall of text, and an unread caveat is the failure mode
+  the field exists to prevent.
+- **New reusable harness** `cli/tests/omission.py` — *does adapter X emit a mechanism
+  capable of omitting the tools that verb Y grants?* Keyed `(adapter, verb)` because the
+  per-runtime capability matrix is the planned follow-up and this is slice one. It applies
+  `rules.py`'s refuse-don't-ignore rule to emission: `KIT_ARTIFACTS` is a closed
+  classification of everything baron writes into a kit, and an unrecognised artifact fails
+  the assertion *before* any mechanism check. **Verified to fail** —
+  `test_the_harness_detects_a_mechanism_when_one_is_present` plants a `permissions.deny`
+  block, a Tier-3 subagent file and a code-puppy agent JSON into real generated kits and
+  asserts the probe fires on each.
+- **ADR-016 §8 D-1 is ticked APPROVED**, with the basis recorded as four measured adapters.
+  §4.1's round-3 scoping is superseded, and `DECISIONS-FOR-REVIEW.md` §D3 and §E.3 are
+  updated: §E.3 no longer says "three of four adapters are unmeasured" but states the
+  narrower bound that is actually true — no adapter's read-tool exposure is verified
+  against a *live* runtime, and three of the four measurements speak only for what baron
+  emits.
+- Suite: 386 → **393**.
 
 ## [1.10.0] — 2026-08-04
 

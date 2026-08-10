@@ -335,6 +335,13 @@ def test_adapter_dependent_verbs_are_qualified_not_claimed() -> None:
         assert loaded.caveat(verb) == ""
     assert "read_code" in rules.LABEL_CAVEAT
     assert "pydantic-ai" in rules.LABEL_CAVEAT
+    # ADR-020: the caveat is built FROM the per-adapter measurements, so it
+    # cannot drift from them, and it states the bound rather than the result
+    # alone (baron emits no mechanism ≠ the runtime cannot enforce it).
+    for adapter, why in rules.READ_VERB_MEASUREMENTS.items():
+        assert adapter in rules.LABEL_CAVEAT
+        assert why in rules.LABEL_CAVEAT
+    assert "baron emits no mechanism" in rules.LABEL_CAVEAT
 
 
 # --- version / vocabulary negotiation --------------------------------------------------

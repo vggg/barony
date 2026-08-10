@@ -229,15 +229,29 @@ three states for *who could* enforce a verb:
 **`label` says `enforced` only for `guard`.** `adapter-dependent` labels
 `instructed`, because no *measured* enforcement backs it.
 
-*Round-3 correction — the scope of that claim.* Round 2 wrote "no adapter baron
-ships does", which asserts a property of every adapter from a single
-instrumented test. Only **pydantic-ai** was measured, and it is the only
-in-process adapter baron ships; the `claude` and `code-puppy` kits are
-prompt/config templates (`adapters/*/HYDRATE.md`) whose tool exposure belongs to
-the host runtime and was not instrumented. `LABEL_CAVEAT` now names the measured
-adapter and calls the others unmeasured. The label is unchanged — absent a
-measurement, `instructed` is the honest default — but the *reason* is now
-"unmeasured", not a claim of fact about code nobody tested.
+*Round-4 correction — SUPERSEDED by ADR-020: the claim now rests on four
+measurements.* Round 2 wrote "no adapter baron ships does", asserting a property
+of every adapter from a single instrumented test. Round 3 narrowed that
+honestly: only **pydantic-ai** was measured, and the `claude` / `code-puppy`
+kits were called **unmeasured**. That scoping is now **obsolete**. ADR-020
+measured the other three by the cheap direction — proving the *absence* of a
+baron-emitted enforcement mechanism is static (inspect what `baron init`
+generates), where proving *presence* would need a live runtime — and found the
+answer negative on all four:
+
+| Adapter | Measurement |
+|---|---|
+| `pydantic-ai` | the emitted bootstrap builds `FileSystem` unconditionally; the read tools survive a `read_code` denial (live) |
+| `claude` | the only machine-readable artifact, `.claude/settings.json`, is hook wiring: no `permissions` / `allowedTools` / `disallowedTools`, no `.claude/agents/` subagent (static) |
+| `code-puppy` | the kit is prose only; the agent JSON that *is* code-puppy's enforcement surface is hand-authored in-session, never emitted (static) |
+| `generic` | Tier 1 has no allow-list surface to emit into (static) |
+
+`baron.rules.READ_VERB_MEASUREMENTS` holds one entry per shipped adapter and
+`LABEL_CAVEAT` is built from it, so a fifth adapter breaks the label's basis
+until someone measures it. The label is unchanged; the *reason* is no longer
+"unmeasured" but "baron emits no mechanism", with the bound stated explicitly —
+that is a claim about what baron ships, **not** a claim that a runtime cannot
+enforce these verbs. See ADR-020 §4.2 and §7.
 
 *Round-2 correction — this ADR previously got this wrong.* The third state was
 called `tool-omission` and `label` collapsed it to `enforced`, so
@@ -258,6 +272,8 @@ persona denying `read_code` through `pydantic_ai.plan()`, asserts the read tools
 are present on the toolset and that the in-process guard vetoes none of them,
 and *then* asserts the label is `instructed`. If an adapter ever does omit read
 tools, that assertion fails first and the label follows it — never the reverse.
+(ADR-020 adds three sibling measurements on the same persona fixture, one per
+remaining adapter; the gate above is unchanged.)
 *Round-3 correction — that test was circular.*
 `test_only_guard_checked_verbs_are_labelled_enforced` derived the expected label
 from `detection`, the very field under test, and only ran against
@@ -490,19 +506,36 @@ taken here.
 > should slip in under a refactor.
 >
 > Round 3 also narrowed the *reason*: not "no adapter enforces it" but "the one
-> adapter measured does not; the other kits are unmeasured". Approving D-1
-> approves that scoping too.
+> adapter measured does not; the other kits are unmeasured". ~~Approving D-1
+> approves that scoping too.~~ **That scoping is obsolete — see the basis below.**
 >
-> - [ ] **D-1 approved** — publish the narrowed label
+> - [x] **D-1 approved** — publish the narrowed label
 > - [ ] **D-1 rejected** — revert to the previous wording and re-open §4.1
+>
+> **Approved by Vikram, 2026-08-09. Basis: FOUR MEASURED ADAPTERS.** The
+> approval is *not* of the round-3 scoping, which has been retired. Option (c)
+> below — "instrument the kits and let the measurement decide per-adapter" —
+> was taken, not declined, and it was cheaper than this ADR costed it: proving
+> the **absence** of a baron-emitted enforcement mechanism is static (inspect
+> what `baron init` generates), while only proving **presence** would have
+> needed a live runtime. `pydantic-ai` keeps its live gate; `claude`,
+> `code-puppy` and `generic` each gained a static emission measurement. All four
+> are negative, so `instructed` stands — now on evidence the same size as the
+> claim. Recorded in **ADR-020**; §4.1 above is updated, not merely annotated.
+>
+> The honest bound travels with the label: the measured claim is *baron emits no
+> mechanism capable of omitting the read tools*, **not** *the runtime cannot
+> enforce them*. A hand-written `permissions.deny`, or the Tier-3 subagent the
+> `claude` and `code-puppy` HYDRATE.md recipes describe, does enforce them and
+> is outside what `baron rules list` speaks for (ADR-020 §4.2, §7).
 >
 > Options if rejected: (a) keep `enforced` and delete the measuring test — not
 > tenable under ADR-002; (b) introduce a fourth printed state instead of
 > collapsing to `instructed`; (c) instrument the `claude` and `code-puppy` kits
 > and let the measurement decide per-adapter. (c) is the only one that could
-> honestly restore `enforced`, and it is a larger piece of work than this ADR.
+> honestly restore `enforced` — it was done, and the measurement said no.
 
-*This box has been unticked through two rounds of review. It is recorded here as
-blocking rather than carried silently: an implementer cannot sign off an owner
-decision about what the product claims, and nothing in this branch should be
-read as having done so.*
+*This box was unticked through three rounds of review, deliberately: an
+implementer cannot sign off an owner decision about what the product claims. It
+is now ticked on the owner's D3 decision, with the basis recorded above rather
+than inherited from the round-3 wording.*

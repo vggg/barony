@@ -183,7 +183,12 @@ honest states (`guard` / `adapter-dependent` / `instructed`) of which only `guar
 the word `enforced` — `read_code` and `read_collab` are `adapter-dependent` and label
 `instructed`, because the shipped pydantic-ai adapter builds `FileSystem` unconditionally
 and a test that hydrates a persona denying `read_code` measures the read tools still
-present. `explain` is a dry run of the real evaluators with a test pinning its verdict to
+present — and, since **ADR-020**, because the `claude`, `code-puppy` and `generic` kits
+emit nothing a runtime reads as a tool allow/deny list either, one static emission
+measurement each. Four adapters, four measurements; `rules.READ_VERB_MEASUREMENTS` must
+cover `scaffold.ADAPTERS` or the label's basis fails a test. The bound is exact: **baron
+emits no mechanism**, not that a runtime cannot enforce these verbs.
+`explain` is a dry run of the real evaluators with a test pinning its verdict to
 `guard.evaluate_bash`'s `Decision`. The parser refuses unrecognised document content
 (unknown rule, unknown key, unknown or wrong matcher, missing built-in rule) rather than
 ignoring it.
