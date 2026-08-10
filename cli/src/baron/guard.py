@@ -9,6 +9,13 @@ Two jobs, deliberately asymmetric (ADR-012 §3):
   incapable of returning exit 2; a broken event sink must never brick a
   session. ``BARON_EVENTS_DEBUG=1`` makes emission failures visible.
 
+Claude Code is this module's *entry point*, not its audience (ADR-019). The
+evaluators (:func:`evaluate_bash`, :func:`evaluate_write`) and the observation
+seam (:func:`observe_decision`) are runtime-neutral, and the pydantic-ai
+adapter drives both through its own in-process interception point. Everything
+Claude-Code-specific — the hook names, the stdin payload shape, the exit-code
+contract — is confined to :func:`process` and the dispatch table below.
+
 Implements the documented Claude Code hooks contract
 (https://code.claude.com/docs/en/hooks — the canonical target that
 https://docs.anthropic.com/en/docs/claude-code/hooks redirects to; fetched
@@ -99,9 +106,42 @@ OVERRIDE_LOG = PurePosixPath(".baron/guard-override.log")
 WRITE_TOOLS = ("Edit", "Write", "NotebookEdit")
 
 
+# --- producer identity on a runtime-neutral wire (ADR-019) ------------------------------
+#
+# The event plane itself is already neutral: `events.KNOWN_KINDS` names no
+# runtime, and the Claude-Code-specific hook names live here behind a dispatch
+# table. What was missing is the other half — a row could not say WHICH runtime
+# produced it, and the one attribute that carried a seam name
+# (`baron.hook_event`) was Claude Code's vocabulary sitting on the neutral wire.
+
+#: ``baron.runtime`` — WHO produced this row. On every guard-sourced event.
+#: A merged stream from two runtimes is otherwise unpartitionable, and a
+#: consumer cannot tell "pydantic-ai never denies" from "pydantic-ai never ran".
+RUNTIME_CLAUDE_CODE = "claude-code"
+RUNTIME_PYDANTIC_AI = "pydantic-ai"
+#: A producer that did not say. The DEFAULT on :class:`_Trace`, deliberately:
+#: a path that forgets is visibly unattributed rather than silently Claude's —
+#: the same under-claim-by-construction rule ADR-018 applied to ``adjudicated``.
+RUNTIME_UNKNOWN = "unknown"
+
+#: The runtimes with a landed producer. Pinned by test; grows with an adapter,
+#: never with an intention. ``code-puppy`` is deliberately ABSENT — it has no
+#: pre-tool seam to emit from (ADR-019 §6, docs/BACKLOG.md).
+KNOWN_RUNTIMES: tuple[str, ...] = (RUNTIME_CLAUDE_CODE, RUNTIME_PYDANTIC_AI)
+
+#: ``baron.trigger`` — WHICH seam in that runtime fired. Replaces
+#: ``baron.hook_event`` (ADR-019 §3): the KEY is neutral, the VALUE stays
+#: runtime-native and is only meaningful read together with ``baron.runtime``.
+#: Normalising the values into a baron-invented vocabulary was rejected — it
+#: would put a translation nobody can verify between the reader and the log
+#: line the runtime actually emitted.
+TRIGGER_BEFORE_TOOL_EXECUTE = "before_tool_execute"  # pydantic-ai's seam
+
+
 # --- hook-event dispatch (ADR-012) ------------------------------------------------------
 
 #: The ONE hook event guard is allowed to block on. Everything else is evidence.
+#: Also the ``baron.trigger`` value on every enforcement row this runtime emits.
 PRE_TOOL_USE = "PreToolUse"
 
 #: Every ``hook_event_name`` Claude Code 2.1.226 can emit, read out of the
@@ -238,15 +278,27 @@ def _payload_cwd(payload: dict) -> Path | None:
 
 
 def _base_attrs(payload: dict) -> dict:
-    """The attributes every hook-sourced event carries.
+    """The attributes every CLAUDE-CODE hook-sourced event carries.
+
+    Claude-specific by construction — it reads a Claude Code hook payload — so
+    it STAMPS ``baron.runtime`` rather than taking one. Another runtime builds
+    its own attributes and reaches the plane through :func:`observe_decision`.
 
     The ``baron.*`` key namespace is FROZEN (ADR-012 §4). ``session.id`` is
     NOT under that prefix on purpose: it is one of ADR-013's fixed wire slots
     and one of the keys ``ingest_otel.py`` joins on (``SESSION_ATTR_KEYS``), so
     prefixing it would break the join the stream exists to support.
+
+    ``baron.trigger`` replaces ADR-012's ``baron.hook_event`` (ADR-019 §3).
+    Note what the old ``PRE_TOOL_USE`` fallback meant HERE: PreToolUse never
+    reaches an evidence handler, so that default was both unreachable and
+    wrong — it labelled a payload that named no event with the one trigger
+    this function cannot be called for. The fallback is now ``""``: the honest
+    "the producer did not say".
     """
     attrs: dict[str, object] = {
-        "baron.hook_event": str(payload.get("hook_event_name") or PRE_TOOL_USE),
+        "baron.runtime": RUNTIME_CLAUDE_CODE,
+        "baron.trigger": str(payload.get("hook_event_name") or ""),
         "session.id": str(payload.get("session_id") or ""),
     }
     for key, attr in (
@@ -884,10 +936,15 @@ ENFORCEMENT_VALUES: tuple[str, ...] = (
 
 @dataclass
 class _Trace:
-    """What one PreToolUse evaluation observed, for the event it emits.
+    """What ONE capability evaluation observed, for the event it emits.
 
     Threaded through :func:`process` and read at each emission site. Holds only
     what the event already carries; it is not a second copy of the verdict.
+
+    Not Claude-specific (ADR-019 §4): :func:`observe_decision` builds one from
+    any runtime's seam. ``runtime`` and ``trigger`` therefore default to "did
+    not say" rather than to Claude Code's values — a producer that forgets is
+    unattributed, never mis-attributed.
     """
 
     tool: str = "?"
@@ -895,6 +952,10 @@ class _Trace:
     subject: str = "?"
     session_id: str = ""
     cwd: Path = field(default_factory=Path.cwd)
+    #: ``baron.runtime`` — which runtime's producer emitted this.
+    runtime: str = RUNTIME_UNKNOWN
+    #: ``baron.trigger`` — the runtime-native seam name that fired.
+    trigger: str = ""
     verbs: tuple[str, ...] = ()
     #: Mirrors :attr:`Decision.adjudicated`. Defaults to FALSE and is only ever
     #: raised by :meth:`record` copying a real :class:`Decision` — so every path
@@ -965,6 +1026,8 @@ def _observe(
         attributes: dict[str, object] = {
             "tool.name": trace.tool,
             "session.id": trace.session_id,
+            "baron.runtime": trace.runtime,
+            "baron.trigger": trace.trigger,
             "baron.capability.verb": ",".join(trace.verbs),
             "baron.enforcement": _enforcement_class(trace),
             "baron.reason": reason,
@@ -982,6 +1045,60 @@ def _observe(
         )
     except Exception:  # belt and braces: emit_event already swallows
         return None
+
+
+def observe_decision(
+    decision: Decision | None,
+    *,
+    runtime: str,
+    trigger: str,
+    tool: str,
+    subject: str,
+    outcome: str,
+    actor: str = "unknown",
+    session_id: str = "",
+    cwd: Path | None = None,
+    reason: str = "",
+    error: str = "",
+    kind: str = "guard.decision",
+) -> None:
+    """THE seam a non-Claude runtime uses to reach the observation plane.
+
+    Registering a third runtime as a producer is three steps and no new
+    machinery (ADR-019 §5):
+
+    1. Find the runtime's own pre-execution seam — the point where it can still
+       veto a tool call. If it has none, **stop and say so**; do not emit from
+       a post-hoc hook and call it enforcement evidence.
+    2. Evaluate through :func:`evaluate_bash` / :func:`evaluate_write`, the same
+       functions the Claude hook uses, so the same rule artifact adjudicates.
+    3. Call this function with the :class:`Decision` those returned, a
+       ``runtime`` id added to :data:`KNOWN_RUNTIMES`, and the runtime's native
+       seam name as ``trigger``.
+
+    Why the ``Decision`` is a parameter rather than something re-derived here:
+    ``baron.enforcement`` is read off :attr:`Decision.adjudicated` and NOTHING
+    else (ADR-018 §2). Passing ``None`` — for a path that reached no verdict,
+    e.g. a fail-closed error — yields ``unevaluated`` by construction, exactly
+    as the hook path does. There is no argument by which a caller can *assert*
+    ``enforced``; it can only hand over a decision that earned it.
+
+    Emission is one-way and fail-OPEN: this never raises and never returns a
+    verdict, so no caller can make an enforcement outcome depend on it.
+    """
+    trace = _Trace(
+        tool=tool or "?",
+        actor=actor or "unknown",
+        subject=subject,
+        session_id=session_id,
+        runtime=runtime or RUNTIME_UNKNOWN,
+        trigger=trigger,
+    )
+    if cwd is not None:
+        trace.cwd = Path(cwd)
+    if decision is not None:
+        trace.record(decision)
+    _observe(trace, kind=kind, outcome=outcome, reason=reason, error=error)
 
 
 # --- entry point ----------------------------------------------------------------------
@@ -1036,7 +1153,9 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
     (ADR-018).
     """
     override = os.environ.get(OVERRIDE_ENV)
-    trace = _Trace()
+    # Stated, not defaulted: this function IS the Claude Code producer, and
+    # `_Trace`'s own defaults are deliberately "did not say" (ADR-019 §4).
+    trace = _Trace(runtime=RUNTIME_CLAUDE_CODE, trigger=PRE_TOOL_USE)
     tool = "?"
     target = "?"
     cwd = trace.cwd

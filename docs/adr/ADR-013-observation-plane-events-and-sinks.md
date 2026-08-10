@@ -112,6 +112,13 @@ consumers actually parse. Reserved for v1: `baron.actor`, `baron.subject`, `baro
 `baron.capability.verb`, `baron.enforcement`, `baron.reason`. Additions are additive;
 redefinitions are a version bump.
 
+> **Extended by [ADR-019](ADR-019-runtime-neutral-event-plane.md) (2026-08-09):** two
+> reserved keys added — `baron.runtime` (which runtime's producer wrote the row) and
+> `baron.trigger` (which seam in that runtime fired, replacing ADR-012's Claude-shaped
+> `baron.hook_event`). Additive to this list, breaking for `baron.hook_event`, which is
+> renamed with no alias. This plane now has **two** producers: the Claude Code hook and the
+> pydantic-ai in-process capability. Read `baron.runtime` before comparing rows.
+
 ## 3. Decision — the Sink Protocol, final at three members
 
 `cli/src/baron/sinks/base.py` defines a `@runtime_checkable` `Protocol` with exactly

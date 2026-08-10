@@ -95,9 +95,18 @@ expiry candidates could fold into `baron status`).
 - **`UserPromptSubmit` capture** — deliberately not wired: it carries the user's raw prompt,
   which makes the event stream a different product with different consent requirements.
   Needs its own decision, not a config flag.
-- **Other runtimes have no evidence seam.** The pydantic-ai adapter enforces in-process but
+- ~~**Other runtimes have no evidence seam.** The pydantic-ai adapter enforces in-process but
   emits nothing; the event stream is Claude-Code-only today, exactly as enforcement was
-  before v1.6.0.
+  before v1.6.0.~~ **DONE (2026-08-09,
+  [ADR-019](adr/ADR-019-runtime-neutral-event-plane.md)).** `BaronGuardCapability`
+  is now a producer on the same plane, in the same wire shape, with the same
+  ADR-018 `adjudicated` semantics; rows carry `baron.runtime` / `baron.trigger` and the
+  two producers' rows for one governance fact differ in exactly four attributes.
+  **What is still open here is the code-puppy seam below** — it has no pre-tool
+  interception point, so it stays out of `guard.KNOWN_RUNTIMES` rather than emitting
+  post-hoc rows that would imply an adjudication that never happened. The neutrality proof
+  is honestly two producers, not three. Registering a third is documented in ADR-019 §5
+  (find the seam → evaluate through the shared evaluators → `guard.observe_decision`).
 **`open_pr` / `run_tests` denial parsing — STILL DEFERRED as of 2026-08-09, no observed
 need.** Re-examined while closing out the 2026-08-08 Barony/Nasiko evaluation. The
 trigger for adding detection is observed need (capability vocabulary design rule 4;

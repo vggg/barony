@@ -157,10 +157,16 @@ def test_stop_and_session_end_share_a_kind_but_keep_their_hook_name(
         assert guard.process(_payload(event, tmp_path), persona_file) == (0, "")
     kinds = [c["kind"] for c in fake_events.CALLS]
     assert kinds == ["session.end", "session.end"]
-    assert [c["attributes"]["baron.hook_event"] for c in fake_events.CALLS] == [
+    # ADR-019: the KEY is now the neutral `baron.trigger`; the VALUE stays the
+    # runtime's own seam name, which is the whole point of keeping the two
+    # hooks distinguishable after they collapse onto one kind.
+    assert [c["attributes"]["baron.trigger"] for c in fake_events.CALLS] == [
         "Stop",
         "SessionEnd",
     ]
+    assert {c["attributes"]["baron.runtime"] for c in fake_events.CALLS} == {
+        "claude-code"
+    }
 
 
 def test_post_tool_use_failure_records_the_error(
