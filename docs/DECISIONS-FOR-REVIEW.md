@@ -1,39 +1,90 @@
 # Decisions for review — the ops-plane hardening consolidation
 
-**Date:** 2026-08-09 · **Branch:** `harden/ops-plane` · **Suite:** 386 passing (base was 148)
-· **Merged:** 5 of 6 workstreams
+**Date:** 2026-08-09 · **Branch:** `harden/ops-plane`
+· **Suite:** cli **424 passing** (base was 148) · audit skill **265 checks, 0 fail**
+· repo lint PASS · bi-runtime acceptance PASS
+· **Merged:** 9 workstreams; `harden/otel` still out (see §D)
 
 Read this file first. It is ordered by *what needs you*, not by what shipped.
 
-- **§A — needs your call before this can merge.** Four decisions. Two are blocking.
+- **§A — decisions.** Four. **D1 and D3 are now RESOLVED** and implemented; **D2 is still
+  blocking**; **D4 is open and now unblocked.**
 - **§B — made during implementation, reversible.** You can wave these through.
 - **§C — made during implementation, one-way doors.** Worth a read even if you agree.
 - **§D — what did not merge, and why.**
 - **§E — what is NOT verified.** The honest bounds.
+- **§F — follow-ups identified in this pass and deliberately NOT done.**
 
 Throughout: **enforced** means baron mechanises it, **instructed** means a persona is told
 and nothing checks. ADR-002/ADR-008 forbid blurring those, and this file tries hard not to.
 
+### What changed since the last revision of this file
+
+| | Then | Now |
+|---|---|---|
+| **D1** semantics | BLOCKING, unresolved | **RESOLVED** — ADR-018, both measured defects flip |
+| **D1** ingester half | recommended, unmerged | **RESOLVED** — ADR-021 merged |
+| **D1** `telemetry.py` | to retire | **still open** — the one piece left |
+| **D3** read-verb label | untickable, 1 of 4 adapters measured | **RESOLVED** — ADR-020, 4 of 4 measured |
+| **D2** Cognee | BLOCKING | **BLOCKING, untouched** |
+| **D4** default-on | open, blocked behind D1 | **open, precondition met** |
+| runtime neutrality | asserted | **measured** — ADR-019, second producer |
+
 ---
 
-## §A. Decisions that need you
+## §A. Decisions
 
-### D1 — BLOCKING. Three workstreams each built an observation plane. Pick one.
+**D1 and D3 are resolved and implemented — read them for what was decided and on what
+evidence, not for an action. What still needs you is D2 (blocking) and D4 (now unblocked).**
 
-> **DECIDED 2026-08-09 — the semantics half is settled and implemented.** The owner took the
-> recommendation at the bottom of this section: keep ADR-013's transport, port ADR-014's
-> `Decision.adjudicated` and its `enforced` / `unevaluated` label onto it. That landed as
-> **[ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md)** on `harden/d1-semantics`;
-> ADR-013 §9.1 is rewritten from defect to resolution and both measured defects flip under
-> test. `instructed` and `not-applicable` are gone from the event field; the vocabulary is
-> exactly `enforced` | `unevaluated` | `unknown`.
+### D1 — RESOLVED 2026-08-09. Three workstreams each built an observation plane.
+
+> **DECIDED AND IMPLEMENTED.** The owner took the recommendation at the bottom of this
+> section: keep ADR-013's transport, port ADR-014's `Decision.adjudicated` and its
+> `enforced` / `unevaluated` label onto it. Both halves have now landed.
 >
-> **What is still open under D1** — merge work, not a product call: retire `telemetry.py`,
-> and re-merge the producer-independent half of `harden/otel`
-> (`ingest_otel.py`'s `partition_guard_records` and ADR-014 §9.1). D4 (sink on by default)
-> is also still open and should stay behind this.
+> **What was decided.** `baron.enforcement` on an EVENT is a **per-call observation** — did a
+> capability adjudicate *this* call? — derived from an explicit `Decision.adjudicated` flag,
+> never from the rules artifact's static `detection` field. The event vocabulary is exactly
+> **`enforced` | `unevaluated` | `unknown`**. `instructed` is removed from the event field: it
+> is a static posture property of (persona, verb, runtime), it asserts a control the guard
+> cannot measure, and it now lives only on the posture surface (`baron rules list`, D3).
+> `not-applicable` is removed, subsumed by `unevaluated`. `unknown` is kept for the
+> broken-rules-artifact case, because refusing to guess is what the rest of the codebase does.
 >
-> The rest of this section is the analysis that produced the decision. It is left intact.
+> **On what evidence.** The two rows this file published as a MEASURED DEFECT were re-measured
+> against the merged code, on real emitted output rather than unit tests alone — the audit
+> skill's `baron_events.jsonl` fixture is the verbatim output of a real `baron guard` run:
+>
+> | call | was | is now | why |
+> |---|---|---|---|
+> | `Write ../../../outside.md` | `enforced` | **`unevaluated`** | structural refusal; no capability adjudicated it. The over-count is gone. |
+> | `Write src/x.py`, persona holds `write_code` | `not-applicable` | **`enforced`** | a real persona-dependent adjudication — a persona lacking `write_code` is denied the identical call. The under-count is gone. |
+>
+> Both are asserted by tests, and the second asserts *both halves* of persona-dependence.
+> `guard._enforcement(verbs)` is deleted and a test asserts the symbol stays gone.
+>
+> **Where.** [ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md) (semantics, from
+> `harden/d1-semantics`); [ADR-021](adr/ADR-021-audit-ingester-partitions-observation-rows.md)
+> (the ingester half — `partition_guard_records` is **merged**, from `harden/d5-ingest`);
+> [ADR-019](adr/ADR-019-runtime-neutral-event-plane.md) (the plane is now *measured*
+> runtime-neutral by a second real producer, not asserted). ADR-013 §9.1 is rewritten from
+> defect to resolution, keeping the measurement table with a was/is-now column.
+>
+> **The caveat that survives, and matters to any consumer.** `unevaluated` rows still carry a
+> non-empty `baron.capability.verb`, and `enforced` rows may carry an empty one. So
+> `baron.enforcement` is the field to read; **the verb tuple is not a proxy for it**, and any
+> aggregation must filter on `enforcement == "enforced"` *before* it groups by verb. This is
+> documented in `events.py`, ADR-018 §5, ADR-013 §9.1 and STATUS.md, and made executable by a
+> test that emits two real rows carrying `write_path` — one adjudicated, one structural — and
+> asserts naive count 2 vs correct count 1.
+>
+> **What is still open under D1** — one piece of merge work, not a product call: **retire
+> `telemetry.py`** (ADR-014's transport, still unmerged on `harden/otel`; the owner's call on
+> that branch is pending, see §D and §F). D4 is no longer blocked by D1.
+>
+> The rest of this section is the analysis that produced the decision. It is left intact, and
+> its "NOT merged" / "currently-merged" statements should be read as **historical**.
 
 **This is the big one, and it is why `harden/otel` is not merged.**
 
@@ -163,7 +214,7 @@ and declined as too expensive for this pass.
 
 ---
 
-### D4 — Should the observation plane be on by default? (Recommend: no, but decide knowingly)
+### D4 — OPEN, and now unblocked. Should the observation plane be on by default? (Recommend: no, but decide knowingly)
 
 Every merged plane defaults to `BARON_EVENTS_SINK=null`. Baron writes nothing unless an
 operator opts in, which is why the scaffold change was safe to land: a freshly generated repo
@@ -250,12 +301,23 @@ consumer-side work is producer-independent and should be re-merged once D1 is se
   `guard_decisions` degrades to a `not measurable` string the test then sums. Run on its
   own, the contamination test fails 34 of its own checks under either. ADR-021 §4 tabulates
   both. The audit skill's tests are also now in CI, which they never were.
-- ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.
-  **Still pending** — producer-side, blocked on D1.
+- ~~ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.~~
+  — **PORTED 2026-08-09, ADR-018.** `Decision.adjudicated` is set explicitly at all eleven
+  return sites in `evaluate_bash` / `evaluate_write`, defaulting `False` on the trace so that
+  every path returning without a real `Decision` (out-of-jurisdiction tool, malformed
+  payload, fail-closed error, override bypass) is `unevaluated` **by construction** rather
+  than by remembering to say so. Ported, not redesigned.
 
-**Deliberately NOT ported:** `harden/otel`'s `guard_enforcement_class` aggregate. Counting
-`baron.enforcement` while D1 is open would publish a `measured` number over a field this
-very document says is wrong in both directions. ADR-021 §5.
+**What is left of `harden/otel` after those three ports: its transport.** `telemetry.py`,
+`test_telemetry.py` (668 lines), the `BARON_TELEMETRY` env var and the `.baron/telemetry/`
+location. That is the piece D1 still lists as open, and it is the owner's call (§F).
+
+**Deliberately NOT ported:** `harden/otel`'s `guard_enforcement_class` aggregate. **Note the
+reason changed at consolidation.** It was withheld because `baron.enforcement` was wrong in
+both directions; that is fixed (ADR-018). It stays out because an honest aggregate must
+filter on `enforcement == "enforced"` **before** grouping — an `unevaluated` row still
+carries a non-empty verb — and that filter is un-built with no consumer asking for it. It is
+now a **gap, not a blocker**. ADR-021 §5.
 
 ---
 
@@ -297,7 +359,6 @@ Stated plainly, because a green suite invites the wrong inference.
    §5–§6 for their own ADR.
 7. **The known guard bypass is unchanged.** `bash -c '...'` and friends run their payload
    uninspected. Documented in `guard.py`'s module docstring; not a regression, not fixed here.
-<<<<<<< HEAD
 8. **Runtime neutrality is proved with TWO producers, not three** (ADR-019, added
    2026-08-09). pydantic-ai now emits into the same plane in the same wire shape, and the
    two producers' rows for one governance fact differ in exactly four attributes — that is
@@ -318,16 +379,48 @@ Stated plainly, because a green suite invites the wrong inference.
 
 ---
 
+## §F. Identified in this pass, deliberately NOT done
+
+Named here so they are choices on the record rather than things nobody noticed.
+
+| # | Follow-up | Why not now | Cost if deferred |
+|---|---|---|---|
+| F1 | **The per-runtime capability matrix.** `baron rules list` prints one label per verb, but the honest answer is a **4 adapters × 10 verbs** grid: `write_code` is mechanised on Claude Code via the PreToolUse hook and in-process on pydantic-ai, and is prose-only on code-puppy and generic. One flat column cannot say that. The `(adapter, verb)`-keyed harness that ADR-020 needed to answer D3 (`cli/tests/omission.py`) is already shaped for it — it was built keyed on the pair for exactly this reason. | It is a **user-visible output redesign** (a table, a `--json` schema change, and a decision about what to print when a repo has several adapters hydrated), not a measurement gap. Doing it inside a consolidation pass would smuggle a product decision through a merge — the thing D1 exists to prevent. | Low and shrinking. The harness is the expensive half and it is merged and under test. |
+| F2 | **Delivery-verified `instructed`, via the ritual-fence technique.** Today `instructed` means "baron emitted the sentence into the kit" — verified at *emission*, never at *receipt*. Nothing checks that the persona's runtime actually loaded the file, so a silently-ignored `AGENTS.md` is indistinguishable from a heeded one. The ritual-fence technique (make the agent echo a token it can only have obtained by reading the instruction) would upgrade this from emitted to **delivered**. | It needs a live runtime in CI, which §E item 1 records as the standing bound of this whole project. It is also a **new claim class** — "delivered" is neither `enforced` nor `instructed` — and deserves its own ADR and its own vocabulary decision, not a quiet third value. | Medium. This is the honest ceiling on the `instructed` label, and the 0.53 fidelity number lives here. |
+| F3 | **ADR-014's producer transport — `telemetry.py` — is still unmerged and still the owner's call.** Both producer-independent halves have now been ported (`Decision.adjudicated` → ADR-018, `partition_guard_records` → ADR-021), so what remains on `harden/otel` is a genuine second transport: `telemetry.py`, `test_telemetry.py` (668 lines), `BARON_TELEMETRY`, `.baron/telemetry/`. | Retiring it is the last open item under D1 and is **not** a merge resolution — it discards a verified 668-line suite, or keeps two transports. ADR-014 C2 also forbids `opentelemetry-api` in core, so a live OTel exporter belongs out-of-tree under `baron.sinks` either way. | Low *right now*, rising the moment D4 flips: two transports both writing is a schema fork in downstream repos. |
+| F4 | **No aggregate over `baron.enforcement` in the audit skill.** Now un-built rather than blocked — see §D. | Needs the `enforcement == "enforced"` filter applied before grouping, and no consumer has asked. | Low. |
+
+**Bounds this pass did NOT move**, restated so §F is not mistaken for a clean sweep: §E items
+1 (no live-runtime test), 5 (`baron doctor` is project-scoped), 6 (`.baron/rules.yaml` is
+parsed but never activated) and 7 (the `bash -c` guard bypass) are all unchanged.
+
+---
+
 ## Appendix — what merged, in order
 
-| # | Branch | ADR | Suite after |
+| # | Branch | ADR | cli suite after |
 |---|---|---|---|
 | 1 | `harden/hooks` | ADR-012 | 208 |
 | 2 | `harden/events` | ADR-013 | 256 |
-| — | `harden/otel` | ADR-014 | *aborted, see §D* |
+| — | `harden/otel` | ADR-014 | *not merged, see §D + F3* |
 | 3 | `harden/cognee` | ADR-015 | 286 |
 | 4 | `harden/rules` | ADR-016 | 348 |
 | 5 | `harden/evalgaps` | ADR-017 | 386 |
+| 6 | `harden/d1-semantics` | **ADR-018** | 397 |
+| 7 | `harden/d1-neutrality` | **ADR-019** | 417 |
+| 8 | `harden/d3-posture` | **ADR-020** *(claimed 018)* | 424 |
+| 9 | `harden/d5-ingest` | **ADR-021** *(claimed 018)* | 424 *(skill-only; 265 skill checks)* |
+
+**ADR numbering at consolidation.** Workstreams 6, 8 and 9 each independently wrote an
+`ADR-018`. The number stayed with **d1-semantics**, because ADR-019 was already written
+against it by number and it is the decision the other two reference. The other two were
+renumbered **020** and **021**; only identifiers changed, no content.
+
+**Suite counts.** cli `pytest`: **148 → 424**. Audit skill (`test_ingest_otel.py`, stdlib,
+now in CI): **265 checks, 0 fail**. `tests/lint_repo.py` and `tests/bi_runtime_accept.py`
+both PASS. No test was deleted at any merge in this pass; one was **flipped** — the check
+that asserted the pre-ADR-018 enforcement defect as current truth now asserts the fix, which
+is what its own comment said should happen.
 
 Baseline `harden/ops-plane` was **148**. No test was deleted at any merge; four were
 corrected, each with the reason recorded in the merge commit and in the affected ADR.
