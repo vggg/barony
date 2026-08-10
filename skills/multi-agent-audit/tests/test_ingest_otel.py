@@ -32,6 +32,7 @@ Stdlib only. Exit code 0 iff all checks pass.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -78,6 +79,14 @@ FLAT = FIXTURES / "flat_spans.jsonl"
 MISSING = FIXTURES / "missing_attrs.jsonl"
 BARON = FIXTURES / "baron_events.jsonl"
 GOLDEN = FIXTURES / "golden_pre_baron_metrics.json"
+
+#: The ADR whose §2 tables publish the v1.0 figures pinned below. Read back by
+#: `test_adr018_tables_quote_the_pinned_figures` so the prose cannot drift away
+#: from the literals while the literals still match the fixture.
+#: `SKILL_DIR.parents[1]` is the repo root — same idiom as
+#: fixtures/gen_golden_pre_baron_metrics.py.
+ADR018 = (SKILL_DIR.parents[1] / "docs" / "adr"
+          / "ADR-018-audit-ingester-partitions-observation-rows.md")
 
 
 def test_otlp_fixture():
@@ -685,7 +694,19 @@ ADR018_MOVED_COUNTS = {
 
 
 def _unpartitioned(paths):
-    """compute_metrics with the v1.1 fix stubbed out — i.e. ingester v1.0."""
+    """compute_metrics as ingester v1.0 saw it — no partition, no guard axis.
+
+    NOT the inverse of the v1.1 fix, and must not be read as one. v1.0 had no
+    guard-decision axis at all, so emulating it means returning an empty baron
+    partition; the precise inverse of the fix is `return records, baron`, which
+    keeps that axis fed. The distinction is immaterial to this helper's callers
+    — every metric they compare is an activity metric, computed identically
+    under both — but conflating the two is how an earlier draft of ADR-018 §4
+    mis-attributed a crash. The empty-partition stub blinds
+    `test_baron_guard_metrics` (`guard_decisions` degrades to a
+    `not measurable` string it then sums); the partition revert does not.
+    ADR-018 §4 tabulates both.
+    """
     real = ingest_otel.partition_guard_records
     ingest_otel.partition_guard_records = lambda records: (list(records), [])
     try:
@@ -748,6 +769,118 @@ def test_adr018_published_figures_reproduce() -> None:
               f"{len(moved)} moved ({sorted(moved)}); update {docs}")
 
 
+def _adr_section(text: str, heading: str) -> str:
+    """The body of one `## ` section, heading line excluded."""
+    after = text.split(heading, 1)
+    if len(after) == 1:
+        return ""
+    return after[1].split("\n## ", 1)[0]
+
+
+def _adr_tables(section: str) -> list[tuple[list[str], dict[str, str]]]:
+    """Contiguous markdown tables -> (header cells, {metric: whole row}).
+
+    A row is keyed by the first backticked identifier in its first cell, which
+    is how both §2 tables name their metric.
+    """
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in section.splitlines():
+        if line.lstrip().startswith("|"):
+            current.append(line)
+        elif current:
+            blocks.append(current)
+            current = []
+    if current:
+        blocks.append(current)
+
+    tables = []
+    for block in blocks:
+        if len(block) < 3:
+            continue
+        header = [c.strip() for c in block[0].strip().strip("|").split("|")]
+        rows = {}
+        for line in block[2:]:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            m = re.search(r"`([A-Za-z_][A-Za-z0-9_]*)`", cells[0])
+            if m:
+                rows[m.group(1)] = line
+        tables.append((header, rows))
+    return tables
+
+
+def _value_tokens(value) -> list[str]:
+    """The parts of a computed value that the ADR must quote somewhere.
+
+    A dict contributes each key and each value, a list each element, a scalar
+    its `str()`. Rendered, not parsed, because the ADR writes these cells for
+    humans: the "paired" column is a delta (`+ Bash:7, Write:3, …`), floats
+    carry bold markers, and confidences are backticked inline.
+    """
+    if isinstance(value, dict):
+        return [str(part) for kv in value.items() for part in kv]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def test_adr018_tables_quote_the_pinned_figures() -> None:
+    """ADR-018 §2's tables are checked against the pinned literals.
+
+    The test above closes literal <-> fixture: regenerate `baron_events.jsonl`
+    and the pinned figures stop reproducing. It does NOT close ADR <-> literal
+    — the prose was verified unguarded, by editing §2's `300.548` to `999.999`
+    and watching the suite stay green. This closes that half by reading the ADR
+    back off disk.
+
+    WHAT IT CHECKS, exactly: for each metric pinned in `ADR018_BARON_ONLY` and
+    `ADR018_FLAT_PAIRED`, the ADR §2 table row naming that metric contains
+    every token of the pinned value. Token presence over the WHOLE ROW, not
+    equality against one cell: the paired column is written as a delta, so
+    `run_sql` lives in the neighbouring "alone" cell of the same row. Small
+    integers therefore match loosely — this catches a figure that drifts, not
+    every conceivable mis-edit.
+
+    NOT COVERED: confidence labels (the ADR annotates them only where they are
+    the anomaly), §2's moved-metric counts, which are prose around the tables,
+    and every number in §4. Those stay manual.
+    """
+    print("--- ADR-018 §2 tables still quote the pinned figures ---")
+    if not ADR018.exists():
+        check("ADR-018 is readable from the tests", False,
+              f"{ADR018} not found — this check reads the published tables "
+              "directly; it is not skipped when they are missing")
+        return
+
+    section = _adr_section(ADR018.read_text(encoding="utf-8"),
+                           "\n## 2. What actually leaked")
+    tables = _adr_tables(section)
+    docs = "ADR-018 §2, CHANGELOG.md, SKILL.md, DECISIONS-FOR-REVIEW.md §D"
+
+    for label, marker, expected in (
+            ("baron-only", "v1.0 published", ADR018_BARON_ONLY),
+            ("flat+baron", "paired", ADR018_FLAT_PAIRED)):
+        match = [rows for header, rows in tables
+                 if any(marker in cell for cell in header)]
+        check(f"ADR-018 §2 has the {label} table (header cell {marker!r})",
+              len(match) == 1, f"{len(match)} tables matched")
+        if len(match) != 1:
+            continue
+        rows = match[0]
+        for key, (want_val, _conf) in expected.items():
+            row = rows.get(key)
+            if row is None:
+                check(f"§2 {label}: `{key}` has a row", False,
+                      f"pinned in the tests but absent from the table; "
+                      f"update {docs}")
+                continue
+            missing = [t for t in _value_tokens(want_val) if t not in row]
+            check(f"§2 {label}: `{key}` row quotes {want_val!r}",
+                  not missing,
+                  f"row does not mention {missing}: {row.strip()} — "
+                  f"update {docs}")
+
+
 def main() -> int:
     print("=== multi-agent-audit telemetry-mode tests ===")
     for p in (OTLP, FLAT, MISSING, BARON, GOLDEN):
@@ -766,6 +899,7 @@ def main() -> int:
     test_additivity_lock()
     test_no_contamination_from_paired_export()
     test_adr018_published_figures_reproduce()
+    test_adr018_tables_quote_the_pinned_figures()
     print(f"\n=== Summary: {PASS} pass, {FAIL} fail ===")
     return 0 if FAIL == 0 else 1
 

@@ -39,7 +39,11 @@ Measured on the committed fixtures with the 11-row `baron_events.jsonl` (generat
   `missing_attrs.jsonl`.
 
   These figures are asserted by `test_adr018_published_figures_reproduce`, so a regenerated
-  fixture fails the suite instead of silently invalidating the ADR.
+  fixture fails the suite instead of silently invalidating the ADR — and by
+  `test_adr018_tables_quote_the_pinned_figures`, which reads ADR-018 §2 back off disk so an
+  edit to the *prose* fails too. Without the second, changing `300.548` to `999.999` in the
+  ADR left the suite green; the check is token presence per table row, and its exact scope
+  (confidences and §4's counts are not covered) is stated in ADR-018 §2.
 
 Publishing instrumentation overhead as agent working time under a `measured` label is the
 0.53 failure mode with the sign flipped, so the numbers are recorded in ADR-018 §2 rather
@@ -66,7 +70,11 @@ than quietly corrected.
   pre-1.1 ingester reproduces every number above. Snapshots carry
   `telemetry_metrics_version`.
 - **`test_no_contamination_from_paired_export`** is the lock that can actually fail —
-  verified by reverting the fix: 34 of its checks fail, 45 across the suite. Its companion
+  verified by reverting the fix. `return records, baron` (the precise inverse: partition
+  gone, guard axis intact) fails 34 of that test's own checks and **45 across the suite**.
+  The harsher `return records, []` also blinds the guard-decision axis and crashes a
+  different test with an `AttributeError`; that is a second mutation's result, not this
+  fix's revert, and ADR-018 §4 keeps the two apart. Its companion
   `test_additivity_lock` only reads guard-free fixtures and therefore proves nothing about
   contamination; its own docstring now says so. The golden baseline is rebuilt by
   `gen_golden_pre_baron_metrics.py`, which extracts the ingester from a git ref and refuses

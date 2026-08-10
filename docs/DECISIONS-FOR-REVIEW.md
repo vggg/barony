@@ -202,11 +202,17 @@ consumer-side work is producer-independent and should be re-merged once D1 is se
   personas plus a literal `unknown`, `human_turns_total` downgraded `measured`→`inferred`.
   ADR-018 §2 has the full table.
 - ~~`test_no_contamination_from_paired_export`~~ — **PORTED.** Re-verified the same way its
-  author did: with `partition_guard_records` stubbed to a no-op split, running that test
-  directly fails 34 of its checks. Run as a whole suite the revert never reaches it — it
-  crashes `test_baron_guard_metrics` with an `AttributeError` after 17 failed checks,
-  because `guard_decisions` degrades to a `not measurable` string. Both are evidence; only
-  the first is a count. The audit skill's tests are also now in CI, which they never were.
+  author did, by reverting the fix — and the two possible reverts are kept apart, because
+  conflating them is what made an earlier draft of ADR-018 §4 wrong. `return records,
+  baron` reverts the partition **and only** the partition: the suite completes with **45
+  failed checks**, a count stable across every commit on this branch while the denominator
+  grows (45 of 230 at `4a85a49`, 45 of 247 at `30a1002`, 45 of 263 now). `return records,
+  []` *additionally* blinds the
+  guard-decision axis, and that second mutation — not the partition revert — is what
+  crashes `test_baron_guard_metrics` with an `AttributeError` after 17 failed checks, since
+  `guard_decisions` degrades to a `not measurable` string the test then sums. Run on its
+  own, the contamination test fails 34 of its own checks under either. ADR-018 §4 tabulates
+  both. The audit skill's tests are also now in CI, which they never were.
 - ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.
   **Still pending** — producer-side, blocked on D1.
 
@@ -247,7 +253,8 @@ Stated plainly, because a green suite invites the wrong inference.
    uninspected. Documented in `guard.py`'s module docstring; not a regression, not fixed here.
 8. **The audit ingester's baron partition is verified against fixtures, not a live audit**
    (ADR-018). `baron_events.jsonl` is real `baron guard` output, and the contamination test
-   is verified to fail when the fix is reverted — but no end-to-end audit has been run over
+   is verified to fail when the partition is reverted (`return records, baron`: 45 failed
+   checks) — but no end-to-end audit has been run over
    a real project's `.baron/events/` directory, because the default sink is `null` and no
    project is emitting yet. The partition predicate also assumes no non-baron producer emits
    a `baron.outcome` attribute; that is an assumption about a namespace, not a measurement.

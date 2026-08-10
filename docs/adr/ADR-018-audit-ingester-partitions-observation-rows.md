@@ -90,10 +90,26 @@ partial coverage of a session that does not exist.
 and recorded it in ADR-014 §9.1. This branch's numbers are worse only because
 ADR-013 additionally puts `tool.name` on every row.
 
-Every figure in this section is asserted by
-`test_adr018_published_figures_reproduce`, which reverts the partition
-in-process and fails if the ADR and the committed fixture disagree. They are
-tied to the *committed* `baron_events.jsonl`: `gen_baron_events.py` shells out
+**How the figures above are held to account.** Every figure in the two tables
+is pinned as a literal in `tests/test_ingest_otel.py`
+(`ADR018_BARON_ONLY`, `ADR018_FLAT_PAIRED`) and recomputed from the committed
+fixture on every run by `test_adr018_published_figures_reproduce`, which
+emulates ingester v1.0 in-process. That closes *literal ⇄ fixture*.
+`test_adr018_tables_quote_the_pinned_figures` then reads this file back off
+disk and checks that each metric's row in those two tables mentions every part
+of its pinned value, closing *ADR ⇄ literal*. It is deliberately a
+token-presence check over the whole row rather than a parse of one cell,
+because the "paired" column is written as a delta (`+ Bash:7, …`) and the
+unchanged parts live in the neighbouring cell; small integers therefore match
+loosely. Not mechanised, and manual: the confidence labels, the moved-metric
+counts in the sentence above (`ADR018_MOVED_COUNTS` pins and recomputes them,
+but no test reads them back out of this prose), and every number in §4. The
+earlier claim here — that the test "fails if the ADR and the committed fixture
+disagree" — was false of the ADR half: editing `300.548` to `999.999` in the
+table left the suite green. It fails now.
+
+The figures are tied to the *committed* `baron_events.jsonl`:
+`gen_baron_events.py` shells out
 to a real `baron guard` run, so re-running it produces different hook
 wall-clocks and these durations move. That is what happened to the first draft
 of this ADR, which published durations from a generation run that was then
@@ -155,27 +171,50 @@ every note and the whole per-session breakdown hold still — with `source` the
 single permitted delta, pinned to exactly "gained the baron filename".
 
 **Verified by reverting the fix**, because a test that cannot fail is not
-evidence. With `partition_guard_records` stubbed to a no-op split, running
-that test on its own fails **34 checks** (10 on `flat_spans.jsonl`, 11 on
+evidence. Two different mutations were run, and they are *not*
+interchangeable — the difference is the correction this revision exists to
+make:
+
+| mutation | what it removes | result |
+|---|---|---|
+| `return records, baron` | the partition and only the partition — baron rows go back into the activity plane, the guard-decision axis still sees them | the suite **completes**: **45 failed checks** |
+| `return records, []` | the partition *and* the guard-decision axis — i.e. the v1.0 shape, which had no such axis | dies in `test_baron_guard_metrics` with an `AttributeError` after 17 failed checks, because `guard_decisions` degrades to the string `not measurable` and the test sums it |
+
+The first is the precise inverse of this change and is the figure to quote:
+**45 failed checks**. The 45 is stable across every commit on this branch,
+while the denominator moves as checks are added — 45 of 230 at `4a85a49`, 45
+of 247 at `30a1002`, 45 of 263 at this revision. All three were run.
+
+**Retraction.** An earlier revision of this section said "there is no honest
+'N of M failed' figure for the suite under revert" and called round 1's 45 an
+artefact of a run that no longer reproduced. Both statements were wrong. 45
+reproduces, and the `AttributeError` used to justify the retraction belongs to
+the *second* mutation, which additionally empties the guard-decision axis §3
+introduces — a different defect from leaving baron rows in the activity plane.
+Corrected here rather than quietly deleted: a wrong retraction is worse than
+the claim it retracted, because it reads as diligence.
+
+Run on its own rather than as part of the suite, the contamination test fails
+**34 checks** under *either* mutation (10 on `flat_spans.jsonl`, 11 on
 `otlp_two_sessions.json`, 7 on `missing_attrs.jsonl`, 6 named checks — each
 fixture contributing its moved metrics plus one per-session-breakdown check).
+The two agree there because the guard axis is not on that test's comparison
+surface. With the fix in place the whole suite completes: **263 pass, 0 fail**.
 
-Running the *whole suite* under the same revert never reaches it: it dies in
-`test_baron_guard_metrics` with an `AttributeError` after 17 failed checks,
-because `guard_decisions` degrades to the string `not measurable` and the
-test sums it. So there is no honest "N of M failed" figure for the suite
-under revert — the earlier draft of this ADR quoted one, and it was an
-artefact of a run that no longer reproduces. With the fix in place the suite
-completes: **247 pass, 0 fail**.
+The test helper that stubs the partition, `_unpartitioned`, uses the *second*
+form, correctly: it exists to reproduce what ingester v1.0 published, and v1.0
+had no guard axis. Its docstring now says so explicitly, because reusing it as
+the mental model of "the revert" is what produced the error above.
 
 §2's figures are themselves under test —
 `test_adr018_published_figures_reproduce` recomputes every number in those two
-tables from the committed fixture with the partition stubbed out, and names
-the docs to update when they diverge. `gen_baron_events.py` shells out to a
-real `baron guard`, so its hook wall-clocks are not stable across runs;
-without that test, regenerating the fixture silently falsifies this ADR
-instead of failing a build. That is exactly how the first draft's durations
-went stale.
+tables from the committed fixture with the partition stubbed out, and
+`test_adr018_tables_quote_the_pinned_figures` checks the tables here still
+quote them (§2 states the exact scope of both). `gen_baron_events.py` shells
+out to a real `baron guard`, so its hook wall-clocks are not stable across
+runs; without those tests, regenerating the fixture silently falsifies this
+ADR instead of failing a build. That is exactly how the first draft's
+durations went stale.
 
 The companion `test_additivity_lock` is the weaker half and says so in its own
 docstring: it only ever reads guard-free fixtures, so it can never catch
