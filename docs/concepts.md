@@ -86,7 +86,7 @@ runtime supports and degrades gracefully:
 | Tier | Runtime | Mechanism | Enforcement |
 |---|---|---|---|
 | 3 (code-puppy: 2.75) | Claude Code or code-puppy | native sub-agents (Claude `.claude/agents/<slug>.md`; code-puppy JSON agents) | capabilities enforced via a tool allow-list — whole-tool denials are real (a read-only persona genuinely cannot write/run shell); sub-tool denials instructed, except the five guard-covered ones on Claude, which are enforced-with-baron via the hook (`open_pr`/`run_tests` stay instructed everywhere) |
-| 3 | pydantic-ai (+ pydantic-ai-harness) | in-process hydration: `baron.runtimes.pydantic_ai.build_agent` assembles a guarded `Agent` | whole-tool denials via capability omission; the five guard-covered sub-tool denials natively ENFORCED (in-process interception consuming `capability-rules.v1.yaml`) |
+| 3 | pydantic-ai (+ pydantic-ai-harness) | in-process hydration: `baron.runtimes.pydantic_ai.build_agent` assembles a guarded `Agent` | the five guard-covered sub-tool denials natively ENFORCED (in-process interception consuming `capability-rules.v1.yaml`); whole-tool denials by capability omission **where the hydrator actually omits the tool** — it does not for the read verbs, which is measured, not assumed (see below) |
 | 2 | Claude Code | persistent `CLAUDE.md` | persistent session context; capabilities instructed |
 | 1 | anything | in-prompt + emitted `AGENTS.md` | persona re-read each turn; self-enforced |
 
@@ -100,6 +100,42 @@ in an adapter's capability map is classed `enforced`, `enforced-with-baron
 CI if an adapter claims enforcement it cannot deliver (e.g. a guard claim on an
 `open_pr` row). "Emitting a file does not upgrade the tier" is a rule the
 templates themselves carry.
+
+`baron rules list` is where that ladder becomes a queryable surface
+([ADR-016](adr/ADR-016-externalizable-capability-rules.md)). It reports three
+states for *who could* enforce a verb — `guard` (baron mechanically checks it),
+`adapter-dependent` (whole-tool class; a runtime with a tool allow-list could
+enforce it by omitting the tool), and `instructed` (nothing checks) — and
+**only `guard` earns the printed word `enforced`.**
+
+The read verbs are the worked example of what that costs. `read_code` and
+`read_collab` were briefly labelled `enforced` on the theory that a whole-tool
+verb is enforced by tool omission. The shipped pydantic-ai hydrator builds
+`FileSystem` unconditionally, so a persona *denying* `read_code` keeps its read
+tools — a test measures it. They now label `instructed`, which means baron
+reports **less** enforcement than it used to. That is a correction, not a
+regression, and it was made by the owner rather than absorbed from a merge.
+
+Since [ADR-020](adr/ADR-020-read-verb-posture-measured-on-four-adapters.md) the
+label rests on **four measured adapters rather than one measurement generalised
+to four**, and the reason it was cheap is worth knowing: proving the *absence* of
+a baron-emitted enforcement mechanism is a static inspection of what `baron init`
+generates, where proving *presence* would need a live runtime. Each static test
+is an A/B — two persona specs identical but for the two read verbs — asserting
+that the denial reaches the kit's **prose** while every machine-readable artifact
+stays byte-identical. If nothing baron emits is even a function of the denial,
+the denial cannot be mechanised by anything baron emits.
+
+**The bound is exact, and it is published with the label rather than in a
+footnote:** *baron emits no mechanism capable of omitting the read tools* — **not**
+*the runtime cannot enforce them*. A hand-written `permissions.deny`, or the
+Tier-3 subagent the `claude` and `code-puppy` recipes tell a human to author, does
+enforce them; baron generates neither. So those adapters' HYDRATE.md tables print
+`enforced` for the read verbs while `baron rules list` prints `instructed`, and
+both are right about different things. The divergence is recorded, not resolved by
+editing whichever table is more convenient — the durable fix is a per-runtime
+matrix that can say "instructed as shipped, enforced at Tier 3 once hydrated"
+without either surface lying, and it is on the backlog.
 
 The enforcement rule table itself — which git commands map to which verbs, the
 write-path scoping semantics, the conservative-deny ambiguity policy — is a
@@ -136,6 +172,13 @@ unmerged branches with age, open handoffs past the SLA (default 14 days), and
 ledger/wiki staleness (a labeled heuristic). Exit 0 green / 1 any red, so CI can
 run it. The three red divergence classes are exactly the three stranding modes
 of the 2026-07-22 field incident ([ADR-003](adr/ADR-003-baron-cli.md) §1).
+
+`baron validate` covers the other drift axis: the personas a project *declares*
+against the agents its runtime has actually *registered*. **The signal is partial
+registration** — some registered and others not is evidence the project hydrates
+agents here, so the gaps are errors; all-or-nothing is silent, which is the
+correct reading for Tier-2, Tier-1 and a fresh scaffold alike. This exact gap
+once forced a wrong-persona cron on the pilot.
 
 Deliberately-parked reds get **waivers** (`baron waiver add`,
 `.baron-waivers.yaml`): subject pattern, reason, linked handoff, and a
@@ -198,6 +241,33 @@ fails **closed**, evidence fails **open** and silently
 (`BARON_EVENTS_DEBUG=1` to see it). Any hook event baron does not recognise is
 inert; Claude Code emits 31 distinct event names and that number keeps moving.
 
+**What a row claims, and what it must not**
+([ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md)). Each row carries a
+`baron.enforcement` attribute, and it is a **per-call observation**: did a
+capability actually adjudicate *this* call? It is read off an explicit
+`Decision.adjudicated` flag set at every return site in the evaluators, defaulting
+`False` on the trace — so any path that returns without a real decision
+(out-of-jurisdiction tool, malformed payload, fail-closed error, human override)
+is `unevaluated` **by construction** rather than by someone remembering to say so.
+The vocabulary is exactly `enforced` | `unevaluated` | `unknown`.
+
+That design came out of a measured defect in the first cut, which derived the
+label from the rules artifact's static `detection` field — a property of a *verb*,
+which cannot answer a question about a *call*. It was wrong in both directions at
+once: a `..`-escape denial read `enforced` (structural; every persona is refused
+identically, no capability adjudicated it) while a genuine persona-dependent
+allow read `not-applicable`. Over-counting and under-counting enforcement in the
+same field is the exact over-claim this project exists to catch, and it was
+sitting in merged code. `instructed` was removed from the event entirely: a
+PreToolUse hook cannot observe whether a persona heeded a sentence, so the value
+belongs on the posture surface and nowhere near a row.
+
+**The caveat any consumer needs before aggregating:** `baron.capability.verb` can
+be non-empty on an `unevaluated` row, and empty on an `enforced` one. The verb
+tuple is **not** a proxy for the enforcement field. Filter on
+`enforcement == "enforced"` *before* grouping by verb, or the count is fiction —
+a test emits two real rows and asserts naive count 2 against correct count 1.
+
 **And the plane is not Claude Code's**
 ([ADR-019](adr/ADR-019-runtime-neutral-event-plane.md)). The event vocabulary was
 runtime-neutral from the start, but for a while only one runtime ever wrote to it,
@@ -229,6 +299,56 @@ run: it verifies **WIRING, not invocation**. It proves the install *can* enforce
 whether the runtime actually called the hook is not observable from outside the
 runtime, and a command that implied otherwise would manufacture the very
 confidence that produced those merges.
+
+## The substrate, and the bound on extending it
+
+The load-bearing constraint of the whole framework is that `baron` is a
+disciplined reader/writer over collab-repo files and introduces no second store
+([ADR-003](adr/ADR-003-baron-cli.md) §2.2). Structured output is a *view*
+(`--json`), never a second source of truth.
+
+The product-vision invariant above it was amended on 2026-08-10
+([ADR-022](adr/ADR-022-substrate-invariant-amended-default-not-only.md)). It used
+to read *the repo is the only source of truth*. It now reads **git + markdown is
+the DEFAULT substrate; plugins may extend it to other suitable platforms** —
+bounded by **governance state stays complete in git**. "Who may do what", "who
+did what" and "what is true now" must stay answerable from the repository
+**alone**. A plugin may be authoritative for **derived or auxiliary** domains —
+semantic search, embeddings, cross-project recall — and **never** for authority,
+evidence, or the ledger.
+
+The bound is the load-bearing half, and it has a test a reviewer can run rather
+than a taxonomy to interpret: **delete every plugin, clone fresh, ask the three
+questions.** If an answer is lost or now needs a second system, the plugin was
+holding governance state and is forbidden. If only the *speed of finding it* is
+lost, it is permitted.
+
+The argument for the bound is the audit claim itself: *governance you can verify
+by reading a diff*. That holds only while the repo is complete. Move a capability
+grant into an index and it stops appearing in a PR, the auditor needs credentials
+rather than a `git clone`, and the failure is silent — a stale index does not
+announce itself the way a missing file does. The claim degrades from "read the
+diff" to "trust the index", which is a different product. A project that
+publishes its own measured operational fidelity of 0.53 rather than rounding it
+up should not ship a headline claim that can only be taken on trust.
+
+**The amendment authorises nothing to be built.** No adapter, no knowledge
+entry-point group (an entry-point name is public API and no group ships without a
+consumer), and the semantic-memory question is answered as a *rebuildable
+projection*, with the authoritative mode refused on the merits. What changed is
+the answer to "may we ever?", not to "may we now?".
+
+`baron export [--kind …] [--json]`
+([ADR-015](adr/ADR-015-baron-export.md)) is the seam a projection would consume:
+the four corpora a collab repo already keeps — ADRs, decisions, findings,
+handoffs — walked into flat records that each name the commit whose bytes were
+parsed. **The citation gate is the substance.** A source that is untracked or
+modified is skipped and named, rather than emitted with a SHA that resolves and
+returns different text; `git show <sha>:<path>` always reproduces a record's
+bytes. That is what makes a projection auditable, and it is a property of the
+corpus walk rather than of any backend, so every candidate backend inherits it
+for free. Measured: 284 records out of a real pilot repo, all 284 citations
+verified by byte-equality.
 
 ## PR-locks
 

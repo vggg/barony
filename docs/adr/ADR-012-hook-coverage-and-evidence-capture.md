@@ -21,6 +21,7 @@ related:
 | **Authors** | Vikram + Claude |
 | **Extends** | ADR-004 (`baron guard`), ADR-007 (session boundary) |
 | **Evidence base** | Claude Code 2.1.226's own hook-event enum, read out of the installed binary |
+| **Superseded in part** | §4's *provisional* producer signature, by [ADR-013](ADR-013-observation-plane-events-and-sinks.md) §2 · §4's `baron.hook_event` attribute, by [ADR-019](ADR-019-runtime-neutral-event-plane.md) (renamed `baron.trigger`, no alias). Both marked inline. The three decisions §4 actually owns — open `kind`s, a frozen `baron.` key namespace, emit-on-allow — all stand. |
 | **Decision owner** | Vikram |
 
 ## 1. Context

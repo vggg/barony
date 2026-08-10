@@ -21,7 +21,9 @@ related:
 | **Authors** | Claude (Workstream: event stream + pluggable datastore) |
 | **Decision owner** | Vikram |
 | **Depends on** | [ADR-003](ADR-003-baron-cli.md) (dependency policy), [ADR-004](ADR-004-baron-guard-enforcement.md) §2.3 (fail-closed) |
-| **Numbering note** | ADR-010 and ADR-011 are held by open PRs #29 / #32 and are not reused here. |
+| **Superseded in part** | §4.1's `baron.enforcement` paragraph and §9.1's defect, by [ADR-018](ADR-018-adjudicated-enforcement-on-the-event.md) (2026-08-09). The transport, `Event` shape, `baron.sinks` plugin and fail-open asymmetry are unchanged. Marked inline at both sites. |
+| **Amended** | §7.1 added 2026-08-10 — the owner's D4 decision that the shipped sink default stays `null`. No code change. |
+| **Numbering note** | ADR-010 and ADR-011 are held by open PRs #29 / #32 and are not reused here. Their files are not on this branch — see the [ADR index](README.md) § *Numbering*. |
 
 ## 1. Context and the problem
 
@@ -364,9 +366,11 @@ Both flips are pinned by tests in `cli/tests/test_guard.py`
 halves of "persona-dependent" — the allow *and* a denial of the same call by a persona
 lacking the verb — so the claim is measured rather than asserted.
 
-`harden/otel` (ADR-014, still NOT merged) diagnosed exactly this and fixed it with the
+`harden/otel` (ADR-014, never merged) diagnosed exactly this and fixed it with the
 `Decision.adjudicated` flag. That flag is what was ported; the transport, `Event` shape,
-`baron.sinks` plugin and fail-open asymmetry described in this ADR are unchanged.
+`baron.sinks` plugin and fail-open asymmetry described in this ADR are unchanged. **ADR-014's
+own transport was retired on 2026-08-10** ([ADR-014](ADR-014-guard-telemetry.md)) — its
+analysis was adopted, its producer was not, and the branch stays intact as history.
 
 ### The `instructed` question, reversed
 

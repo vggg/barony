@@ -186,8 +186,12 @@ pins the tuple so it grows with a landed adapter and never with an intention. Th
 
 Also out of scope, stated so they are not read as done:
 
-- **The `claude` and `code-puppy` kits stay unmeasured** for tool exposure (D3, ADR-016 §8).
-  Unrelated axis, unchanged here.
+- ~~**The `claude` and `code-puppy` kits stay unmeasured** for tool exposure (D3, ADR-016 §8).
+  Unrelated axis, unchanged here.~~ **Obsolete as of the same day.**
+  [ADR-020](ADR-020-read-verb-posture-measured-on-four-adapters.md) measured all four
+  adapters — `claude`, `code-puppy` and `generic` statically, `pydantic-ai` live — and all
+  four are negative. The axis is still unrelated to this ADR and still unchanged by it; what
+  is no longer true is the word *unmeasured*.
 - **The pydantic-ai producer does not honour `BARON_GUARD_OVERRIDE`.** The adapter never
   did — there is no in-process override path — so it emits no `guard.override` rows. A
   consumer comparing override rates across runtimes will read zero for pydantic-ai and must
@@ -197,8 +201,11 @@ Also out of scope, stated so they are not read as done:
   `ModelRetry`. ADR-019 adds only the observation of it — an `error`-outcome row carrying no
   `Decision`, hence `unevaluated`. Converting it to a veto is a behaviour change to
   enforcement and belongs in its own decision.
-- **The default sink is still `null`** (D4). Both producers write nothing until an operator
-  opts in.
+- **The default sink is `null`** — and since 2026-08-10 that is a signed decision rather than
+  an unexamined default (D4, [ADR-013 §7.1](ADR-013-observation-plane-events-and-sinks.md)).
+  Both producers write nothing until an operator opts in. Note the consequence for the
+  breaking rename below: the no-consumer window this ADR spent is now held open deliberately,
+  not by accident.
 
 ## 7. Consequences
 

@@ -3,17 +3,28 @@
 Tracks current progress and deferred candidates. Update on every PR that ships a step (per
 `CONTRIBUTING.md`). Full release history lives in `CHANGELOG.md`; the v0→v1 migration story
 lives in [`docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md`](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md).
+Every ADR, its status and its supersession relationships are indexed at
+[`docs/adr/README.md`](docs/adr/README.md).
 
 > **CONSOLIDATION IN REVIEW (2026-08-09; decisions signed 2026-08-10).** `harden/ops-plane`
 > merges nine hardening workstreams; a tenth (`harden/otel`) is NOT merged because it is a
 > second, incompatible observation plane — and its transport is now **retired**
 > ([ADR-014](docs/adr/ADR-014-guard-telemetry.md); branch kept as history, nothing deleted).
-> **All four owner decisions are now signed** — the last three on 2026-08-10: the substrate
+> **All four §A owner decisions are signed, and so is the one follow-up that was also an
+> owner call (F3).** D1 and D3 on 2026-08-09; D2, D4 and F3 on 2026-08-10: the substrate
 > invariant is **amended** ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)),
 > the shipped sink default **stays off** ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)),
-> and ADR-014's transport is retired. None of the three changed code. Start at
+> and ADR-014's transport is retired. **None of those three changed code** — which is the
+> point of recording them: a default nobody signed and a default somebody signed look
+> identical in a diff. Start at
 > [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md); what remains open is §E
 > (what is NOT verified) and §F1/F2/F4.
+>
+> **What §E still says, because a green 424-test suite invites the wrong inference.** No test
+> drives a real Claude Code process — enforcement is proven by wiring, not invocation. The
+> `bash -c '...'` guard bypass stands and is documented on purpose. `.baron/rules.yaml` is
+> parsed but never activated. `baron doctor` reads project-level settings only. Runtime
+> neutrality is measured with **two** producers, not three.
 
 ## P1 — pilot hardening promoted into the canonical templates — COMPLETE (unreleased)
 
@@ -185,6 +196,67 @@ flag set at all eleven return sites, with the vocabulary `enforced` | `unevaluat
 cannot measure — and is **unchanged** on the posture surface (`baron rules list`). **Consumer
 caveat:** `baron.capability.verb` can be non-empty on an `unevaluated` row, so verb-level
 aggregation must filter on `baron.enforcement == "enforced"` first.
+
+## Shipped (unreleased) — the plane is measured runtime-neutral ([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md))
+
+The event vocabulary was runtime-neutral by design from the start, which makes neutrality an
+intention rather than a fact while only one runtime writes to it. It is now a measurement:
+the pydantic-ai adapter's in-process `before_tool_execute` seam is a **second producer** on
+the same plane, reaching it through one public function (`guard.observe_decision`) and reusing
+ADR-018's `adjudicated` semantics verbatim. Driven with the same persona and the same command,
+the two runtimes append to the *same* log file and their rows differ in exactly four
+attributes — `baron.runtime`, `baron.trigger`, `tool.name` and `session.id`; verdict, verb,
+enforcement label, actor and subject are identical.
+
+**Honest bound, and it is the whole point of the number.** Two producers falsifies "the plane
+is Claude-Code-shaped". It is **not** proof the shape fits every runtime. **code-puppy has no
+pre-tool seam**, so it emits nothing and is deliberately absent from `guard.KNOWN_RUNTIMES` —
+a post-hoc producer would put rows on the plane implying an adjudication that never happened.
+`test_known_runtimes_is_the_landed_set_and_code_puppy_is_absent` pins the tuple so it grows
+with a landed adapter and never with an intention.
+
+**Breaking change, taken knowingly:** `baron.hook_event` is renamed `baron.trigger` **with no
+alias**. Accepted on the same grounds as ADR-018's label change — the default sink is `null`
+and no consumer exists — and that argument expires the moment the default flips.
+
+## Shipped (unreleased) — read-verb posture on four measured adapters ([ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md))
+
+Owner decision **D3**, executed. `baron rules list` prints `instructed` for `read_code` and
+`read_collab`; **the printed label does not change here — its basis does.** It previously
+rested on one instrumented adapter (`pydantic-ai`) and spoke for four. All four now carry a
+measurement: `claude`, `code-puppy` and `generic` statically (an A/B on two persona specs
+identical but for the two read verbs, asserting every machine-readable artifact is
+byte-identical across the pair), `pydantic-ai` on its pre-existing live gate. All four are
+negative, so `enforced` was not honestly restorable.
+
+**The bound is exact and travels with the label** (`rules.LABEL_CAVEAT` is built from
+`rules.READ_VERB_MEASUREMENTS`, so it cannot drift from the evidence): *baron emits no
+mechanism capable of omitting the read tools* — **not** *the runtime cannot enforce them*.
+A hand-written `permissions.deny`, or the Tier-3 subagent the `claude` / `code-puppy`
+HYDRATE.md recipes tell a human to author, does enforce them, and is outside what
+`baron rules list` speaks for. That divergence is recorded in ADR-020 §7 rather than papered
+over by editing one table to match the other. Adding a fifth adapter **breaks the label's
+basis until it is measured** — asserted by test, which is the anti-drift lock prose could not
+provide.
+
+## Shipped (unreleased) — the audit ingester partitions baron's own evidence ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md))
+
+`skills/multi-agent-audit/` only; no change to `cli/src/baron/`, because the wire shape is
+right and the consumer was wrong. Baron's guard rows share join keys (`agent.name`,
+`tool.name`, `session.id`) with agent-activity spans by design, so an older ingester read
+baron's *evidence* as agent *activity*. Ingester v1.1 splits guard rows out on the
+`baron.outcome` attribute before sessions are built. Measured contamination when a baron
+export is paired with `flat_spans.jsonl`: `session_duration_p50_s` 600.0→300.444,
+`tool_calls_total` 1→12, the agent roster polluted with two fake personas plus a literal
+`unknown`, and `human_turns_total` downgraded `measured`→`inferred`.
+
+**Verified by reverting the fix, not by assertion:** `return records, baron` reverts the
+partition and only the partition, and the suite completes with **45 failed checks** — a count
+stable across the branch while the denominator grew. The audit skill's tests are also now in
+CI, which they never were. Bound: verified against fixtures, **not against a live audit** — no
+end-to-end run over a real project's `.baron/events/` exists, because the default sink is
+`null` and no project is emitting yet.
+
 ## Shipped (unreleased) — externalizable capability rules, step 1 (ADR-016)
 
 The enabling refactor for project-level custom guard rules, plus the audit surface.
@@ -226,6 +298,10 @@ change is **accepted** (§3.2 stands — a park discharges only when an agent's 
 returning the item), and **P2.3 is built first** (smaller, no schema change). Q1/Q3/Q4 stay open;
 this is parked, not rejected.
 
+> **Currency 2026-08-10.** P2.3 shipped (barony 0.7.0, below), so the *sequencing* condition
+> is discharged. What holds this is Q1, Q3 and Q4 — three owner answers, not build work. The
+> distinction matters for anyone reading the queue: this is no longer "waiting its turn".
+
 ## In progress — Phase 2: conventions → mechanisms (baron CLI)
 
 Per [ADR-003](docs/adr/ADR-003-baron-cli.md) / [ADR-004](docs/adr/ADR-004-baron-guard-enforcement.md):
@@ -243,13 +319,24 @@ in **v1.6.0**; `baron init` (the deterministic scaffold, ADR-006) in **v1.8.0**;
   source-tagged snapshot merge; artifact-based audit remains the zero-infra default.
 - [ ] **Phase-gate audit** — re-run `multi-agent-audit` against the pilot with guard/lock
   live, to measure whether operational fidelity moves off 0.53 now that the rules are
-  mechanisms.
+  mechanisms. **Two preconditions changed in the 2026-08 pass and both matter to whoever runs
+  it:** the ingester no longer counts baron's own evidence as agent activity
+  ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)), so a paired
+  export is now safe — and the sink default is `null` by signed decision, so **the pilot
+  emits no rows until an operator turns sinks on**. Run it without that and the number moves
+  for no measured reason.
 - [x] **Claude Code hook coverage** ([ADR-012](docs/adr/ADR-012-hook-coverage-and-evidence-capture.md))
   — `baron guard` dispatches on `hook_event_name`: `PreToolUse` enforces (unchanged,
   fail-closed), four more events capture evidence (fail-open, structurally unable to block),
-  everything else is inert. Correlates by `session_id`. Producer-side only; the event plane
-  itself is a separate workstream and the integration is contract-tested against a double,
-  not run.
+  everything else is inert. Correlates by `session_id`. *(At authoring time the event plane
+  was an unlanded parallel workstream and this was contract-tested against a double. The
+  plane has since landed: the merge canary `test_real_event_plane_matches_the_producer_contract`
+  stopped skipping and **caught the divergence it was built for** — ADR-013's `Event` shape
+  is authoritative and guard's `emit_event()` is a thin adapter onto it. The double was
+  rewritten onto the real signature and re-exports the real `Event` / `KNOWN_KINDS` /
+  `FIXED_ATTR_KEYS`, so it cannot drift silently again. What is still true: the producer
+  tests use the double's writer rather than `baron.sinks.disk` — real-sink behaviour is
+  covered separately by `test_sinks.py`.)*
 - [ ] **Merger precondition verification** + guard coverage growth — `docs/BACKLOG.md`.
 - [ ] **pydantic-ai adapter field validation** — the adapter is test-proven offline
   (v1.6.0); running a real persona on a real project on this runtime is the ADR-001

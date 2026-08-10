@@ -86,10 +86,18 @@ expiry candidates could fold into `baron status`).
 
 **Open after ADR-012 (hook coverage):**
 
-- **Hook-install verification** — the whole enforcement story assumes the hook is actually
+- ~~**Hook-install verification** — the whole enforcement story assumes the hook is actually
   wired. Nothing checks. ADR-012 §3 explicitly refused to put that check in a `SessionStart`
   hook (a failed precondition there is unrecoverable from inside the session); it belongs in
-  a `baron doctor`, which does not exist yet.
+  a `baron doctor`, which does not exist yet.~~ **DONE (2026-08-09,
+  [ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)).** `baron doctor` exists and is the
+  home ADR-012 §3 predicted: nine read-only checks, exit 1 on any FAIL, and the denial probe
+  **spawns the executable the hook names** rather than importing `baron.guard`, because a
+  project wired to a stale or hand-rolled `baron` is the same drift as a missing hook. Two
+  bounds survive the close and are printed on every run: doctor verifies **wiring, not
+  invocation**, and it reads **project-level settings only** — a hook wired in
+  `~/.claude/settings.json` reads as FAIL. Both are recorded in
+  `DECISIONS-FOR-REVIEW.md` §E items 1 and 5.
 - **Process-spawn cost.** Wiring `PostToolUse` doubles the guard subprocesses per tool call.
   Not measured. If it bites, the fix is a persistent sink, not fewer events.
 - **`UserPromptSubmit` capture** — deliberately not wired: it carries the user's raw prompt,
@@ -135,6 +143,54 @@ So the real question is architectural — **may `baron status` make network/forg
 gated behind the existing `--fetch` opt-in, threshold from a manifest key defaulting to
 24h, waiver-able via `_apply_waivers`, degrading silently when no forge is configured.
 An unconditional check is out: it would make an offline `baron status` hang or fail.
+
+## Deferred out of the 2026-08 ops-plane consolidation
+
+Four items were identified during that pass and deliberately not done. They were recorded in
+`DECISIONS-FOR-REVIEW.md` §F, which is a *review* document for one pass; this is the standing
+record, so they live here too. **Nothing here is new scope** — each is a pointer, and §F
+carries the full cost/why-not reasoning.
+
+- **F1 — the per-runtime capability matrix.** `baron rules list` prints one label per verb,
+  but the honest answer is a **4 adapters × 10 verbs** grid: `write_code` is mechanised on
+  Claude Code via the PreToolUse hook and in-process on pydantic-ai, and is prose-only on
+  code-puppy and generic. One flat column cannot say that. **Not a measurement gap** — the
+  `(adapter, verb)`-keyed harness is already built, merged and under test
+  (`cli/tests/omission.py`, [ADR-020](adr/ADR-020-read-verb-posture-measured-on-four-adapters.md) §5,
+  shaped on the pair for exactly this reason). What is left is a user-visible output redesign:
+  a table, a `--json` schema change, and a call on what to print when a repo has several
+  adapters hydrated. ADR-020 §7's known divergence — the `claude` / `code-puppy` HYDRATE.md
+  Tier-3 tables printing `enforced` where `rules list` prints `instructed` — is what this
+  would let both surfaces state without either lying.
+- **F2 — delivery-verified `instructed`, via the ritual-fence technique.** Today `instructed`
+  means *baron emitted the sentence into the kit* — verified at emission, never at receipt.
+  A silently-ignored `AGENTS.md` is indistinguishable from a heeded one. Making the agent echo
+  a token it could only have obtained by reading the instruction would upgrade this from
+  emitted to **delivered**. Blocked on a live runtime in CI, which is the standing bound of
+  the whole project (§E item 1), and it is a **new claim class** — "delivered" is neither
+  `enforced` nor `instructed` — so it needs its own ADR and its own vocabulary decision, not
+  a quiet third value. **This is the honest ceiling on the `instructed` label, and the 0.53
+  fidelity number lives here.**
+- **F4 — no aggregate over `baron.enforcement` in the audit skill.** `harden/otel` shipped a
+  `guard_enforcement_class` metric and it was not ported. **Note the reason changed**: it was
+  withheld because the attribute was wrong in both directions, and that is fixed
+  ([ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md)). It is now **un-built, not
+  blocked**. An honest aggregate must apply the ADR-018 §5 caveat first — an `unevaluated`
+  row still carries a non-empty `baron.capability.verb`, so it must filter on
+  `enforcement == "enforced"` *before* grouping by verb. No consumer has asked.
+  [ADR-021](adr/ADR-021-audit-ingester-partitions-observation-rows.md) §5.
+- **The `events:` manifest node is declared and unread.** ADR-013 §7 reserved it so a manifest
+  carrying it does not trip `baron validate`, and so another workstream cannot invent a
+  competing key. **The blocker is measurement, not design:** guard is a cold Python start on
+  *every* tool call, and adding manifest discovery + a YAML parse to that path is a latency
+  regression nobody has quantified. Preferred shape when it is built: adapters render
+  `events.sink` into the hook environment at `baron init` time, so the hot path still reads
+  only an env var. Belongs in the ADR that measures it.
+
+Deliberately **not** listed here: flipping the sink default. That is decided, not deferred —
+it stays `null` ([ADR-013 §7.1](adr/ADR-013-observation-plane-events-and-sinks.md), owner
+decision D4, 2026-08-10) — and re-listing a signed decision as backlog is how a decision
+quietly becomes a question again.
 
 ## pydantic-ai adapter — field validation + follow-ups (post-v1.6.0)
 
