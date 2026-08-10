@@ -230,14 +230,32 @@ architecture decision with an ADR attached, not a conflict resolution, so I stop
 **Nothing is lost.** The branch is intact at `harden/otel` (3 commits, tip `3b9a4d8`). Its
 consumer-side work is producer-independent and should be re-merged once D1 is settled:
 
-- `ingest_otel.py`'s `partition_guard_records` — splits guard rows out **before**
-  `build_sessions`, so guard's sub-second hook timings stop registering as agent sessions.
-  Measured contamination on committed fixtures: `session_count` 1→2,
-  `session_duration_p50_s` 600.0→300.297, agent roster polluted with two personas,
-  `human_turns_total` silently downgraded `measured`→`inferred`.
-- `test_no_contamination_from_paired_export`, which its author **verified can fail** by
-  reverting the fix (6 distinct metrics across 3 fixtures).
+- ~~`ingest_otel.py`'s `partition_guard_records`~~ — **PORTED 2026-08-09, ADR-021.** Split
+  out before `build_sessions`, keyed on the `baron.outcome` attribute rather than a span
+  name, and generalised to all six ADR-013 kinds. Re-measured against the *merged* producer
+  rather than carried over: it is worse here, because ADR-013 also puts `tool.name` on every
+  row. Nine activity metrics move when a baron export is paired with `flat_spans.jsonl` —
+  `session_duration_p50_s` 600.0→300.444, `tool_calls_total` 1→12, roster polluted with two
+  personas plus a literal `unknown`, `human_turns_total` downgraded `measured`→`inferred`.
+  ADR-021 §2 has the full table.
+- ~~`test_no_contamination_from_paired_export`~~ — **PORTED.** Re-verified the same way its
+  author did, by reverting the fix — and the two possible reverts are kept apart, because
+  conflating them is what made an earlier draft of ADR-021 §4 wrong. `return records,
+  baron` reverts the partition **and only** the partition: the suite completes with **45
+  failed checks**, a count stable across every commit on this branch while the denominator
+  grows (45 of 230 at `4a85a49`, 45 of 247 at `30a1002`, 45 of 263 now). `return records,
+  []` *additionally* blinds the
+  guard-decision axis, and that second mutation — not the partition revert — is what
+  crashes `test_baron_guard_metrics` with an `AttributeError` after 17 failed checks, since
+  `guard_decisions` degrades to a `not measurable` string the test then sums. Run on its
+  own, the contamination test fails 34 of its own checks under either. ADR-021 §4 tabulates
+  both. The audit skill's tests are also now in CI, which they never were.
 - ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.
+  **Still pending** — producer-side, blocked on D1.
+
+**Deliberately NOT ported:** `harden/otel`'s `guard_enforcement_class` aggregate. Counting
+`baron.enforcement` while D1 is open would publish a `measured` number over a field this
+very document says is wrong in both directions. ADR-021 §5.
 
 ---
 
@@ -279,6 +297,7 @@ Stated plainly, because a green suite invites the wrong inference.
    §5–§6 for their own ADR.
 7. **The known guard bypass is unchanged.** `bash -c '...'` and friends run their payload
    uninspected. Documented in `guard.py`'s module docstring; not a regression, not fixed here.
+<<<<<<< HEAD
 8. **Runtime neutrality is proved with TWO producers, not three** (ADR-019, added
    2026-08-09). pydantic-ai now emits into the same plane in the same wire shape, and the
    two producers' rows for one governance fact differ in exactly four attributes — that is
@@ -289,6 +308,13 @@ Stated plainly, because a green suite invites the wrong inference.
    `baron.hook_event` was **renamed to `baron.trigger` with no alias** — a second breaking
    change to a published attribute, taken in the same "default sink is `null`, no consumer
    exists" window as ADR-018, and the argument expires the moment D4 flips.
+9. **The audit ingester's baron partition is verified against fixtures, not a live audit**
+   (ADR-021). `baron_events.jsonl` is real `baron guard` output, and the contamination test
+   is verified to fail when the partition is reverted (`return records, baron`: 45 failed
+   checks) — but no end-to-end audit has been run over
+   a real project's `.baron/events/` directory, because the default sink is `null` and no
+   project is emitting yet. The partition predicate also assumes no non-baron producer emits
+   a `baron.outcome` attribute; that is an assumption about a namespace, not a measurement.
 
 ---
 

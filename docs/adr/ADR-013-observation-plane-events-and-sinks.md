@@ -248,6 +248,18 @@ ingester already parses. Verified against
 own stream with zero new code. `test_row_keys_are_the_ingesters_first_choice_keys` re-derives
 those first entries from the script and fails if either side drifts.
 
+**CORRECTED 2026-08-09 (ADR-021).** "Reads baron's own stream with zero new code" was true
+and was the defect. The three shared keys are join keys, correctly emitted — but they are
+also how the ingester decides that a row describes an agent working, so baron's evidence was
+read as agent activity: a session that never happened, its duration taken from the hook
+processes' own wall-clock and published `measured`, every adjudicated persona added to the
+roster of agents observed working, and every evaluation counted as a tool call. Measured
+numbers in ADR-021 §2. The fix is in the CONSUMER — `ingest_otel.partition_guard_records`
+splits every row carrying `baron.outcome` out before sessions are built — because the wire
+shape here is right and stripping the join keys would destroy the correlation they exist for.
+Nothing in this section changes; what changes is that zero-new-code compatibility is now
+understood as a hazard the consumer must handle, not a property that made it safe.
+
 This also upholds the stated position that telemetry ingestion is **files, never
 endpoints** (`skills/multi-agent-audit/SKILL.md` — declining live Logfire/Phoenix queries is
 explicit policy). A team that wants a live exporter installs a distribution registering
@@ -345,7 +357,8 @@ filter on `enforcement == "enforced"` **first**. ADR-018 §5 is the normative st
 ## 10. Consequences
 
 **Good.** One shape for six categories of thing that happens. The audit skill can read
-baron's own stream today. Third-party sinks need no baron change. The default is silent, so
+baron's own stream today — from ingester v1.1 on, as a governance plane held separate from
+agent activity (ADR-021). Third-party sinks need no baron change. The default is silent, so
 nothing starts writing files an operator did not ask for.
 
 **Costs and accepted risks.**
@@ -358,6 +371,10 @@ nothing starts writing files an operator did not ask for.
 - No pruning. Long-lived repos will accumulate JSONL until an operator runs `find`.
 - The manifest `events:` node exists and does nothing. Declared as such here and in the
   code comment, so it cannot be mistaken for a working feature.
+- **Cross-version hazard.** An audit-skill ingester older than v1.1 pointed at a
+  `.baron/events/*.jsonl` file produces every fabricated number in ADR-021 §2. Baron cannot
+  fix this from its side without removing the join keys; snapshots carry
+  `telemetry_metrics_version` so a consumer can check.
 - Guard emits one event per tool call through a `git rev-parse` that is cached per process —
   but the *first* emission in each hook process pays it. Measured cost is not established;
   the default sink is `null`, which never touches disk, so the ordinary install pays nothing.

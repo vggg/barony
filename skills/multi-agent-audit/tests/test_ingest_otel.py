@@ -16,6 +16,14 @@ Covers:
      present attributes come back `inferred` with a coverage note.
   4. merge_telemetry.py: additive merge (git-derived values untouched),
      `otel:<file>` source tags, in-place-overwrite refusal, markdown table.
+  5. (v1.1) barony observation-plane rows: the WIRE-SHAPE proof —
+     fixtures/baron_events.jsonl is the verbatim output of a real
+     `baron guard` run through the DiskSink (see fixtures/gen_baron_events
+     .py), and the unmodified loader parses it. Plus the PARTITION: those
+     rows fabricate no session, duration, agent or tool call; the
+     ADDITIVITY LOCK against a pre-1.1 golden; and the CONTAMINATION LOCK,
+     which pairs each pre-1.1 fixture with the baron export and demands
+     every activity metric hold still.
 
 Run:  python3 tests/test_ingest_otel.py
 Stdlib only. Exit code 0 iff all checks pass.
@@ -24,6 +32,7 @@ Stdlib only. Exit code 0 iff all checks pass.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -68,6 +77,16 @@ def approx(a, b, tol=1e-6) -> bool:
 OTLP = FIXTURES / "otlp_two_sessions.json"
 FLAT = FIXTURES / "flat_spans.jsonl"
 MISSING = FIXTURES / "missing_attrs.jsonl"
+BARON = FIXTURES / "baron_events.jsonl"
+GOLDEN = FIXTURES / "golden_pre_baron_metrics.json"
+
+#: The ADR whose §2 tables publish the v1.0 figures pinned below. Read back by
+#: `test_adr021_tables_quote_the_pinned_figures` so the prose cannot drift away
+#: from the literals while the literals still match the fixture.
+#: `SKILL_DIR.parents[1]` is the repo root — same idiom as
+#: fixtures/gen_golden_pre_baron_metrics.py.
+ADR021 = (SKILL_DIR.parents[1] / "docs" / "adr"
+          / "ADR-021-audit-ingester-partitions-observation-rows.md")
 
 
 def test_otlp_fixture():
@@ -349,9 +368,536 @@ def test_merge():
               f"rc={r2.returncode}")
 
 
+def test_baron_wire_shape():
+    """UNIT 1 — the loader must parse baron's own stream with ZERO changes.
+
+    baron_events.jsonl is NOT hand-written: fixtures/gen_baron_events.py
+    drives the real `baron guard` CLI with BARON_EVENTS_SINK=disk and copies
+    what the sink wrote. If this fails, the wire shape in baron's events.py is
+    wrong and must be fixed THERE — patching the ingester to accept a bad
+    shape would defeat the purpose of the check.
+    """
+    print("--- barony observation plane: wire shape (v1.1) ---")
+    records, rep = ingest_otel.load_file(BARON)
+    check("format detected jsonl", rep["format"] == "jsonl", str(rep["format"]))
+    check("every row parsed (no unparseable)", rep["unparseable"] == 0
+          and rep["spans"] == 11 and rep["events"] == 0, str(rep))
+
+    r = records[0]
+    check("name == the emitted kind (guard.decision)",
+          r["name"] == "guard.decision", r["name"])
+    check("trace_id carried through", isinstance(r["trace_id"], str)
+          and len(r["trace_id"]) == 32, str(r["trace_id"]))
+    check("start parses to a datetime",
+          isinstance(r["start"], float)
+          and ingest_otel.iso(r["start"]).startswith("20"),
+          str(r["start"]))
+    check("end parses and is >= start",
+          isinstance(r["end"], float) and r["end"] >= r["start"],
+          f"{r['start']} -> {r['end']}")
+    check("attrs carry agent.name, session.id and baron.outcome",
+          {"agent.name", "session.id", "baron.outcome"} <= set(r["attrs"]),
+          str(sorted(r["attrs"])))
+    check("rows are classified as spans, not events",
+          all(x["kind"] == "span" for x in records))
+
+    # The join keys that make the partition NECESSARY. If a future wire shape
+    # drops them the partition is still correct, but this test should be the
+    # thing that notices the producer changed.
+    check("every row carries session.id — which is why leaving them in "
+          "fabricates a session",
+          all("session.id" in x["attrs"] for x in records))
+    check("guard rows carry tool.name, so the UNPARTITIONED ingester counts "
+          "them as tool calls",
+          any(ingest_otel.is_tool_record(x) for x in records))
+    check("no row is an LLM call or a human turn",
+          not any(ingest_otel.is_llm_record(x)
+                  or ingest_otel.is_human_turn_event(x) for x in records))
+
+    kinds = {x["name"] for x in records}
+    check("the fixture covers adjudication AND evidence kinds — both reach "
+          "the ingester through the same file",
+          {"guard.decision", "guard.override"} <= kinds
+          and {"tool.post", "session.start"} <= kinds, str(sorted(kinds)))
+    check("every row is recognised as barony observation-plane evidence",
+          all(ingest_otel.is_baron_observation_record(x) for x in records))
+    check("only the adjudication kinds are decisions",
+          sum(ingest_otel.is_baron_decision_record(x) for x in records) == 9,
+          str(sum(ingest_otel.is_baron_decision_record(x) for x in records)))
+
+
+def test_baron_rows_are_not_agent_activity():
+    """A baron-only export must fabricate NO session, duration, agent or tool.
+
+    Measured on this fixture with the partition removed, all labelled
+    `measured`: session_count 1, session_duration_total_s 0.888 (the hook
+    processes' own wall-clock), distinct_agent_identities
+    ["analyst", "pilot", "unknown"], tool_calls_total 11 with a tool named
+    `session.start`. None of those are facts about agents working.
+    `session.id`, `agent.name` and `tool.name` are correct to EMIT — they are
+    join keys — but the consumer must not read a hook's evaluation as the
+    activity it evaluated. ADR-021.
+    """
+    print("--- barony observation plane: not agent activity (v1.1) ---")
+    records, rep = ingest_otel.load_file(BARON)
+    activity, baron = ingest_otel.partition_guard_records(records)
+    check("every row in the fixture partitions as baron evidence",
+          len(baron) == 11 and activity == [], str(len(activity)))
+
+    m = ingest_otel.compute_metrics(records, [rep])
+    agg = m["aggregate"]
+    check("NO session is fabricated from baron rows",
+          m["sessions"] == [], str(m["sessions"]))
+    for key in ("session_count", "session_duration_total_s",
+                "session_duration_p50_s", "distinct_agent_identities",
+                "distinct_models", "llm_calls_total", "tool_calls_total",
+                "tool_calls_by_name", "human_turns_total"):
+        check(f"{key}: not measurable from baron evidence alone",
+              agg[key]["confidence"] == "not measurable",
+              f"{key} = {agg[key]}")
+    note = agg["session_count"].get("note") or ""
+    check("the absence note says WHY, and does not claim the file was "
+          "unparseable",
+          "observation-plane" in note and "guard_decisions" in note, note)
+
+    # The evidence is excluded, not discarded.
+    check("the baron rows are still counted on their own axis, all 11 of them",
+          agg["baron_events_by_kind"]["confidence"] == "measured"
+          and sum(agg["baron_events_by_kind"]["value"].values()) == 11,
+          str(agg["baron_events_by_kind"]["value"]))
+
+
+def test_baron_guard_metrics():
+    """UNIT 2 — guard_decisions / baron_events_by_kind, both measured."""
+    print("--- barony observation plane: counts (v1.1) ---")
+    check("INGESTER_VERSION bumped to 1.1",
+          ingest_otel.INGESTER_VERSION == "1.1",
+          ingest_otel.INGESTER_VERSION)
+
+    m = ingest([BARON])
+    agg = m["aggregate"]
+    gd = agg["guard_decisions"]
+    check("guard_decisions counts match the generated scenarios "
+          "(4 allow, 3 deny, 1 override, 1 error)",
+          gd["value"] == {"allow": 4, "deny": 3, "error": 1, "ok": 0,
+                          "override": 1}, str(gd["value"]))
+    check("guard_decisions is MEASURED (a direct count, never inferred)",
+          gd["confidence"] == "measured", str(gd["confidence"]))
+    check("guard_decisions carries the source file",
+          gd.get("source") == ["baron_events.jsonl"], str(gd.get("source")))
+    check("note keeps deny and error separate",
+          "fail-closed" in (gd.get("note") or ""), str(gd.get("note")))
+    check("note refuses to invite a fidelity reading",
+          "not a fidelity score" in (gd.get("note") or ""),
+          str(gd.get("note")))
+    check("the evidence kinds are NOT counted as decisions — a PostToolUse "
+          "observation adjudicated nothing",
+          sum(gd["value"].values()) == 9, str(gd["value"]))
+
+    bk = agg["baron_events_by_kind"]
+    check("baron_events_by_kind accounts for every partitioned row",
+          bk["value"] == {"guard.decision": 8, "guard.override": 1,
+                          "session.start": 1, "tool.post": 1},
+          str(bk["value"]))
+
+    # The producer WAS corrected (barony ADR-018), and this is the block the
+    # previous round nominated as "the place that says why" when it flipped.
+    # It used to assert the defect as current truth; it now asserts the fix,
+    # measured on a fixture regenerated against the corrected producer.
+    raw = [json.loads(x) for x in BARON.read_text().splitlines()]
+    escape = [x for x in raw
+              if x["attributes"].get("baron.capability.verb") == "write_path"]
+    check("FIXED (ADR-018): a STRUCTURAL refusal (path escapes the repo root) "
+          "is `unevaluated` — no capability adjudicated it, and the label no "
+          "longer claims one did",
+          len(escape) == 1
+          and escape[0]["attributes"]["baron.enforcement"] == "unevaluated",
+          str([x["attributes"].get("baron.enforcement") for x in escape]))
+    # The verb tuple survives the structural refusal, which is exactly why a
+    # count keyed on `baron.capability.verb` alone still over-counts. This is
+    # the ingester-side statement of the ADR-018 §5 consumer caveat: the row
+    # above carries `write_path` and adjudicated nothing.
+    check("the consumer caveat is live: the `unevaluated` row still carries a "
+          "NON-EMPTY verb, so verb counts must filter on enforcement first",
+          escape[0]["attributes"].get("baron.capability.verb") == "write_path",
+          str(escape[0]["attributes"].get("baron.capability.verb")))
+    vocab = {x["attributes"]["baron.enforcement"] for x in raw
+             if "baron.enforcement" in x["attributes"]}
+    check("the fixture speaks ONLY the post-ADR-018 vocabulary — "
+          "`not-applicable` and `instructed` are gone from the event field",
+          vocab <= {"enforced", "unevaluated", "unknown"}, str(sorted(vocab)))
+    # Still NOT SHIPPED, but the reason changed. It is no longer "the field is
+    # wrong in both directions"; it is that an honest aggregate has to apply
+    # the caveat above, and nobody has asked for one. Un-built, not blocked.
+    check("no aggregate is published over baron.enforcement (un-built, not "
+          "blocked on a defect)",
+          "guard_enforcement_class" not in agg, str(sorted(agg)))
+
+    # Honesty: absent => not measurable, with the attribute named.
+    m2 = ingest([FLAT])
+    gd2 = m2["aggregate"]["guard_decisions"]
+    check("no baron rows => NOT MEASURABLE with the attribute named",
+          gd2["value"] == "not measurable"
+          and "baron.outcome" in gd2["note"], str(gd2))
+
+    # merge_telemetry must actually surface them (TELEMETRY_KEYS is an
+    # allowlist, not a passthrough — a new key is invisible until listed).
+    merged = merge_telemetry.merge({"metrics": {}}, m)
+    tele = merged["metrics"]["telemetry"]
+    check("merge_telemetry folds the guard metrics under metrics.telemetry.*",
+          tele.get("guard_decisions", {}).get("value") == gd["value"]
+          and tele.get("baron_events_by_kind", {}).get("value") == bk["value"],
+          str(sorted(tele)))
+    check("folded entry is source-tagged otel:<file>",
+          tele["guard_decisions"].get("source") == "otel:baron_events.jsonl",
+          str(tele["guard_decisions"].get("source")))
+    md = merge_telemetry.render_markdown(m, merged)
+    check("guard rows render in the markdown table",
+          "`guard_decisions`" in md and "allow=4" in md, md[:300])
+
+
+PRE_V11_FIXTURES = ("otlp_two_sessions.json", "flat_spans.jsonl",
+                    "missing_attrs.jsonl")
+NEW_AGG_KEYS = {"guard_decisions", "baron_events_by_kind"}
+
+
+def test_additivity_lock():
+    """The v1.1 change must be STRICTLY additive to the pre-1.1 fixtures.
+
+    golden_pre_baron_metrics.json was generated from ingest_otel.py BEFORE
+    this change. Every pre-existing key must still serialise byte-identically;
+    only the two new aggregate keys may appear.
+
+    BOUND, stated so it is not over-read: this half of the lock only exercises
+    exports CONTAINING NO BARON ROWS, so it can never catch contamination —
+    which is the whole defect. `test_no_contamination_from_paired_export`
+    below is the half that can.
+    """
+    print("--- additivity lock (pre-1.1 fixtures unchanged) ---")
+    golden = json.loads(GOLDEN.read_text())
+    for name in PRE_V11_FIXTURES:
+        recs, rep = ingest_otel.load_file(FIXTURES / name)
+        m = ingest_otel.compute_metrics(recs, [rep])
+        m.pop("generated", None)
+        m.pop("telemetry_metrics_version", None)
+        # The golden stores basenames: the raw value is this checkout's
+        # absolute path (see gen_golden_pre_baron_metrics.py).
+        for entry in m["ingest"]["files"]:
+            entry["path"] = Path(entry["path"]).name
+        added = set(m["aggregate"]) - set(golden[name]["aggregate"])
+        check(f"{name}: only the two new aggregate keys added",
+              added == NEW_AGG_KEYS, str(sorted(added)))
+        for k in NEW_AGG_KEYS:
+            m["aggregate"].pop(k, None)
+        before = json.dumps(golden[name], indent=2, sort_keys=True)
+        after = json.dumps(m, indent=2, sort_keys=True)
+        check(f"{name}: pre-existing output byte-identical", before == after,
+              "output drifted — this change is no longer additive")
+
+
+def test_no_contamination_from_paired_export():
+    """Adding a baron export ALONGSIDE a real one must move no activity metric.
+
+    This is the lock that can actually fail. It pairs each pre-1.1 fixture
+    with `baron_events.jsonl` and compares against that fixture ingested
+    alone. A fixture with no baron rows cannot exhibit the failure, so the
+    additivity lock above proves nothing about it.
+
+    Verified to fail by reverting the fix — a test that cannot fail is not
+    evidence. With `partition_guard_records` made a no-op, THIS test fails 34
+    checks: 10 on flat_spans.jsonl (the per-session breakdown plus 9 activity
+    metrics), 11 on otlp_two_sessions.json, 7 on missing_attrs.jsonl, and all
+    6 of the named checks below. ADR-021 §4 records the before/after values.
+
+    `source` is the one field allowed to move, and only by gaining the baron
+    filename: it lists the files INGESTED, not the records that contributed.
+    That is a pre-existing coarseness of the ingester (provenance is
+    file-level, not record-level), not something v1.1 introduced — so the test
+    pins the exact permitted delta rather than ignoring the field.
+    """
+    print("--- no contamination when a baron export is paired in ---")
+    baron_recs, baron_rep = ingest_otel.load_file(BARON)
+    for name in PRE_V11_FIXTURES:
+        recs, rep = ingest_otel.load_file(FIXTURES / name)
+        alone = ingest_otel.compute_metrics(recs, [rep])
+        paired = ingest_otel.compute_metrics(recs + baron_recs,
+                                             [rep, baron_rep])
+        check(f"{name}: the per-session breakdown is byte-identical",
+              json.dumps(alone["sessions"], sort_keys=True)
+              == json.dumps(paired["sessions"], sort_keys=True),
+              "a baron row joined, split or extended a session")
+        for key in alone["aggregate"]:
+            if key in NEW_AGG_KEYS:
+                continue
+            a = dict(alone["aggregate"][key])
+            b = dict(paired["aggregate"][key])
+            a_src, b_src = a.pop("source", None), b.pop("source", None)
+            check(f"{name}/{key}: value, confidence and note unchanged",
+                  json.dumps(a, sort_keys=True)
+                  == json.dumps(b, sort_keys=True),
+                  f"alone={a} paired={b}")
+            expect_src = (sorted(set(a_src) | {BARON.name})
+                          if a_src is not None else None)
+            check(f"{name}/{key}: source grew by the baron file and nothing "
+                  "else", b_src == expect_src, f"{a_src} -> {b_src}")
+
+    # The values an unpartitioned ingester actually got wrong, named so a
+    # regression is legible rather than a diff of two JSON blobs.
+    flat, flat_rep = ingest_otel.load_file(FLAT)
+    paired = ingest_otel.compute_metrics(flat + baron_recs,
+                                         [flat_rep, baron_rep])
+    agg = paired["aggregate"]
+    check("session_count stays 1 (unpartitioned: 2 — a session that never "
+          "happened)",
+          agg["session_count"]["value"] == 1, str(agg["session_count"]))
+    check("session_duration_p50_s stays 600.0 (unpartitioned: 300.444 — "
+          "halved by the hook processes' own wall-clock)",
+          agg["session_duration_p50_s"]["value"] == 600.0,
+          str(agg["session_duration_p50_s"]))
+    check("tool_calls_total stays 1 (unpartitioned: 12 — guard EVALUATING a "
+          "call is not the call)",
+          agg["tool_calls_total"]["value"] == 1,
+          str(agg["tool_calls_total"]))
+    check("tool_calls_by_name gains no tool named `session.start`",
+          agg["tool_calls_by_name"]["value"] == {"run_sql": 1},
+          str(agg["tool_calls_by_name"]["value"]))
+    check("distinct_agent_identities stays ['researcher'] (unpartitioned "
+          "added 'analyst', 'pilot' and a literal 'unknown' — personas guard "
+          "EVALUATED, not agents observed working)",
+          agg["distinct_agent_identities"]["value"] == ["researcher"],
+          str(agg["distinct_agent_identities"]["value"]))
+    check("human_turns_total stays MEASURED (unpartitioned downgraded it to "
+          "`inferred`: the fabricated session had no user-prompt events)",
+          agg["human_turns_total"]["confidence"] == "measured",
+          str(agg["human_turns_total"]))
+
+
+#: The exact v1.0 figures published in ADR-021 §2, CHANGELOG and SKILL.md.
+#: Keyed metric -> (value, confidence). See the test below for why they are
+#: pinned here rather than only prose.
+ADR021_BARON_ONLY = {
+    "session_count": (1, "measured"),
+    "session_duration_total_s": (0.888, "measured"),
+    "distinct_agent_identities": (["analyst", "pilot", "unknown"], "measured"),
+    "tool_calls_total": (11, "measured"),
+    "tool_calls_by_name": ({"Bash": 7, "Write": 3, "session.start": 1},
+                           "measured"),
+}
+
+ADR021_FLAT_PAIRED = {
+    "session_count": (2, "inferred"),
+    "session_duration_total_s": (600.888, "measured"),
+    "session_duration_p50_s": (300.444, "measured"),
+    "tool_calls_total": (12, "measured"),
+    "tool_error_rate": (0.0833, "measured"),
+    "tool_calls_by_name": ({"Bash": 7, "Write": 3, "run_sql": 1,
+                            "session.start": 1}, "measured"),
+    "human_turns_total": (1, "inferred"),
+    "human_turns_per_session_mean": (1.0, "inferred"),
+    "distinct_agent_identities": (["analyst", "pilot", "researcher",
+                                   "unknown"], "measured"),
+}
+
+#: How many aggregate metrics move (value, confidence or note) when a baron
+#: export is paired in under v1.0 — the counts ADR-021 §2 and CHANGELOG quote.
+ADR021_MOVED_COUNTS = {
+    "flat_spans.jsonl": 9,
+    "otlp_two_sessions.json": 10,
+    "missing_attrs.jsonl": 6,
+}
+
+
+def _unpartitioned(paths):
+    """compute_metrics as ingester v1.0 saw it — no partition, no guard axis.
+
+    NOT the inverse of the v1.1 fix, and must not be read as one. v1.0 had no
+    guard-decision axis at all, so emulating it means returning an empty baron
+    partition; the precise inverse of the fix is `return records, baron`, which
+    keeps that axis fed. The distinction is immaterial to this helper's callers
+    — every metric they compare is an activity metric, computed identically
+    under both — but conflating the two is how an earlier draft of ADR-021 §4
+    mis-attributed a crash. The empty-partition stub blinds
+    `test_baron_guard_metrics` (`guard_decisions` degrades to a
+    `not measurable` string it then sums); the partition revert does not.
+    ADR-021 §4 tabulates both.
+    """
+    real = ingest_otel.partition_guard_records
+    ingest_otel.partition_guard_records = lambda records: (list(records), [])
+    try:
+        return ingest(paths)
+    finally:
+        ingest_otel.partition_guard_records = real
+
+
+def test_adr021_published_figures_reproduce() -> None:
+    """The numbers ADR-021 publishes are recomputed, not remembered.
+
+    ADR-021 §2 is a table of what leaked, labelled "measured on the committed
+    fixtures". The first draft of it was measured against a `baron_events
+    .jsonl` from one `gen_baron_events.py` run and then shipped alongside a
+    DIFFERENT committed fixture, so three durations no longer reproduced. In a
+    project whose entire pitch is that it publishes its own measured fidelity
+    of 0.53 rather than rounding up, a stale `measured` figure in the ADR is
+    the same defect the ADR is about.
+
+    So the figures are pinned here and recomputed from the committed fixture
+    on every run. `gen_baron_events.py` shells out to a real `baron guard`,
+    and hook wall-clocks differ run to run — regenerating the fixture is
+    legitimate, but it MUST fail this test and force the docs to be updated
+    with it. The failure message names every doc that has to move.
+    """
+    print("--- ADR-021 §2 figures reproduce from the committed fixture ---")
+    docs = ("ADR-021 §2, CHANGELOG.md, SKILL.md, DECISIONS-FOR-REVIEW.md §D")
+
+    def cmp(label, agg, expected):
+        for key, (want_val, want_conf) in expected.items():
+            got = agg.get(key)
+            if not isinstance(got, dict):
+                check(f"{label}/{key}: published in ADR-021", False, str(got))
+                continue
+            gv, gc = got.get("value"), got.get("confidence")
+            ok = approx(gv, want_val, tol=5e-4) if isinstance(
+                want_val, float) else gv == want_val
+            check(f"{label}/{key} == {want_val!r} ({want_conf})",
+                  ok and gc == want_conf,
+                  f"fixture gives {gv!r} ({gc}); update {docs}")
+
+    cmp("baron-only", _unpartitioned([BARON])["aggregate"],
+        ADR021_BARON_ONLY)
+    cmp("flat+baron", _unpartitioned([FLAT, BARON])["aggregate"],
+        ADR021_FLAT_PAIRED)
+
+    # The "N metrics move" counts, compared exactly as the contamination lock
+    # compares them: value, confidence and note, with `source` exempt.
+    for name, want in ADR021_MOVED_COUNTS.items():
+        alone = _unpartitioned([FIXTURES / name])["aggregate"]
+        paired = _unpartitioned([FIXTURES / name, BARON])["aggregate"]
+        moved = []
+        for key in alone:
+            a, b = dict(alone[key]), dict(paired.get(key, {}))
+            a.pop("source", None), b.pop("source", None)
+            if json.dumps(a, sort_keys=True) != json.dumps(b, sort_keys=True):
+                moved.append(key)
+        check(f"{name}: {want} metrics move under v1.0",
+              len(moved) == want,
+              f"{len(moved)} moved ({sorted(moved)}); update {docs}")
+
+
+def _adr_section(text: str, heading: str) -> str:
+    """The body of one `## ` section, heading line excluded."""
+    after = text.split(heading, 1)
+    if len(after) == 1:
+        return ""
+    return after[1].split("\n## ", 1)[0]
+
+
+def _adr_tables(section: str) -> list[tuple[list[str], dict[str, str]]]:
+    """Contiguous markdown tables -> (header cells, {metric: whole row}).
+
+    A row is keyed by the first backticked identifier in its first cell, which
+    is how both §2 tables name their metric.
+    """
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for line in section.splitlines():
+        if line.lstrip().startswith("|"):
+            current.append(line)
+        elif current:
+            blocks.append(current)
+            current = []
+    if current:
+        blocks.append(current)
+
+    tables = []
+    for block in blocks:
+        if len(block) < 3:
+            continue
+        header = [c.strip() for c in block[0].strip().strip("|").split("|")]
+        rows = {}
+        for line in block[2:]:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            m = re.search(r"`([A-Za-z_][A-Za-z0-9_]*)`", cells[0])
+            if m:
+                rows[m.group(1)] = line
+        tables.append((header, rows))
+    return tables
+
+
+def _value_tokens(value) -> list[str]:
+    """The parts of a computed value that the ADR must quote somewhere.
+
+    A dict contributes each key and each value, a list each element, a scalar
+    its `str()`. Rendered, not parsed, because the ADR writes these cells for
+    humans: the "paired" column is a delta (`+ Bash:7, Write:3, …`), floats
+    carry bold markers, and confidences are backticked inline.
+    """
+    if isinstance(value, dict):
+        return [str(part) for kv in value.items() for part in kv]
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+def test_adr021_tables_quote_the_pinned_figures() -> None:
+    """ADR-021 §2's tables are checked against the pinned literals.
+
+    The test above closes literal <-> fixture: regenerate `baron_events.jsonl`
+    and the pinned figures stop reproducing. It does NOT close ADR <-> literal
+    — the prose was verified unguarded, by editing §2's `300.444` to `999.999`
+    and watching the suite stay green. This closes that half by reading the ADR
+    back off disk.
+
+    WHAT IT CHECKS, exactly: for each metric pinned in `ADR021_BARON_ONLY` and
+    `ADR021_FLAT_PAIRED`, the ADR §2 table row naming that metric contains
+    every token of the pinned value. Token presence over the WHOLE ROW, not
+    equality against one cell: the paired column is written as a delta, so
+    `run_sql` lives in the neighbouring "alone" cell of the same row. Small
+    integers therefore match loosely — this catches a figure that drifts, not
+    every conceivable mis-edit.
+
+    NOT COVERED: confidence labels (the ADR annotates them only where they are
+    the anomaly), §2's moved-metric counts, which are prose around the tables,
+    and every number in §4. Those stay manual.
+    """
+    print("--- ADR-021 §2 tables still quote the pinned figures ---")
+    if not ADR021.exists():
+        check("ADR-021 is readable from the tests", False,
+              f"{ADR021} not found — this check reads the published tables "
+              "directly; it is not skipped when they are missing")
+        return
+
+    section = _adr_section(ADR021.read_text(encoding="utf-8"),
+                           "\n## 2. What actually leaked")
+    tables = _adr_tables(section)
+    docs = "ADR-021 §2, CHANGELOG.md, SKILL.md, DECISIONS-FOR-REVIEW.md §D"
+
+    for label, marker, expected in (
+            ("baron-only", "v1.0 published", ADR021_BARON_ONLY),
+            ("flat+baron", "paired", ADR021_FLAT_PAIRED)):
+        match = [rows for header, rows in tables
+                 if any(marker in cell for cell in header)]
+        check(f"ADR-021 §2 has the {label} table (header cell {marker!r})",
+              len(match) == 1, f"{len(match)} tables matched")
+        if len(match) != 1:
+            continue
+        rows = match[0]
+        for key, (want_val, _conf) in expected.items():
+            row = rows.get(key)
+            if row is None:
+                check(f"§2 {label}: `{key}` has a row", False,
+                      f"pinned in the tests but absent from the table; "
+                      f"update {docs}")
+                continue
+            missing = [t for t in _value_tokens(want_val) if t not in row]
+            check(f"§2 {label}: `{key}` row quotes {want_val!r}",
+                  not missing,
+                  f"row does not mention {missing}: {row.strip()} — "
+                  f"update {docs}")
+
+
 def main() -> int:
     print("=== multi-agent-audit telemetry-mode tests ===")
-    for p in (OTLP, FLAT, MISSING):
+    for p in (OTLP, FLAT, MISSING, BARON, GOLDEN):
         if not p.exists():
             print(f"fixture missing: {p}", file=sys.stderr)
             return 1
@@ -361,6 +907,13 @@ def main() -> int:
     test_combined()
     test_cli()
     test_merge()
+    test_baron_wire_shape()
+    test_baron_rows_are_not_agent_activity()
+    test_baron_guard_metrics()
+    test_additivity_lock()
+    test_no_contamination_from_paired_export()
+    test_adr021_published_figures_reproduce()
+    test_adr021_tables_quote_the_pinned_figures()
     print(f"\n=== Summary: {PASS} pass, {FAIL} fail ===")
     return 0 if FAIL == 0 else 1
 

@@ -674,8 +674,13 @@ Three things worth knowing:
   tool call, and belong on local disk. Retention is yours: `find .baron/events -mtime +30 -delete`.
 - **No OpenTelemetry dependency** (ADR-003 holds). The row shape is the flat JSONL that
   `skills/multi-agent-audit/scripts/ingest_otel.py` already parses, so the audit skill reads
-  baron's own stream with zero new code. A live exporter is a plugin in the `baron.sinks`
-  entry-point group, mirroring `baron.forges`:
+  baron's own stream with zero new code. **Read that stream with ingester v1.1 or later.**
+  The shared keys `agent.name` / `tool.name` / `session.id` are join keys, and an older
+  ingester reads them as agent activity: it invents a session out of hook timings, publishes
+  its duration as agent working time labelled `measured`, and counts each evaluation as a
+  tool call. v1.1 partitions baron rows out of the activity plane and counts them separately
+  (ADR-021). A live exporter is a plugin in the `baron.sinks` entry-point group, mirroring
+  `baron.forges`:
 
 ```toml
 [project.entry-points."baron.sinks"]

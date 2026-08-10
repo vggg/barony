@@ -1,0 +1,561 @@
+{
+  "flat_spans.jsonl": {
+    "aggregate": {
+      "cache_creation_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cache-creation-token attribute (cache_creation_tokens) on any LLM record",
+        "value": "not measurable"
+      },
+      "cache_read_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cache-read-token attribute (cache_read_tokens / gen_ai.usage.cache_read_tokens) on any LLM record",
+        "value": "not measurable"
+      },
+      "cost_usd_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cost attribute (cost_usd / cost_usd_micros / gen_ai.usage.cost) on any LLM record; cost is NEVER estimated from token counts",
+        "value": "not measurable"
+      },
+      "distinct_agent_identities": {
+        "confidence": "measured",
+        "note": "from agent.name / agent_id / subagent_type / service.name / user.email attributes",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": [
+          "researcher"
+        ]
+      },
+      "distinct_models": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": [
+          "claude-sonnet-4-5"
+        ]
+      },
+      "human_turns_per_session_mean": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1.0
+      },
+      "human_turns_per_task": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no task-boundary attribute (workflow.run_id / task.id / gen_ai.task.id) on any record",
+        "value": "not measurable"
+      },
+      "human_turns_total": {
+        "confidence": "measured",
+        "note": "user-prompt events preferred; interaction spans counted only for sessions with zero user-prompt events (no double counting)",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1
+      },
+      "input_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 900
+      },
+      "llm_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1
+      },
+      "output_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 250
+      },
+      "session_count": {
+        "confidence": "inferred",
+        "note": "1/1 sessions keyed by trace_id because no session attribute (session.id / gen_ai.conversation.id) is present; one trace may not equal one user session",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1
+      },
+      "session_duration_p50_s": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 600.0
+      },
+      "session_duration_total_s": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 600.0
+      },
+      "tool_calls_by_name": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": {
+          "run_sql": 1
+        }
+      },
+      "tool_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1
+      },
+      "tool_error_rate": {
+        "confidence": "measured",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1.0
+      },
+      "tool_errors_total": {
+        "confidence": "measured",
+        "note": "error = OTLP status ERROR, success=false, or error_type present; spans with unset status count as ok (OTLP contract: STATUS_CODE_UNSET is not an error)",
+        "source": [
+          "flat_spans.jsonl"
+        ],
+        "value": 1
+      }
+    },
+    "ingest": {
+      "files": [
+        {
+          "events": 1,
+          "format": "jsonl",
+          "has_logs_stream": false,
+          "notes": [],
+          "path": "flat_spans.jsonl",
+          "spans": 3,
+          "unparseable": 0
+        }
+      ]
+    },
+    "sessions": [
+      {
+        "agents": [
+          "researcher"
+        ],
+        "cache_creation_tokens": null,
+        "cache_read_tokens": null,
+        "cost_usd": null,
+        "duration_s": 600.0,
+        "end": "2026-07-02T09:10:00Z",
+        "human_turns": 1,
+        "identity_method": "trace_id fallback",
+        "input_tokens": 900,
+        "llm_calls": 1,
+        "models": [
+          "claude-sonnet-4-5"
+        ],
+        "output_tokens": 250,
+        "session_id": "trace:tr-100",
+        "source_files": [
+          "flat_spans.jsonl"
+        ],
+        "start": "2026-07-02T09:00:00Z",
+        "tasks": [],
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "run_sql": 1
+        },
+        "tool_errors": 1
+      }
+    ]
+  },
+  "missing_attrs.jsonl": {
+    "aggregate": {
+      "cache_creation_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cache-creation-token attribute (cache_creation_tokens) on any LLM record",
+        "value": "not measurable"
+      },
+      "cache_read_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cache-read-token attribute (cache_read_tokens / gen_ai.usage.cache_read_tokens) on any LLM record",
+        "value": "not measurable"
+      },
+      "cost_usd_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no cost attribute (cost_usd / cost_usd_micros / gen_ai.usage.cost) on any LLM record; cost is NEVER estimated from token counts",
+        "value": "not measurable"
+      },
+      "distinct_agent_identities": {
+        "confidence": "measured",
+        "note": "from agent.name / agent_id / subagent_type / service.name / user.email attributes",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": []
+      },
+      "distinct_models": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": []
+      },
+      "human_turns_per_session_mean": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no user-prompt events (claude_code.user_prompt / gen_ai.user.message) or interaction spans in export, and no logs/events stream was present to confirm a true zero; export the logs stream (Claude Code: OTEL_LOGS_EXPORTER=otlp) to measure this",
+        "value": "not measurable"
+      },
+      "human_turns_per_task": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no task-boundary attribute (workflow.run_id / task.id / gen_ai.task.id) on any record",
+        "value": "not measurable"
+      },
+      "human_turns_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no user-prompt events (claude_code.user_prompt / gen_ai.user.message) or interaction spans in export, and no logs/events stream was present to confirm a true zero; export the logs stream (Claude Code: OTEL_LOGS_EXPORTER=otlp) to measure this",
+        "value": "not measurable"
+      },
+      "input_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no input-token attribute (input_tokens / gen_ai.usage.input_tokens / llm.token_count.prompt) on any LLM record",
+        "value": "not measurable"
+      },
+      "llm_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 1
+      },
+      "output_tokens_total": {
+        "confidence": "not measurable",
+        "note": "attribute absent \u2014 no output-token attribute (output_tokens / gen_ai.usage.output_tokens / llm.token_count.completion) on any LLM record",
+        "value": "not measurable"
+      },
+      "session_count": {
+        "confidence": "inferred",
+        "note": "1/1 sessions keyed by trace_id because no session attribute (session.id / gen_ai.conversation.id) is present; one trace may not equal one user session",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 1
+      },
+      "session_duration_p50_s": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 11.0
+      },
+      "session_duration_total_s": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 11.0
+      },
+      "tool_calls_by_name": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": {
+          "search": 1
+        }
+      },
+      "tool_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 1
+      },
+      "tool_error_rate": {
+        "confidence": "measured",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 0.0
+      },
+      "tool_errors_total": {
+        "confidence": "measured",
+        "note": "error = OTLP status ERROR, success=false, or error_type present; spans with unset status count as ok (OTLP contract: STATUS_CODE_UNSET is not an error)",
+        "source": [
+          "missing_attrs.jsonl"
+        ],
+        "value": 0
+      }
+    },
+    "ingest": {
+      "files": [
+        {
+          "events": 0,
+          "format": "jsonl",
+          "has_logs_stream": false,
+          "notes": [
+            "1 row(s) were not parseable JSON objects and were skipped"
+          ],
+          "path": "missing_attrs.jsonl",
+          "spans": 2,
+          "unparseable": 1
+        }
+      ]
+    },
+    "sessions": [
+      {
+        "agents": [],
+        "cache_creation_tokens": null,
+        "cache_read_tokens": null,
+        "cost_usd": null,
+        "duration_s": 11.0,
+        "end": "2026-07-03T10:00:11Z",
+        "human_turns": null,
+        "identity_method": "trace_id fallback",
+        "input_tokens": null,
+        "llm_calls": 1,
+        "models": [],
+        "output_tokens": null,
+        "session_id": "trace:tr-200",
+        "source_files": [
+          "missing_attrs.jsonl"
+        ],
+        "start": "2026-07-03T10:00:00Z",
+        "tasks": [],
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "search": 1
+        },
+        "tool_errors": 0
+      }
+    ]
+  },
+  "otlp_two_sessions.json": {
+    "aggregate": {
+      "cache_creation_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 50
+      },
+      "cache_read_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 6000
+      },
+      "cost_usd_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 0.025
+      },
+      "distinct_agent_identities": {
+        "confidence": "measured",
+        "note": "from agent.name / agent_id / subagent_type / service.name / user.email attributes",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": [
+          "claude-code"
+        ]
+      },
+      "distinct_models": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": [
+          "claude-haiku-4-5",
+          "claude-sonnet-4-5"
+        ]
+      },
+      "human_turns_per_session_mean": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 1.5
+      },
+      "human_turns_per_task": {
+        "confidence": "measured",
+        "note": "3 human turns / 2 distinct task ids (workflow.run_id / task.id); task COMPLETION status is not encoded in the export, so this is per observed task, not per completed task",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 1.5
+      },
+      "human_turns_total": {
+        "confidence": "measured",
+        "note": "user-prompt events preferred; interaction spans counted only for sessions with zero user-prompt events (no double counting)",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 3
+      },
+      "input_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 2500
+      },
+      "llm_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 3
+      },
+      "output_tokens_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 600
+      },
+      "session_count": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 2
+      },
+      "session_duration_p50_s": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 156.5
+      },
+      "session_duration_total_s": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 313.0
+      },
+      "tool_calls_by_name": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": {
+          "Bash": 2,
+          "Edit": 1,
+          "Read": 1
+        }
+      },
+      "tool_calls_total": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 4
+      },
+      "tool_error_rate": {
+        "confidence": "measured",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 0.25
+      },
+      "tool_errors_total": {
+        "confidence": "measured",
+        "note": "error = OTLP status ERROR, success=false, or error_type present; spans with unset status count as ok (OTLP contract: STATUS_CODE_UNSET is not an error)",
+        "source": [
+          "otlp_two_sessions.json"
+        ],
+        "value": 1
+      }
+    },
+    "ingest": {
+      "files": [
+        {
+          "events": 7,
+          "format": "otlp-json",
+          "has_logs_stream": true,
+          "notes": [],
+          "path": "otlp_two_sessions.json",
+          "spans": 8,
+          "unparseable": 0
+        }
+      ]
+    },
+    "sessions": [
+      {
+        "agents": [
+          "claude-code"
+        ],
+        "cache_creation_tokens": 50,
+        "cache_read_tokens": 4000,
+        "cost_usd": 0.02,
+        "duration_s": 300.0,
+        "end": "2025-07-01T10:05:00Z",
+        "human_turns": 2,
+        "identity_method": "session attribute",
+        "input_tokens": 2000,
+        "llm_calls": 2,
+        "models": [
+          "claude-sonnet-4-5"
+        ],
+        "output_tokens": 500,
+        "session_id": "sess-a",
+        "source_files": [
+          "otlp_two_sessions.json"
+        ],
+        "start": "2025-07-01T10:00:00Z",
+        "tasks": [
+          "wf_1"
+        ],
+        "tool_calls": 3,
+        "tool_calls_by_name": {
+          "Bash": 1,
+          "Edit": 1,
+          "Read": 1
+        },
+        "tool_errors": 1
+      },
+      {
+        "agents": [
+          "claude-code"
+        ],
+        "cache_creation_tokens": 0,
+        "cache_read_tokens": 2000,
+        "cost_usd": 0.005,
+        "duration_s": 13.0,
+        "end": "2025-07-01T11:00:13Z",
+        "human_turns": 1,
+        "identity_method": "session attribute",
+        "input_tokens": 500,
+        "llm_calls": 1,
+        "models": [
+          "claude-haiku-4-5"
+        ],
+        "output_tokens": 100,
+        "session_id": "sess-b",
+        "source_files": [
+          "otlp_two_sessions.json"
+        ],
+        "start": "2025-07-01T11:00:00Z",
+        "tasks": [
+          "wf_2"
+        ],
+        "tool_calls": 1,
+        "tool_calls_by_name": {
+          "Bash": 1
+        },
+        "tool_errors": 0
+      }
+    ]
+  }
+}

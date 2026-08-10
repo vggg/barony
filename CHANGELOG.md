@@ -7,16 +7,131 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 > **Reviewers start at [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).** This
-> release consolidates five parallel hardening workstreams. **D1's semantics half is now
-> DECIDED and fixed** — `baron.enforcement` is a per-call observation
-> ([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md)); what remains of D1
-> is merge work (retire `telemetry.py`, re-merge `ingest_otel.py`'s
-> `partition_guard_records`). One decision is still BLOCKING: whether Cognee is a projection
-> or an authoritative source (ADR-015 §4.1).
+> release consolidates **nine** parallel hardening workstreams. **D1 and D3 are both now
+> DECIDED and implemented** — `baron.enforcement` is a per-call observation
+> ([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md)), and the read-verb
+> posture label rests on four measured adapters
+> ([ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md)).
+> `ingest_otel.py`'s `partition_guard_records` is **merged**
+> ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)), and the event
+> plane is proved runtime-neutral by a second producer
+> ([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md)). What remains of D1 is one
+> piece of merge work: retire `telemetry.py`. One decision is still BLOCKING: whether Cognee
+> is a projection or an authoritative source (ADR-015 §4.1). D4 (sink on by default) is open
+> and its stated precondition — D1 — is now met.
 >
-> **ADR-014 is deliberately absent from `docs/adr/`.** A sixth workstream (`harden/otel`)
-> built a second, incompatible observation plane; it is NOT merged and its branch is intact
-> at `harden/otel`. The number is reserved for it. See DECISIONS-FOR-REVIEW §D.
+> **ADR-014 is deliberately absent from `docs/adr/`.** A workstream (`harden/otel`) built a
+> second, incompatible observation plane; it is NOT merged and its branch is intact at
+> `harden/otel`. The number is reserved for it. Its two genuinely producer-independent
+> halves have now been ported by other branches (`Decision.adjudicated` → ADR-018,
+> `partition_guard_records` → ADR-021). See DECISIONS-FOR-REVIEW §D.
+>
+> **ADR numbering.** Three workstreams independently claimed ADR-018. At consolidation the
+> number stayed with the adjudicated-enforcement decision (which ADR-019 already built on by
+> number); the read-verb posture ADR became **ADR-020** and the audit-ingester ADR became
+> **ADR-021**. No content changed in the renumber.
+
+### Fixed — the audit fixture was a fossil of the pre-ADR-018 producer (found at consolidation)
+
+`skills/multi-agent-audit/tests/fixtures/baron_events.jsonl` is documented as the verbatim
+output of a real `baron guard` run, and its whole purpose is to prove that the wire shape
+baron **emits** is the wire shape `ingest_otel.py` **parses**. It was generated before
+ADR-018 and ADR-019 landed on this branch, so it still contained four rows labelled
+`not-applicable` — a value the merged vocabulary no longer permits — and none of the
+`baron.runtime` / `baron.trigger` attributes the merged producer now stamps. A fixture from
+a producer that no longer exists proves nothing about the one that does, and it would have
+defeated the CI step this same workstream added to catch exactly that drift.
+
+- **Regenerated against the merged producer.** `not-applicable` → `unevaluated`; all 11 rows
+  now carry `baron.runtime: claude-code`. The ingester parsed the new attributes with **no
+  code change**, which is an independent check on ADR-019's wire-shape claim.
+- **`test_baron_guard_metrics` now asserts the fix rather than the defect.** The previous
+  round left a check asserting the structural-refusal row was *wrongly* labelled `enforced`,
+  and nominated itself as "the place that says why" when the producer was corrected. It now
+  asserts `unevaluated`, that the fixture speaks only the post-ADR-018 vocabulary, and that
+  the row **still carries a non-empty verb** — the ADR-018 §5 consumer caveat, restated on
+  the ingester side. Verified to fail: reverting the fixture's vocabulary fails 2 checks.
+- **Three published `session_duration_*` figures moved** (`1.096` → `0.888`, `601.096` →
+  `600.888`, `300.548` → `300.444`) and were re-pinned in the four documents
+  `test_adr021_published_figures_reproduce` names. These are hook wall-clock on the
+  generating machine and **move on every regeneration by design** — that is what §2
+  measures. `gen_baron_events.py` now says so.
+- **Four passages describing `baron.enforcement` as "under correction" were wrong** once
+  ADR-018 merged, and are corrected in `SKILL.md`, `ingest_otel.py`, ADR-021 §5 and
+  `gen_baron_events.py`. The enforcement axis is **still unpublished**, but the honest reason
+  changed from "the field is wrong in both directions" to "an honest aggregate must filter on
+  `enforcement == "enforced"` before grouping, and that filter is un-built" — a gap, not a
+  blocker.
+
+### Fixed — baron's own evidence was being counted as agent activity (ADR-021)
+
+ADR-013 §6 chose a wire shape the audit skill's ingester reads "with zero new code", and
+verified it. That worked, and it was the defect: `agent.name`, `tool.name` and `session.id`
+are join keys on every baron row, and they are also how `ingest_otel.py` decides a row
+describes an agent working. So a `.baron/events/*.jsonl` file handed to the ingester was
+read as an agent session.
+
+Measured on the committed fixtures with the 11-row `baron_events.jsonl` (generated by a real
+`baron guard` run, not hand-written), every value labelled `measured`:
+
+- **guard-only export** — `session_count` 1, `session_duration_total_s` 0.888 (the wall-clock
+  of eleven hook subprocesses), `distinct_agent_identities`
+  `["analyst", "pilot", "unknown"]`, `tool_calls_total` 11 including a "tool" named
+  `session.start`.
+- **paired with `flat_spans.jsonl`** — nine activity metrics moved: `session_count` 1 → 2,
+  `session_duration_p50_s` **600.0 → 300.444**, `tool_calls_total` 1 → 12, `tool_error_rate`
+  1.0 → 0.0833, the agent roster gained two evaluated personas plus a literal `unknown`, and
+  `human_turns_total` was silently **downgraded from `measured` to `inferred`** by the
+  arrival of evidence. Ten metrics move on `otlp_two_sessions.json`, six on
+  `missing_attrs.jsonl`.
+
+  These figures are asserted by `test_adr021_published_figures_reproduce`, so a regenerated
+  fixture fails the suite instead of silently invalidating the ADR — and by
+  `test_adr021_tables_quote_the_pinned_figures`, which reads ADR-021 §2 back off disk so an
+  edit to the *prose* fails too. Without the second, changing `300.444` to `999.999` in the
+  ADR left the suite green; the check is token presence per table row, and its exact scope
+  (confidences and §4's counts are not covered) is stated in ADR-021 §2.
+
+Publishing instrumentation overhead as agent working time under a `measured` label is the
+0.53 failure mode with the sign flipped, so the numbers are recorded in ADR-021 §2 rather
+than quietly corrected.
+
+- **`ingest_otel.partition_guard_records`** splits every row carrying `baron.outcome` out
+  **before** `build_sessions`. Keyed on the attribute, not a span-name allowlist, because
+  ADR-013 deliberately leaves `kind` open. All six ADR-013 kinds are partitioned, not only
+  the guard ones: `tool.post` carries `tool.name` and would otherwise be counted as a tool
+  call.
+- **`any_spans`** now counts activity spans, so a baron-only file is not mistaken for a
+  spans stream — a `measured` zero tool calls would read as "the agents made none".
+- **Absence notes say why.** "No parseable records" was false for a baron-only export; the
+  records parsed fine, they are not activity. The new note points at the axis where the rows
+  *are* counted.
+- **Two new aggregate keys**, both direct counts: `guard_decisions` (outcomes over the
+  adjudication kinds) and `baron_events_by_kind` (every withheld row by span name, so the
+  exclusion is auditable rather than silent). Both fold through
+  `merge_telemetry.TELEMETRY_KEYS`, which is an allowlist.
+- **NOT shipped: an aggregate over `baron.enforcement`.** `harden/otel` had one; it is not
+  ported. That attribute is wrong in both directions today (ADR-013 §9.1) and a `measured`
+  count over it would look authoritative. It lands when the label does — ADR-021 §5.
+- **`INGESTER_VERSION` 1.0 → 1.1.** Cross-version hazard, stated not papered over: a
+  pre-1.1 ingester reproduces every number above. Snapshots carry
+  `telemetry_metrics_version`.
+- **`test_no_contamination_from_paired_export`** is the lock that can actually fail —
+  verified by reverting the fix. `return records, baron` (the precise inverse: partition
+  gone, guard axis intact) fails 34 of that test's own checks and **45 across the suite**.
+  The harsher `return records, []` also blinds the guard-decision axis and crashes a
+  different test with an `AttributeError`; that is a second mutation's result, not this
+  fix's revert, and ADR-021 §4 keeps the two apart. Its companion
+  `test_additivity_lock` only reads guard-free fixtures and therefore proves nothing about
+  contamination; its own docstring now says so. The golden baseline is rebuilt by
+  `gen_golden_pre_baron_metrics.py`, which extracts the ingester from a git ref and refuses
+  to run unless that copy reports version 1.0.
+- **The audit skill's tests are now in CI.** They shipped in v1.6.0 and were never wired up,
+  so nothing caught drift between baron's emitted shape and the ingester that reads it.
+
+Ported from `harden/otel` (`3b9a4d8`), which found this class of defect against its own
+unmerged producer; adapted to the merged ADR-013 one. No change to `cli/src/baron/` — the
+wire shape is right, the consumer was wrong.
 
 ### Added — `baron guard` taps the wider Claude Code hook surface (ADR-012)
 
