@@ -421,7 +421,7 @@ def test_baron_rows_are_not_agent_activity():
     """A baron-only export must fabricate NO session, duration, agent or tool.
 
     Measured on this fixture with the partition removed, all labelled
-    `measured`: session_count 1, session_duration_total_s 0.91 (the hook
+    `measured`: session_count 1, session_duration_total_s 1.096 (the hook
     processes' own wall-clock), distinct_agent_identities
     ["analyst", "pilot", "unknown"], tool_calls_total 11 with a tool named
     `session.start`. None of those are facts about agents working.
@@ -627,7 +627,7 @@ def test_no_contamination_from_paired_export():
     check("session_count stays 1 (unpartitioned: 2 — a session that never "
           "happened)",
           agg["session_count"]["value"] == 1, str(agg["session_count"]))
-    check("session_duration_p50_s stays 600.0 (unpartitioned: 300.455 — "
+    check("session_duration_p50_s stays 600.0 (unpartitioned: 300.548 — "
           "halved by the hook processes' own wall-clock)",
           agg["session_duration_p50_s"]["value"] == 600.0,
           str(agg["session_duration_p50_s"]))
@@ -649,6 +649,105 @@ def test_no_contamination_from_paired_export():
           str(agg["human_turns_total"]))
 
 
+#: The exact v1.0 figures published in ADR-018 §2, CHANGELOG and SKILL.md.
+#: Keyed metric -> (value, confidence). See the test below for why they are
+#: pinned here rather than only prose.
+ADR018_BARON_ONLY = {
+    "session_count": (1, "measured"),
+    "session_duration_total_s": (1.096, "measured"),
+    "distinct_agent_identities": (["analyst", "pilot", "unknown"], "measured"),
+    "tool_calls_total": (11, "measured"),
+    "tool_calls_by_name": ({"Bash": 7, "Write": 3, "session.start": 1},
+                           "measured"),
+}
+
+ADR018_FLAT_PAIRED = {
+    "session_count": (2, "inferred"),
+    "session_duration_total_s": (601.096, "measured"),
+    "session_duration_p50_s": (300.548, "measured"),
+    "tool_calls_total": (12, "measured"),
+    "tool_error_rate": (0.0833, "measured"),
+    "tool_calls_by_name": ({"Bash": 7, "Write": 3, "run_sql": 1,
+                            "session.start": 1}, "measured"),
+    "human_turns_total": (1, "inferred"),
+    "human_turns_per_session_mean": (1.0, "inferred"),
+    "distinct_agent_identities": (["analyst", "pilot", "researcher",
+                                   "unknown"], "measured"),
+}
+
+#: How many aggregate metrics move (value, confidence or note) when a baron
+#: export is paired in under v1.0 — the counts ADR-018 §2 and CHANGELOG quote.
+ADR018_MOVED_COUNTS = {
+    "flat_spans.jsonl": 9,
+    "otlp_two_sessions.json": 10,
+    "missing_attrs.jsonl": 6,
+}
+
+
+def _unpartitioned(paths):
+    """compute_metrics with the v1.1 fix stubbed out — i.e. ingester v1.0."""
+    real = ingest_otel.partition_guard_records
+    ingest_otel.partition_guard_records = lambda records: (list(records), [])
+    try:
+        return ingest(paths)
+    finally:
+        ingest_otel.partition_guard_records = real
+
+
+def test_adr018_published_figures_reproduce() -> None:
+    """The numbers ADR-018 publishes are recomputed, not remembered.
+
+    ADR-018 §2 is a table of what leaked, labelled "measured on the committed
+    fixtures". The first draft of it was measured against a `baron_events
+    .jsonl` from one `gen_baron_events.py` run and then shipped alongside a
+    DIFFERENT committed fixture, so three durations no longer reproduced. In a
+    project whose entire pitch is that it publishes its own measured fidelity
+    of 0.53 rather than rounding up, a stale `measured` figure in the ADR is
+    the same defect the ADR is about.
+
+    So the figures are pinned here and recomputed from the committed fixture
+    on every run. `gen_baron_events.py` shells out to a real `baron guard`,
+    and hook wall-clocks differ run to run — regenerating the fixture is
+    legitimate, but it MUST fail this test and force the docs to be updated
+    with it. The failure message names every doc that has to move.
+    """
+    print("--- ADR-018 §2 figures reproduce from the committed fixture ---")
+    docs = ("ADR-018 §2, CHANGELOG.md, SKILL.md, DECISIONS-FOR-REVIEW.md §D")
+
+    def cmp(label, agg, expected):
+        for key, (want_val, want_conf) in expected.items():
+            got = agg.get(key)
+            if not isinstance(got, dict):
+                check(f"{label}/{key}: published in ADR-018", False, str(got))
+                continue
+            gv, gc = got.get("value"), got.get("confidence")
+            ok = approx(gv, want_val, tol=5e-4) if isinstance(
+                want_val, float) else gv == want_val
+            check(f"{label}/{key} == {want_val!r} ({want_conf})",
+                  ok and gc == want_conf,
+                  f"fixture gives {gv!r} ({gc}); update {docs}")
+
+    cmp("baron-only", _unpartitioned([BARON])["aggregate"],
+        ADR018_BARON_ONLY)
+    cmp("flat+baron", _unpartitioned([FLAT, BARON])["aggregate"],
+        ADR018_FLAT_PAIRED)
+
+    # The "N metrics move" counts, compared exactly as the contamination lock
+    # compares them: value, confidence and note, with `source` exempt.
+    for name, want in ADR018_MOVED_COUNTS.items():
+        alone = _unpartitioned([FIXTURES / name])["aggregate"]
+        paired = _unpartitioned([FIXTURES / name, BARON])["aggregate"]
+        moved = []
+        for key in alone:
+            a, b = dict(alone[key]), dict(paired.get(key, {}))
+            a.pop("source", None), b.pop("source", None)
+            if json.dumps(a, sort_keys=True) != json.dumps(b, sort_keys=True):
+                moved.append(key)
+        check(f"{name}: {want} metrics move under v1.0",
+              len(moved) == want,
+              f"{len(moved)} moved ({sorted(moved)}); update {docs}")
+
+
 def main() -> int:
     print("=== multi-agent-audit telemetry-mode tests ===")
     for p in (OTLP, FLAT, MISSING, BARON, GOLDEN):
@@ -666,6 +765,7 @@ def main() -> int:
     test_baron_guard_metrics()
     test_additivity_lock()
     test_no_contamination_from_paired_export()
+    test_adr018_published_figures_reproduce()
     print(f"\n=== Summary: {PASS} pass, {FAIL} fail ===")
     return 0 if FAIL == 0 else 1
 

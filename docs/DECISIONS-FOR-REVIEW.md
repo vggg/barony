@@ -198,12 +198,15 @@ consumer-side work is producer-independent and should be re-merged once D1 is se
   name, and generalised to all six ADR-013 kinds. Re-measured against the *merged* producer
   rather than carried over: it is worse here, because ADR-013 also puts `tool.name` on every
   row. Nine activity metrics move when a baron export is paired with `flat_spans.jsonl` —
-  `session_duration_p50_s` 600.0→300.455, `tool_calls_total` 1→12, roster polluted with two
+  `session_duration_p50_s` 600.0→300.548, `tool_calls_total` 1→12, roster polluted with two
   personas plus a literal `unknown`, `human_turns_total` downgraded `measured`→`inferred`.
   ADR-018 §2 has the full table.
 - ~~`test_no_contamination_from_paired_export`~~ — **PORTED.** Re-verified the same way its
-  author did: reverting the fix fails 34 of its checks (45 across the suite). The audit
-  skill's tests are also now in CI, which they never were.
+  author did: with `partition_guard_records` stubbed to a no-op split, running that test
+  directly fails 34 of its checks. Run as a whole suite the revert never reaches it — it
+  crashes `test_baron_guard_metrics` with an `AttributeError` after 17 failed checks,
+  because `guard_decisions` degrades to a `not measurable` string. Both are evidence; only
+  the first is a count. The audit skill's tests are also now in CI, which they never were.
 - ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.
   **Still pending** — producer-side, blocked on D1.
 

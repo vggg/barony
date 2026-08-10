@@ -52,7 +52,7 @@ On the committed fixtures, with ingester v1.0 and the 11-row
 | metric | v1.0 published | reality |
 |---|---|---|
 | `session_count` | 1 | no session happened |
-| `session_duration_total_s` | 0.91 | the wall-clock of 11 hook subprocesses |
+| `session_duration_total_s` | 1.096 | the wall-clock of 11 hook subprocesses |
 | `distinct_agent_identities` | `["analyst", "pilot", "unknown"]` | two personas guard evaluated, plus a literal default |
 | `tool_calls_total` | 11 | guard evaluating 11 calls, plus a `session.start` row |
 | `tool_calls_by_name` | `{"Bash": 7, "Write": 3, "session.start": 1}` | `session.start` is not a tool |
@@ -64,8 +64,8 @@ activity metrics moved:
 | metric | alone | paired (v1.0) |
 |---|---|---|
 | `session_count` | 1 | 2 |
-| `session_duration_total_s` | 600.0 | 600.91 |
-| `session_duration_p50_s` | **600.0** | **300.455** |
+| `session_duration_total_s` | 600.0 | 601.096 |
+| `session_duration_p50_s` | **600.0** | **300.548** |
 | `tool_calls_total` | 1 | 12 |
 | `tool_error_rate` | 1.0 | 0.0833 |
 | `tool_calls_by_name` | `{run_sql: 1}` | `+ Bash:7, Write:3, session.start:1` |
@@ -73,7 +73,7 @@ activity metrics moved:
 | `human_turns_per_session_mean` | 1.0, `measured` | 1.0, `inferred` |
 | `distinct_agent_identities` | `["researcher"]` | `+ analyst, pilot, unknown` |
 
-The same pairing moves 11 metrics on `otlp_two_sessions.json` and 7 on
+The same pairing moves 10 metrics on `otlp_two_sessions.json` and 6 on
 `missing_attrs.jsonl`.
 
 Two of these deserve naming. `session_duration_p50_s` **halving** is
@@ -89,6 +89,17 @@ partial coverage of a session that does not exist.
 (`session_duration_p50_s` 600.0 → 300.297, roster polluted with two personas)
 and recorded it in ADR-014 §9.1. This branch's numbers are worse only because
 ADR-013 additionally puts `tool.name` on every row.
+
+Every figure in this section is asserted by
+`test_adr018_published_figures_reproduce`, which reverts the partition
+in-process and fails if the ADR and the committed fixture disagree. They are
+tied to the *committed* `baron_events.jsonl`: `gen_baron_events.py` shells out
+to a real `baron guard` run, so re-running it produces different hook
+wall-clocks and these durations move. That is what happened to the first draft
+of this ADR, which published durations from a generation run that was then
+replaced by the fixture actually committed — the numbers were real but no
+longer reproducible, which in a repo that publishes its own fidelity as 0.53
+is the same defect as an invented one. Hence the test.
 
 ## 3. Decision
 
@@ -144,10 +155,27 @@ every note and the whole per-session breakdown hold still — with `source` the
 single permitted delta, pinned to exactly "gained the baron filename".
 
 **Verified by reverting the fix**, because a test that cannot fail is not
-evidence. With `partition_guard_records` made a no-op, that test fails **34
-checks** (10 on `flat_spans.jsonl`, 11 on `otlp_two_sessions.json`, 7 on
-`missing_attrs.jsonl`, 6 named checks); the suite as a whole fails 45 of 230.
-With the fix in place: 230 pass, 0 fail.
+evidence. With `partition_guard_records` stubbed to a no-op split, running
+that test on its own fails **34 checks** (10 on `flat_spans.jsonl`, 11 on
+`otlp_two_sessions.json`, 7 on `missing_attrs.jsonl`, 6 named checks — each
+fixture contributing its moved metrics plus one per-session-breakdown check).
+
+Running the *whole suite* under the same revert never reaches it: it dies in
+`test_baron_guard_metrics` with an `AttributeError` after 17 failed checks,
+because `guard_decisions` degrades to the string `not measurable` and the
+test sums it. So there is no honest "N of M failed" figure for the suite
+under revert — the earlier draft of this ADR quoted one, and it was an
+artefact of a run that no longer reproduces. With the fix in place the suite
+completes: **247 pass, 0 fail**.
+
+§2's figures are themselves under test —
+`test_adr018_published_figures_reproduce` recomputes every number in those two
+tables from the committed fixture with the partition stubbed out, and names
+the docs to update when they diverge. `gen_baron_events.py` shells out to a
+real `baron guard`, so its hook wall-clocks are not stable across runs;
+without that test, regenerating the fixture silently falsifies this ADR
+instead of failing a build. That is exactly how the first draft's durations
+went stale.
 
 The companion `test_additivity_lock` is the weaker half and says so in its own
 docstring: it only ever reads guard-free fixtures, so it can never catch
