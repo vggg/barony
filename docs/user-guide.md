@@ -685,9 +685,9 @@ runtime supports with the honesty label degrading alongside:
 
 | Runtime | Kit `baron init --runtime …` emits | Whole-tool denials | The five guard-covered sub-tool denials |
 |---|---|---|---|
-| Claude Code | Tier-2 `CLAUDE.md` + `.claude/settings.json` hook | instructed at Tier 2; enforced at Tier 3 | **enforced** once the hook is wired |
-| pydantic-ai | `agent_setup.py`, which *is* the Tier-3 hydration | enforced (capability omission) | **enforced** in-process — the hook cannot be absent |
-| code-puppy | Tier-1 `AGENTS.md` | enforced at Tier 3, which is hand-hydrated | instructed |
+| Claude Code | Tier-2 `CLAUDE.md` + `.claude/settings.json` hook | `write_code` enforced once the hook is wired; read verbs instructed at Tier 2, enforced at Tier 3 | **enforced** once the hook is wired |
+| pydantic-ai | `agent_setup.py`, which *is* the Tier-3 hydration | `write_code` enforced in-process; read verbs **instructed — measured** | **enforced** in-process — the hook cannot be absent |
+| code-puppy | Tier-1 `AGENTS.md` | instructed as shipped; enforced at Tier 3, which is hand-hydrated | instructed — `baron guard` does not run here |
 | generic | Tier-1 `AGENTS.md` | instructed | instructed |
 
 The five guard-covered sub-tool denials are `push_main`, `force_push`,
@@ -696,12 +696,26 @@ The five guard-covered sub-tool denials are `push_main`, `force_push`,
 `capability-rules.v1.yaml`, so `git push origin main` is judged identically on
 Claude Code and on pydantic-ai.
 
-Two things to take from the middle column. **Tier 3 is where whole-tool denials
-become real**, and on Claude Code and code-puppy `baron init` does not get you
-there — it emits Tier 2 and Tier 1 respectively, and Tier 3 needs the in-session
-recipe in `adapters/<runtime>/HYDRATE.md`. pydantic-ai is the exception: its
-emitted bootstrap builds the guarded agent in-process, so hydration and Tier 3
-are the same step. Running code-puppy? See
+Three things to take from the middle column. **Tier 3 is where whole-tool
+denials become real**, and on Claude Code and code-puppy `baron init` does not
+get you there — it emits Tier 2 and Tier 1 respectively, and Tier 3 needs the
+in-session recipe in `adapters/<runtime>/HYDRATE.md`. pydantic-ai is the
+exception *for wiring*: its emitted bootstrap builds the guarded agent
+in-process, so hydration and Tier 3 are the same step.
+
+But **the whole-tool class does not share a fate, and the read verbs are the
+bound** (§9). `write_code` has file-op detection and is adjudicated by `baron
+guard` wherever guard runs. `read_code` and `read_collab` are not omitted by
+anything baron emits — on *any* adapter, pydantic-ai included: its bootstrap
+builds `FileSystem` unconditionally, so a persona denying `read_code` keeps its
+read tools, and a live test measures exactly that. Tier 3 makes those verbs
+enforceable only via a **hand-authored** tool allow-list, which is why the
+`claude` and `code-puppy` `HYDRATE.md` tables print `enforced` for them while
+`baron rules list` prints `instructed` — they describe different artifacts, and
+the divergence is recorded rather than rounded away
+([ADR-020](adr/ADR-020-read-verb-posture-measured-on-four-adapters.md) §7).
+
+Running code-puppy? `baron guard` does not run there at all — see
 [`USING-WITH-CODE-PUPPY.md`](../USING-WITH-CODE-PUPPY.md).
 
 *This walk-through exercised the Claude Code path only.* The pydantic-ai path

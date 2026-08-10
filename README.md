@@ -147,11 +147,11 @@ fictional; every artifact was produced by the real tools.
 One `persona.yaml`, four adapters, as claimed by each adapter's machine-readable
 capability map (checked in CI by `tests/bi_runtime_accept.py`):
 
-| Runtime | Tier | Whole-tool denials | Guard-covered sub-tool denials¹ | `open_pr` / `run_tests` |
+| Runtime | Tier | Whole-tool denials³ | Guard-covered sub-tool denials¹ | `open_pr` / `run_tests` |
 |---|---|---|---|---|
-| Claude Code | 3 (native subagents) or 2 (`CLAUDE.md`) | enforced at Tier 3 (tool allow-list); instructed at Tier 2 | enforced-with-baron (instructed otherwise) | instructed |
-| pydantic-ai | 3 (in-process hydration) | enforced (capability omission) | enforced (in-process interception — the hook cannot be absent) | instructed |
-| code-puppy | 2.75 (native JSON agents)² | enforced (tool allow-list) | instructed | instructed |
+| Claude Code | 3 (native subagents) or 2 (`CLAUDE.md`) | `write_code` enforced-with-baron; read verbs instructed as shipped, enforced at Tier 3 | enforced-with-baron (instructed otherwise) | instructed |
+| pydantic-ai | 3 (in-process hydration) | `write_code` enforced (in-process guard); read verbs **instructed — measured** | enforced (in-process interception — the hook cannot be absent) | instructed |
+| code-puppy | 2.75 (native JSON agents)² | instructed as shipped; enforced at Tier 3, which is hand-authored | instructed (guard does not run here) | instructed |
 | generic (any runtime) | 1 (in-prompt + `AGENTS.md`) | instructed | instructed | instructed |
 
 ¹ The five denials the shared rules artifact (`capability-rules.v1.yaml`)
@@ -165,14 +165,34 @@ in-session recipe in `adapters/<runtime>/HYDRATE.md`.
 
 ² code-puppy enforces whole-tool denials natively (JSON agent allow-list) but
 its sub-tool denials stay instruction-only — a partial Tier 3, which its own
-adapter labels "2.75" rather than round up.
+adapter labels "2.75" rather than round up. The allow-list is the *runtime's*
+capability, not baron's output: `baron init --runtime code-puppy` emits a Tier-1
+`AGENTS.md` that says of itself "nothing is enforced", and `baron guard` never
+runs on code-puppy — it has no pre-tool seam and is deliberately absent from
+`guard.KNOWN_RUNTIMES`. See
+[`USING-WITH-CODE-PUPPY.md`](USING-WITH-CODE-PUPPY.md).
+
+³ The whole-tool class is `read_code`, `read_collab` and `write_code`. They do
+not share a fate, so the cells name them separately. `write_code` has file-op
+detection and is adjudicated by `baron guard` wherever guard runs. The two read
+verbs are the honest bound: **baron emits no mechanism capable of omitting the
+read tools** — measured once per shipped adapter, including a live test that a
+persona *denying* `read_code` keeps its read tools under the emitted pydantic-ai
+bootstrap, which builds `FileSystem` unconditionally
+([ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md)).
+The bound is exact: baron emits no mechanism, **not** that a runtime cannot
+enforce these verbs — a hand-authored Tier-3 allow-list does. That is why the
+`claude` and `code-puppy` `HYDRATE.md` tables print `enforced` for the read
+verbs while `baron rules list` prints `instructed`: they describe a
+hand-authored artifact, `rules list` describes what baron ships. The divergence
+is recorded, not rounded away (ADR-020 §7).
 
 ## Honest limits
 
 Full list with what each means for you:
 [user guide §9](docs/user-guide.md#9-honest-limits), drawn from
 [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md) §E. The headline
-four:
+five:
 
 - **No test drives a real Claude Code process against a scaffolded repo.**
   Enforcement is proven by wiring, not by invocation.
@@ -182,6 +202,10 @@ four:
   --file` checks a candidate; baron still loads only the packaged artifact.
 - **`baron doctor` reads project-level settings only.** A hook in
   `~/.claude/settings.json` is invisible to it.
+- **Runtime neutrality is proved with two producers, not three.** Claude Code
+  and pydantic-ai emit into the same plane in the same wire shape. That
+  falsifies "the plane is Claude-Code-shaped"; it is not proof the shape fits
+  every runtime. code-puppy has no pre-tool seam and emits nothing.
 
 ## Status, versioning, links
 
