@@ -51,10 +51,24 @@ Reserved ``baron.*`` attribute keys (frozen for v1; new keys are additive):
 
 - ``baron.actor`` / ``baron.subject`` / ``baron.outcome`` — always present.
 - ``baron.capability.verb`` — comma-joined capability verbs a call mapped to.
-- ``baron.enforcement`` — ``"enforced"`` or ``"instructed"``, DERIVED from the
-  rules artifact's ``detection`` field, never hardcoded. It describes the
-  *verb*, not this emission; see ADR-013 §5.
+- ``baron.enforcement`` — ``"enforced"`` | ``"unevaluated"`` | ``"unknown"``, a
+  PER-CALL OBSERVATION: did a capability adjudicate THIS call? ``enforced``
+  requires that a rule matched AND the outcome turned on the acting persona.
+  Read off ``guard.Decision.adjudicated``; never derived from the rules
+  artifact, which describes the *verb* and not this evaluation (ADR-018 §2,
+  which supersedes ADR-013 §4.1). ``instructed`` is deliberately NOT a value
+  here — it is a static posture property of a (persona, verb, runtime) triple
+  and lives on ``baron rules list`` only.
 - ``baron.reason`` — human-readable explanation carried by the source decision.
+
+**CONSUMER CAVEAT — read before aggregating.** ``baron.capability.verb`` CAN be
+non-empty on a row whose ``baron.enforcement`` is ``unevaluated``: a write that
+escapes the repo root carries ``write_path`` but is a structural refusal that no
+capability adjudicated. Any verb-level aggregation ("how often was ``write_path``
+enforced?") must filter on ``baron.enforcement == "enforced"`` FIRST and count
+verbs second. The inverse also holds — an EMPTY verb tuple does not mean "not
+enforced" (a write allowed by ``write_code`` names no verb). ``baron.enforcement``
+is the field to read; the verb tuple is detail, not a proxy. ADR-018 §5.
 
 Sink selection is the ``BARON_EVENTS_SINK`` environment variable, default
 ``"null"``. Baron emits nothing unless an operator opts in. The variable is the

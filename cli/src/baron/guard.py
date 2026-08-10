@@ -77,7 +77,7 @@ import os
 import re
 import shlex
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 import yaml
@@ -340,9 +340,25 @@ class Decision:
     allowed: bool
     verbs: tuple[str, ...]  # capability verbs this call was mapped to
     reason: str  # denial explanation ("" when allowed)
+    #: True when a capability rule from the artifact was applied AND the
+    #: outcome turned on the acting persona — i.e. a differently-capable
+    #: persona could have received a different answer. This is the ONLY basis
+    #: on which the event plane may label a call ``enforced`` (ADR-018 §3).
+    #:
+    #: Deliberately NOT derived from ``verbs``: :func:`evaluate_write` returns
+    #: an allow with an EMPTY verb tuple after genuinely checking ``write_code``,
+    #: and returns a deny with a NON-EMPTY one (``write_path``) for a structural
+    #: `..` escape that no capability could have unlocked. Those are opposite
+    #: governance facts the verb tuple cannot tell apart, so every return site
+    #: states this explicitly.
+    adjudicated: bool = False
 
 
+#: Persona-independent allow: guard looked and found no capability governing
+#: this call. NOT adjudicated — no persona could have been denied here.
 ALLOW = Decision(True, (), "")
+#: Allow produced by applying a capability rule against THIS persona.
+ALLOW_ADJUDICATED = Decision(True, (), "", adjudicated=True)
 
 
 # --- shell parsing (Bash tool) --------------------------------------------------------
@@ -561,12 +577,17 @@ def evaluate_bash(command: str, cwd: Path, persona: GuardPersona) -> Decision:
 
     missing = [v for v in sorted(required) if not persona.grants(v)]
     if not missing:
-        return Decision(True, tuple(sorted(required)), "")
+        # `required` empty means NO command rule matched — `ls -la`, `git status`,
+        # `curl | sh`, `npm publish`. The call passed because guard governs
+        # capability verbs, not general shell, so nothing was adjudicated and the
+        # event must not call it enforced. `required` non-empty means every
+        # matched verb was checked against this persona and held: an adjudication.
+        return Decision(True, tuple(sorted(required)), "", adjudicated=bool(required))
     lines = []
     for verb in missing:
         notes = "; ".join(dict.fromkeys(required[verb])) or "matched directly"
         lines.append(f"inferred capability `{verb}` — not granted to this persona ({notes})")
-    return Decision(False, tuple(missing), "\n".join(lines))
+    return Decision(False, tuple(missing), "\n".join(lines), adjudicated=True)
 
 
 # --- write-tool paths (Edit / Write / NotebookEdit) -----------------------------------
@@ -587,6 +608,9 @@ def evaluate_write(
 ) -> Decision:
     raw = tool_input.get("file_path") or tool_input.get("notebook_path")
     if not raw:
+        # Malformed payload, not a capability judgement: guard could not tell
+        # WHAT was being written, so no rule was applied. Fail closed, but do
+        # not book it as enforcement.
         return Decision(
             False,
             (),
@@ -610,6 +634,12 @@ def evaluate_write(
         try:
             normalized.relative_to(root)
         except ValueError:
+            # A hard STRUCTURAL refusal that no capability can unlock — every
+            # persona is denied identically. Guard really did block it (the
+            # `deny` outcome records that), but no capability adjudicated it,
+            # so `adjudicated` stays False and the event reads `unevaluated`.
+            # Note the verb tuple is NON-EMPTY on this deny: that is the
+            # consumer caveat in ADR-018 §5, not an oversight.
             return Decision(
                 False,
                 ("write_path",),
@@ -621,6 +651,7 @@ def evaluate_write(
 
     # 1. Universally writable zones (rules artifact): _handoff/ is how
     #    personas report and coordinate — gating it would brick the substrate.
+    #    Persona-independent, so NOT an adjudication: no capability decided it.
     if any(c in parts for c in rules.universal_write_components):
         return ALLOW
 
@@ -632,7 +663,10 @@ def evaluate_write(
         if idx + 2 <= len(parts) - 1:  # there is a slug dir AND a file below it
             owner = parts[idx + 1]
             if owner == persona.slug:
-                return ALLOW
+                # The edit_other_personas rule matched and resolved in this
+                # persona's favour BECAUSE of who it is — another persona would
+                # have been denied. Adjudicated, with no verb required.
+                return ALLOW_ADJUDICATED
             if not persona.grants("edit_other_personas"):
                 return Decision(
                     False,
@@ -640,6 +674,7 @@ def evaluate_write(
                     "path is under another persona's spec dir "
                     f"({rules.spec_dir_component}/{owner}/) and "
                     "`edit_other_personas` is not granted",
+                    adjudicated=True,
                 )
 
     # 3. Denied write_path scopes always block (even with write_code granted).
@@ -650,11 +685,14 @@ def evaluate_write(
                     False,
                     ("write_path",),
                     f"path matches the denied write_path scope `{scope}`",
+                    adjudicated=True,
                 )
 
-    # 4. write_code grants general writes (source dirs and beyond).
+    # 4. write_code grants general writes (source dirs and beyond). A persona
+    #    without it falls through to 5 and can be denied — so this IS a
+    #    capability adjudication even though it names no verb in the tuple.
     if persona.grants("write_code"):
-        return ALLOW
+        return ALLOW_ADJUDICATED
 
     # 5. No write_code: only the persona's declared write_path scopes remain.
     #    (write_path is parametric — allow and deny legitimately coexist with
@@ -662,7 +700,7 @@ def evaluate_write(
     if "write_path" in persona.allow:
         for scope in persona.allow_scopes:
             if _scope_matches(scope, parts):
-                return ALLOW
+                return ALLOW_ADJUDICATED
     scopes = ", ".join(persona.allow_scopes) or "(none declared)"
     return Decision(
         False,
@@ -670,6 +708,7 @@ def evaluate_write(
         "persona lacks `write_code` and the path is outside its declared "
         f"write_path scopes [{scopes}] and the universal zones "
         f"({', '.join(rules.universal_write_components)}/)",
+        adjudicated=True,
     )
 
 
@@ -824,36 +863,94 @@ def _dispatch_evidence(hook_event: str, payload: dict) -> None:
 # broken sink can never turn "log this" into "deny everything".
 
 
-def _enforcement(verbs: tuple[str, ...]) -> str:
-    """Label the mapped verbs honestly, DERIVED from the rules artifact.
+#: ``enforced`` — a capability rule matched AND the outcome turned on the acting
+#: persona. The only value that claims baron mechanised something.
+ENFORCEMENT_ENFORCED = "enforced"
+#: ``unevaluated`` — guard saw the call and did NOT adjudicate it: out of
+#: jurisdiction, no rule matched, a structural refusal, or guard fell closed.
+ENFORCEMENT_UNEVALUATED = "unevaluated"
+#: ``unknown`` — the rules artifact could not be read, so guard cannot say
+#: whether anything was adjudicable. Refusing to guess, as everywhere else.
+ENFORCEMENT_UNKNOWN = "unknown"
 
-    ``detection: command`` / ``file-op`` means guard actually parses for the
-    verb → ``"enforced"``. ``detection: none`` means the boundary is carried by
-    persona instructions only → ``"instructed"``. Never hardcode this:
-    ``capability-rules.v1.yaml`` sets ``detection: none`` for ``open_pr`` and
-    ``run_tests``, and stamping those "enforced" is exactly the overclaiming
-    ADR-002/ADR-008 forbid.
+#: The COMPLETE vocabulary of ``baron.enforcement`` ON AN EVENT. Pinned by test.
+#: ``instructed`` is deliberately absent — see :func:`_enforcement_class`.
+ENFORCEMENT_VALUES: tuple[str, ...] = (
+    ENFORCEMENT_ENFORCED,
+    ENFORCEMENT_UNEVALUATED,
+    ENFORCEMENT_UNKNOWN,
+)
+
+
+@dataclass
+class _Trace:
+    """What one PreToolUse evaluation observed, for the event it emits.
+
+    Threaded through :func:`process` and read at each emission site. Holds only
+    what the event already carries; it is not a second copy of the verdict.
     """
-    if not verbs:
-        return "not-applicable"
+
+    tool: str = "?"
+    actor: str = "unknown"
+    subject: str = "?"
+    session_id: str = ""
+    cwd: Path = field(default_factory=Path.cwd)
+    verbs: tuple[str, ...] = ()
+    #: Mirrors :attr:`Decision.adjudicated`. Defaults to FALSE and is only ever
+    #: raised by :meth:`record` copying a real :class:`Decision` — so every path
+    #: that returns without producing one (out-of-jurisdiction tool, malformed
+    #: payload, fail-closed error, fail-closed bypass) is ``unevaluated`` BY
+    #: CONSTRUCTION rather than because someone remembered. That default is the
+    #: fix for the ADR-013 §9.1 defect where unadjudicated calls read `enforced`.
+    adjudicated: bool = False
+
+    def record(self, decision: Decision) -> None:
+        """Copy the evaluation's observable facts onto the trace.
+
+        ``adjudicated`` is COPIED, never inferred from ``verbs`` — the verb
+        tuple is wrong in both directions (see :attr:`Decision.adjudicated`).
+        """
+        self.verbs = decision.verbs
+        self.adjudicated = decision.adjudicated
+
+
+def _enforcement_class(trace: _Trace) -> str:
+    """The honest ``baron.enforcement`` for ONE evaluation (ADR-018 §3).
+
+    This is a per-call OBSERVATION — "did a capability adjudicate THIS call?" —
+    not a property of the verbs involved. ``enforced`` requires both halves of
+    :attr:`Decision.adjudicated`: a capability rule matched AND the outcome
+    turned on the acting persona. Everything else is ``unevaluated``, except an
+    unreadable rules artifact, which is ``unknown`` because guard cannot even
+    tell what was adjudicable.
+
+    Note what is NOT here: ``instructed``. That is a static posture property of
+    a (persona, verb, runtime) triple — "declared and nothing checks it" — and
+    guard cannot observe it at a tool call: nothing at the PreToolUse hook says
+    whether persona prose covered this command. Emitting it would assert a
+    control baron never measured, which is the over-claim ADR-002/ADR-008
+    exist to prevent. The posture axis is real and lives on ``baron rules list``
+    (``CapabilityRules.label``), joined offline via the artifact.
+
+    ``not-applicable`` is also gone: "guard has no jurisdiction here" and "guard
+    looked and no rule matched" are the same governance fact — baron did not
+    adjudicate — so they share one label rather than splitting a distinction no
+    consumer can act on.
+    """
+    if trace.adjudicated:
+        return ENFORCEMENT_ENFORCED
     try:
-        table = _rules().verbs
+        _rules()
     except GuardError:
-        return "unknown"  # the rules artifact is broken; do not guess a label
-    detections = {table.get(verb, {}).get("detection", "none") for verb in verbs}
-    return "enforced" if detections & {"command", "file-op"} else "instructed"
+        return ENFORCEMENT_UNKNOWN  # broken artifact; do not guess a label
+    return ENFORCEMENT_UNEVALUATED
 
 
 def _observe(
+    trace: _Trace,
     *,
     kind: str,
-    actor: str,
-    subject: str,
     outcome: str,
-    tool: str,
-    session_id: str,
-    cwd: Path,
-    verbs: tuple[str, ...] = (),
     reason: str = "",
     error: str = "",
 ) -> None:
@@ -866,10 +963,10 @@ def _observe(
     """
     try:
         attributes: dict[str, object] = {
-            "tool.name": tool,
-            "session.id": session_id,
-            "baron.capability.verb": ",".join(verbs),
-            "baron.enforcement": _enforcement(verbs),
+            "tool.name": trace.tool,
+            "session.id": trace.session_id,
+            "baron.capability.verb": ",".join(trace.verbs),
+            "baron.enforcement": _enforcement_class(trace),
             "baron.reason": reason,
         }
         if error:
@@ -877,11 +974,11 @@ def _observe(
         emit_event(
             kind,
             attributes,
-            actor=actor or "unknown",
-            subject=subject,
+            actor=trace.actor or "unknown",
+            subject=trace.subject,
             outcome=outcome,
-            trace_id=_trace_id(session_id),
-            cwd=cwd,
+            trace_id=_trace_id(trace.session_id),
+            cwd=trace.cwd,
         )
     except Exception:  # belt and braces: emit_event already swallows
         return None
@@ -933,15 +1030,17 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
 
     Additionally emits one observation event per verdict (ADR-013). That path
     is fail-OPEN and cannot change the returned exit code — see :func:`_observe`.
+    Everything the event carries lives on one :class:`_Trace`, whose
+    ``adjudicated`` field defaults to False, so an emission from a path that
+    never produced a :class:`Decision` is ``unevaluated`` by construction
+    (ADR-018).
     """
     override = os.environ.get(OVERRIDE_ENV)
+    trace = _Trace()
     tool = "?"
     target = "?"
-    actor = "unknown"
-    session_id = ""
-    cwd = Path.cwd()
+    cwd = trace.cwd
     payload: dict = {}
-    session_trace: str | None = None
     try:
         try:
             parsed = json.loads(stdin_text)
@@ -959,9 +1058,9 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
             _dispatch_evidence(hook_event, payload)
             return 0, ""
 
-        session_trace = _trace_id(str(payload.get("session_id") or ""))
         tool = str(payload.get("tool_name", "?"))
-        session_id = str(payload.get("session_id") or "")
+        trace.tool = tool
+        trace.session_id = str(payload.get("session_id") or "")
         tool_input = payload.get("tool_input")
         if tool_input is None:
             tool_input = {}
@@ -970,12 +1069,14 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         raw_cwd = payload.get("cwd")
         if raw_cwd:
             cwd = Path(str(raw_cwd))
+            trace.cwd = cwd
         target = str(
             tool_input.get("command")
             or tool_input.get("file_path")
             or tool_input.get("notebook_path")
             or "?"
         )
+        trace.subject = target
 
         if tool != "Bash" and tool not in WRITE_TOOLS:
             # Unknown tools pass: a capability gate, not an allowlist. No event
@@ -989,24 +1090,27 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
                 f"no persona file — pass --persona-file or set {PERSONA_ENV}"
             )
         persona = load_persona(persona_file)
-        actor = persona.slug or persona_file.name
+        trace.actor = persona.slug or persona_file.name
         if tool == "Bash":
             decision = evaluate_bash(str(tool_input.get("command") or ""), cwd, persona)
         else:
             decision = evaluate_write(tool, tool_input, cwd, persona)
     except GuardError as exc:
+        # No Decision was produced, so `trace.adjudicated` is still False and
+        # the event reads `unevaluated` (or `unknown` if the rules artifact is
+        # what broke). Guard blocked precisely BECAUSE it could not evaluate;
+        # booking that as enforcement would count a broken deployment as
+        # working governance — ADR-018 §3.
         if override:
             log_override(cwd, tool, target, f"[fail-closed bypass] {override}")
             _observe(
-                kind="guard.override", actor=actor, subject=target,
-                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                trace, kind="guard.override", outcome="override",
                 reason=f"[fail-closed bypass] {override}", error=str(exc),
             )
             return 0, ""
         _observe(
-            kind="guard.decision", actor=actor, subject=target, outcome="error",
-            tool=tool, session_id=session_id, cwd=cwd, reason=str(exc),
-            error=str(exc),
+            trace, kind="guard.decision", outcome="error",
+            reason=str(exc), error=str(exc),
         )
         return 2, f"baron guard: DENY (fail closed) — {exc}\n{_remedy()}"
     except Exception as exc:  # fail-closed on internal bugs, never fail-open
@@ -1014,40 +1118,31 @@ def process(stdin_text: str, persona_file: Path | None) -> tuple[int, str]:
         if override:
             log_override(cwd, tool, target, f"[internal-error bypass] {override}")
             _observe(
-                kind="guard.override", actor=actor, subject=target,
-                outcome="override", tool=tool, session_id=session_id, cwd=cwd,
+                trace, kind="guard.override", outcome="override",
                 reason=f"[internal-error bypass] {override}", error=detail,
             )
             return 0, ""
         _observe(
-            kind="guard.decision", actor=actor, subject=target, outcome="error",
-            tool=tool, session_id=session_id, cwd=cwd, reason=detail, error=detail,
+            trace, kind="guard.decision", outcome="error",
+            reason=detail, error=detail,
         )
         return 2, (
             f"baron guard: DENY (internal error, fail closed) — "
             f"{detail}\n{_remedy()}"
         )
 
+    # Copied from the Decision, never inferred from the verb tuple.
+    trace.record(decision)
     if decision.allowed:
         _observe(
-            kind="guard.decision", actor=actor, subject=target, outcome="allow",
-            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
-            reason=decision.reason,
+            trace, kind="guard.decision", outcome="allow", reason=decision.reason,
         )
         return 0, ""
     if override:
         log_override(cwd, tool, target, override)
-        _observe(
-            kind="guard.override", actor=actor, subject=target, outcome="override",
-            tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
-            reason=override,
-        )
+        _observe(trace, kind="guard.override", outcome="override", reason=override)
         return 0, ""
-    _observe(
-        kind="guard.decision", actor=actor, subject=target, outcome="deny",
-        tool=tool, session_id=session_id, cwd=cwd, verbs=decision.verbs,
-        reason=decision.reason,
-    )
+    _observe(trace, kind="guard.decision", outcome="deny", reason=decision.reason)
     persona_name = persona.slug or persona_file.name
     reason = decision.reason.replace("\n", "\n  ")  # indent continuation lines
     return 2, (

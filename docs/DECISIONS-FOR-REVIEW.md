@@ -20,6 +20,21 @@ and nothing checks. ADR-002/ADR-008 forbid blurring those, and this file tries h
 
 ### D1 — BLOCKING. Three workstreams each built an observation plane. Pick one.
 
+> **DECIDED 2026-08-09 — the semantics half is settled and implemented.** The owner took the
+> recommendation at the bottom of this section: keep ADR-013's transport, port ADR-014's
+> `Decision.adjudicated` and its `enforced` / `unevaluated` label onto it. That landed as
+> **[ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md)** on `harden/d1-semantics`;
+> ADR-013 §9.1 is rewritten from defect to resolution and both measured defects flip under
+> test. `instructed` and `not-applicable` are gone from the event field; the vocabulary is
+> exactly `enforced` | `unevaluated` | `unknown`.
+>
+> **What is still open under D1** — merge work, not a product call: retire `telemetry.py`,
+> and re-merge the producer-independent half of `harden/otel`
+> (`ingest_otel.py`'s `partition_guard_records` and ADR-014 §9.1). D4 (sink on by default)
+> is also still open and should stay behind this.
+>
+> The rest of this section is the analysis that produced the decision. It is left intact.
+
 **This is the big one, and it is why `harden/otel` is not merged.**
 
 `harden/hooks`, `harden/events` and `harden/otel` were developed in parallel and each shipped
@@ -143,7 +158,8 @@ in every downstream repo by default, and that deserves your signature, not mine.
 
 **Reversible?** Yes, trivially — but note that D1 should be settled *first*: turning sinks on
 before the `baron.enforcement` semantics are fixed starts accumulating rows with the labelling
-defect baked in.
+defect baked in. **Update 2026-08-09:** that precondition is met (ADR-018). This is now a
+straight default-flip call, still unsigned.
 
 ---
 
@@ -212,8 +228,13 @@ Stated plainly, because a green suite invites the wrong inference.
    is the nearest thing, and it verifies **wiring, not invocation** — it proves the install
    *can* enforce, never that enforcement *happened*. Nothing outside the runtime can observe
    that.
-2. **`baron.enforcement` is known-wrong in two directions** (D1, ADR-013 §9.1). Do not build
-   a dashboard on it yet.
+2. ~~**`baron.enforcement` is known-wrong in two directions** (D1, ADR-013 §9.1).~~ **Fixed
+   2026-08-09 (ADR-018).** Both defects flip under test. The honest remaining bound: the
+   label is verified against baron's *own* evaluator, which is the only thing that can
+   observe it — no test proves a real Claude Code session produced the row, and item 1 above
+   is why. `unevaluated` is also a wide bucket (out-of-jurisdiction, no-rule-matched,
+   structural refusal, fail-closed error all share it); splitting them requires joining on
+   `baron.outcome` and `baron.capability.verb`.
 3. **Three of four adapters are unmeasured** for read-tool exposure (D3). Only pydantic-ai
    was instrumented; the `claude` and `code-puppy` kits are prompt/config templates whose
    tool exposure belongs to the host runtime.
