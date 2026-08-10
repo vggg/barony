@@ -290,7 +290,7 @@ By default this skill computes everything from git/gh archaeology — that stays
 
 **What it does NOT replace.** Traces show **ACTUAL behavior only**. The INTENDED lens still comes from the project's declared docs (CONVENTIONS.md, persona.yaml, roster). Telemetry mode therefore NEVER replaces the dual-lens drift analysis or the operational-fidelity score — it sharpens the ACTUAL column of the drift scorecard, nothing more. A project with beautiful traces can still be great-design/low-fidelity.
 
-### Obtaining an export (three supported sources, no vendor lock-in)
+### Obtaining an export (four supported sources, no vendor lock-in)
 
 1. **Claude Code OTel export** (docs: <https://code.claude.com/docs/en/monitoring-usage>). Claude Code emits metrics + log events over OTLP (`CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_LOGS_EXPORTER=otlp`), and trace spans behind a beta flag (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, `OTEL_TRACES_EXPORTER=otlp`). To get a *file*, point the export at an OTel Collector with a `file` exporter, or use `OTEL_LOGS_EXPORTER=console`/`OTEL_EXPORTER_OTLP_PROTOCOL=http/json` captured to disk. Honesty notes verified against the docs page:
    - The **logs/events stream** is what carries the intervention-tax inputs: `claude_code.user_prompt` events (one per human turn, with `session.id`, `prompt_length`) and `claude_code.api_request` events (tokens via `input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_creation_tokens`, cost via `cost_usd`/`cost_usd_micros`, `model`, `duration_ms`). Tool outcomes come from `claude_code.tool_result` events (`tool_name`, `success`, `duration_ms`, `error_type`).
@@ -299,6 +299,7 @@ By default this skill computes everything from git/gh archaeology — that stays
    - The **metrics stream** (counters like `claude_code.token.usage`) carries aggregates, not per-session events; the ingester notes it and skips it.
 2. **Logfire (Pydantic)** — OTel-native. Export spans as JSON/NDJSON via the Query API: `POST https://logfire-us.pydantic.dev/v2/query` (or `logfire-eu.…`) with a read token and a SQL query over the `records` table, `Accept: application/x-ndjson` (docs: <https://pydantic.dev/docs/logfire/manage/query-api/>). The *human* runs that export and hands the file over — the audit itself never holds the read token. Rows carry `trace_id`/`span_name`/`start_timestamp`/`end_timestamp` plus OTel GenAI attributes (`gen_ai.usage.input_tokens`, `gen_ai.system`, …), which the ingester recognizes.
 3. **Phoenix (Arize)** — export spans to a file from the Phoenix client: `client.spans.get_spans_dataframe(...)` then `df.to_json(path, orient="records", lines=True)` (docs: <https://arize.com/docs/phoenix/tracing/how-to-tracing/importing-and-exporting-traces/extract-data-from-spans>), or the GraphQL/OTLP export equivalents. The ingester understands OpenInference conventions (`span_kind`/`openinference.span.kind` = `LLM`/`TOOL`, `llm.token_count.prompt`/`.completion`, flattened `attributes.<dotted>` columns, `context.trace_id`, `status_code`).
+4. **barony's observation plane** (ingester v1.1) — a *governance* source rather than an agent-activity one. With `BARON_EVENTS_SINK=disk`, baron appends one flat-JSONL row per observation to `.baron/events/<date>.jsonl` (barony ADR-013; the default sink is `null`, which discards, so this is opt-in). No OTel SDK is involved on either side: baron writes the same Logfire-`records` row shape this ingester already read, which is why supporting it needed no loader changes. Rows carry `agent.name` (persona), `session.id` (the Claude Code session, so the file merges cleanly with source 1), `tool.name`, `baron.actor`, `baron.subject`, `baron.outcome` and `baron.capability.verb`. **Read § Guard-decision evidence below before ingesting one — these rows are not agent activity and are deliberately excluded from every activity metric.**
 
 ### Running it
 
@@ -316,6 +317,35 @@ python3 scripts/merge_telemetry.py \
 ```
 
 `merge_telemetry.py` adds a `metrics.telemetry.*` block plus `metrics.autonomy.human_turns_per_session_otel` / `human_turns_per_task_otel`, each tagged `"source": "otel:<file>"`. Git-derived values — including the git-derived `intervention_tax` — are **never overwritten**; the report cites both, and the Source tag is what distinguishes a measured telemetry row from a git-derived one. `render_report.py` needs no flags: the merged snapshot renders as-is (unknown fields are ignored; `not measurable` telemetry rows surface automatically in the caveats section). Paste the `--markdown` table into report §5 as "Telemetry-derived metrics".
+
+### Guard-decision evidence (ingester v1.1)
+
+When the export contains barony observation-plane rows (source 4 above), two further aggregate metrics appear. Both are **direct counts** of an attribute that is either present or not, so both are `measured` — there is no inference step to downgrade. With no baron rows in the export they are `not measurable` with the attribute named, like every other absent metric.
+
+- **`guard_decisions`** — `{allow, deny, override, error, ok}`, counted over the **adjudication kinds only** (`guard.decision`, `guard.override`). `deny` is a capability denial (the boundary worked). `error` is a fail-closed deny because guard *could not evaluate at all* — a broken deployment, not a working boundary. They are **never folded together**: a healthy-looking denial count that is actually all errors is exactly the kind of number this skill exists to refuse.
+- **`baron_events_by_kind`** — every baron row withheld from the activity plane, by span name. Published so the exclusion below is auditable rather than silent: nothing partitioned out disappears without being counted here.
+
+> **Do not compute an operational-fidelity score from these counters.** They measure the mix of whatever the agents happened to run during one export, and shift with the traffic, not with the governance. They are legitimate as *evidence that guard is live and blocking* — cite the `deny` count for that — and illegitimate as a fidelity numerator. They answer "what did baron adjudicate here", never "what fraction of declared capabilities are mechanised".
+
+**Not published: a count of `baron.enforcement`.** Baron emits that attribute on every row, and it would be a one-line addition. It is deliberately absent because the attribute is under correction: baron derives it from the rules artifact's static `detection` field, which books structural refusals (a write escaping the repo root — every persona denied identically) as `enforced`, and books genuine persona-dependent allows as `not-applicable`. Aggregating a field that is wrong in both directions and labelling the result `measured` is the over-claim this project exists to catch. It lands when the label does (barony ADR-018 §5, ADR-013 §9.1).
+
+Both metrics fold into `metrics.telemetry.*` through `merge_telemetry.py` like every other telemetry row. Note that `TELEMETRY_KEYS` in that script is an explicit **allowlist**, not a passthrough: a new ingester aggregate key stays invisible to the report until it is named there.
+
+#### Baron rows are governance evidence, not agent activity
+
+A baron row is its hook process's record **of** a tool call, not the call. The ingester therefore splits every row carrying `baron.outcome` out of the record set **before sessions are built**, and they contribute to no session, no `session_duration_*`, no `distinct_agent_identities`, and no tool / LLM / token / cost metric.
+
+This is not a formality. Baron rows carry `session.id`, `agent.name` **and** `tool.name` — join keys, all three already recognised by this ingester — so without the split, a governance file dropped next to a real export would: invent a session that never happened; give it a *duration* taken from the hook processes' own wall-clock, published with confidence `measured`; add every persona guard merely evaluated (plus a literal `unknown`) to the roster of agents observed working; and count each evaluation as a tool call, including a "tool" named `session.start`. Measured on the committed fixtures, ingester v1.0 paired `flat_spans.jsonl` with an 11-row baron export and moved nine activity metrics — `session_duration_p50_s` 600.0 s → 300.455 s, `tool_calls_total` 1 → 12, `human_turns_total` silently downgraded from `measured` to `inferred`. A duration derived from instrumentation overhead is not a session duration, and this skill does not publish one.
+
+Consequences worth knowing before you read a report:
+
+- **A baron-only export reports the activity metrics as `not measurable`**, with a note saying why and pointing at `guard_decisions` — not `0 measured`, and not "no parseable records" (the records parsed fine; they are just not activity). Only the two baron metrics carry values.
+- **`tool_calls_total` is `not measurable` for a baron-only export, not a measured zero.** A file of pure baron rows is not an agent-activity spans stream, and a measured zero would read as "the agents made no tool calls" about a file whose entire content is guard evaluating them.
+- **The evidence kinds are partitioned too.** `tool.post` is baron's PostToolUse witness of a completed call. It is real information, but it is baron's hook timing it, only fires where the hook is wired, and folding it into `tool_calls_total` would mix two populations under one `measured` label. It is counted in `baron_events_by_kind` and nowhere else.
+- **Baron decisions are aggregate-only.** There is no per-session guard breakdown at v1.1; adding one would change the shape of every session object, which the additivity contract forbids.
+- **Pre-v1.1 ingesters do not have this split** and will produce the fabricated numbers above from a baron export. Check `telemetry_metrics_version` before trusting a snapshot that mixed the two sources.
+
+For a full picture, ingest the baron file *alongside* a Claude Code export from the same sessions. The two planes stay separate in the metrics, and the shared `session.id` is there for any downstream analysis that wants to correlate them.
 
 **Honesty rules, restated for this mode:** every telemetry metric is `measured` (with the source file named) or `not measurable (attribute absent)` — the ingester downgrades to `inferred` only when an attribute is present on part of the records (with a coverage note), and it never estimates: no cost-from-token-counts, no assumed zeros (a session with no logs stream reports human turns `not measurable`, not `0`). Ingesting the export files is read-only; the export files themselves must live outside the audited repos or be treated as read-only inputs.
 
@@ -349,11 +379,17 @@ skills/multi-agent-audit/
     render_report.py                  # v1.3 — renders the HTML dashboard from snapshot + template
     persona_attribution.py            # v1.3 — per-persona PR attribution via the multi-substrate lens
     ingest_otel.py                    # v1.4 — telemetry mode: OTel export FILES -> session metrics JSON
+                                      #   (ingester v1.1: partitions barony observation rows out of
+                                      #    the activity plane; + guard-decision counts)
     merge_telemetry.py                # v1.4 — folds telemetry metrics into the snapshot (additive, source-tagged)
   tests/
     subagent_isolation_smoke.md       # v1.3 — verifies the project-auditor subagent can't write to audited repos
     test_ingest_otel.py               # v1.4 — telemetry-mode checks (run: python3 tests/test_ingest_otel.py)
     fixtures/                         # v1.4 — hand-crafted OTLP-JSON + JSONL trace-export fixtures
+      baron_events.jsonl              #   v1.1 — GENERATED by a real `baron guard` run, not hand-written
+      gen_baron_events.py             #   v1.1 — the generator; provenance for the fixture above
+      golden_pre_baron_metrics.json   #   v1.1 — pre-v1.1 output of the three older fixtures (additivity lock)
+      gen_golden_pre_baron_metrics.py #   v1.1 — rebuilds that golden from the ingester at a git ref
   agents/
     project-auditor.md                # subagent definition (Claude Code)
 ```

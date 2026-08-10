@@ -150,7 +150,11 @@ enforcement** — nothing on this path can change a verdict, and a test pins bot
 codes with `events.emit` raising. `.baron/events/` is gitignored while
 `.baron/guard-override.log` stays **tracked**: overrides are evidence, events are telemetry.
 No OpenTelemetry dependency — the row shape is what `ingest_otel.py` already parses, verified
-by a test that re-derives its key lists.
+by a test that re-derives its key lists. That compatibility needed a consumer-side fix to be
+safe: the shared join keys made an older ingester read baron's evidence as agent activity, so
+ingester v1.1 partitions baron rows out of the activity plane before sessions are built
+(ADR-018, with the measured contamination). Anything reading `.baron/events/` should check
+`telemetry_metrics_version`.
 
 Only **one** call site is wired (guard's verdict path); ledger, session and decision have the
 contract available and adopt it on their own schedule. The `events:` manifest block is

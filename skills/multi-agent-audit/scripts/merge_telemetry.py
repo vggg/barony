@@ -63,6 +63,11 @@ TELEMETRY_KEYS = [
     "human_turns_per_task",
     "distinct_models",
     "distinct_agent_identities",
+    # v1.1 — barony observation-plane evidence (ADR-013 rows, ADR-018
+    # partitioning). This list is an explicit ALLOWLIST, not a passthrough: a
+    # new ingester aggregate key is invisible to the report until named here.
+    "guard_decisions",
+    "baron_events_by_kind",
 ]
 
 # Intervention-tax INPUTS promoted (added, never replacing) into

@@ -52,6 +52,17 @@ Semantic conventions recognized (first match wins, span before event):
   tasks       — `workflow.run_id` (Claude Code), `task.id`, `task_id`,
                 `gen_ai.task.id`. Absent => human-turns-per-task is
                 `not measurable (attribute absent)`.
+  baron       — rows from barony's observation plane (ADR-013): span names
+                `guard.decision` / `guard.override` / `session.start` /
+                `session.end` / `tool.post` / `tool.failure`, identified by
+                the `baron.outcome` attribute. These are governance evidence
+                ABOUT a call, produced by baron's own hook process. They are
+                SPLIT OUT of the activity plane before sessions are built —
+                see `partition_guard_records` — and counted on their own axis
+                as `guard_decisions` / `baron_events_by_kind`. An export of
+                baron rows alone therefore reports the activity metrics as
+                `not measurable`, with a note saying why, rather than
+                inventing a session out of hook timings.
 
 HONESTY RULE (inherited from SKILL.md): every emitted metric carries a
 confidence label — `measured` (with source files), `inferred` (with a note
@@ -75,7 +86,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-INGESTER_VERSION = "1.0"
+INGESTER_VERSION = "1.1"
 
 # --- attribute conventions -------------------------------------------------
 
@@ -98,6 +109,39 @@ AGENT_KEYS = ["agent.name", "agent_id", "subagent_type", "service.name",
 MODEL_KEYS = ["model", "gen_ai.request.model", "gen_ai.response.model",
               "llm.model_name"]
 REQUEST_ID_KEYS = ["request_id", "client_request_id", "gen_ai.response.id"]
+
+# --- barony observation plane (v1.1) ---------------------------------------
+# The FROZEN `baron.` attribute namespace (barony ADR-013 §"Reserved keys").
+# These rows are governance evidence ABOUT tool calls, emitted by baron's own
+# hook process, so they are counted on their own axis and split out of the
+# activity plane in `compute_metrics` BEFORE sessions are built. See
+# `partition_guard_records` for the exact list of metrics that exclusion
+# covers, and barony ADR-018 for the measured contamination it prevents.
+# Only the keys this ingester READS are listed. The namespace also carries
+# `baron.actor`, `baron.subject`, `baron.reason`, `baron.capability.verb` and
+# `baron.enforcement`; none is consumed at v1.1, and `baron.enforcement`
+# deliberately so — see compute_guard_metrics.
+BARON_ATTR_KEYS = {
+    "outcome": "baron.outcome",
+}
+#: Every span name baron's plane emits (ADR-013 `events.KNOWN_KINDS`), plus
+#: ADR-014's `baron.guard.evaluate` so an export from that (unmerged, and
+#: possibly third-party) producer partitions correctly too. Membership is a
+#: convenience: the `baron.outcome` attribute is what actually identifies a
+#: row, so a kind added to the registry tomorrow is handled without a change
+#: here.
+BARON_OBSERVATION_SPAN_NAMES = {"guard.decision", "guard.override",
+                                "session.start", "session.end", "tool.post",
+                                "tool.failure", "baron.guard.evaluate"}
+#: The subset that is an adjudication of a tool call, as opposed to evidence
+#: that one happened. Only these are counted in `guard_decisions`.
+BARON_DECISION_SPAN_NAMES = {"guard.decision", "guard.override",
+                             "baron.guard.evaluate"}
+#: Canonical outcomes, always present in the counts (0 when unseen) so a
+#: dashboard column never silently disappears. `ok` is what the evidence kinds
+#: carry; it is listed because `guard_decisions` counts decision rows only and
+#: an unexpected `ok` there would be a producer change worth seeing.
+BARON_OUTCOMES = ("allow", "deny", "error", "ok", "override")
 
 HUMAN_EVENT_NAMES = {"claude_code.user_prompt", "gen_ai.user.message",
                      "user_prompt"}
@@ -438,6 +482,175 @@ def is_tool_record(rec) -> bool:
     return rec["name"] in TOOL_EVENT_NAMES
 
 
+def is_baron_observation_record(rec) -> bool:
+    """A row from barony's observation plane (ADR-013), not agent activity.
+
+    Matched on the `baron.outcome` attribute — the one slot ADR-013 puts on
+    EVERY row — or on a known span name, so a kind added to the registry
+    tomorrow still partitions correctly. An agent-activity span has no reason
+    to carry `baron.outcome`, so this cannot claim an ordinary export's rows.
+    """
+    return (rec["kind"] == "span"
+            and (BARON_ATTR_KEYS["outcome"] in rec["attrs"]
+                 or rec["name"] in BARON_OBSERVATION_SPAN_NAMES))
+
+
+def is_baron_decision_record(rec) -> bool:
+    """A baron row that ADJUDICATED a call, rather than witnessing one."""
+    return (is_baron_observation_record(rec)
+            and rec["name"] in BARON_DECISION_SPAN_NAMES)
+
+
+def partition_guard_records(records):
+    """Split (activity_records, baron_records). v1.1; barony ADR-018.
+
+    A baron row is its hook's record OF a tool call. It is not agent activity,
+    and everything derived from agent activity must be computed without it:
+
+      * SESSION GROUPING — baron rows carry `session.id`, which is in
+        `SESSION_ATTR_KEYS`. Left in, an export of baron rows alone produces a
+        session that never happened.
+      * `session_duration_total_s` / `_p50_s` — a guard row is one PreToolUse
+        hook process. Grouped into a session it publishes the hook's own
+        wall-clock, labelled `measured`, in a field an auditor reads as agent
+        working time. That is the specific dishonesty this split exists to
+        prevent.
+      * `distinct_agent_identities` — baron rows carry `agent.name` (the
+        persona slug, defaulting to `baron.actor`, itself defaulting to
+        `"unknown"`), so a persona that guard merely EVALUATED — and a literal
+        `"unknown"` — would join the roster of agents observed working.
+      * `tool_calls_total` / `_by_name` / `tool_error_rate` — ADR-013 puts
+        `tool.name` in the fixed slots of every row, which is correct for
+        joining but means `is_tool_record` returns True for them. Guard
+        evaluating eleven calls is not eleven tool calls, and a
+        `session.start` row is not a tool named `session.start`.
+
+    NAME. It is `partition_guard_records` because that is the name the fix
+    carries in barony ADR-014 §9.1 and in the branch it is ported from, and
+    guard is what emits most rows. It partitions the whole `baron.`
+    observation namespace, not only the guard kinds — the evidence kinds
+    (`tool.post`, `session.start`, …) reach the ingester through the same
+    file and carry the same contaminating attributes.
+
+    Returns the ORIGINAL list object as `activity_records` when no baron rows
+    are present, so the no-baron path is unchanged and allocation-free.
+    """
+    baron = [r for r in records if is_baron_observation_record(r)]
+    if not baron:
+        return records, baron
+    return [r for r in records if not is_baron_observation_record(r)], baron
+
+
+#: Absence note for an activity metric when the export contains baron evidence
+#: and nothing else. Saying "no parseable records" here would be false — the
+#: records parsed fine, they are just not activity.
+GUARD_ONLY_ABSENT = (
+    "no agent-activity records — every record in this export is a barony "
+    "observation-plane row (`baron.outcome` present), which v1.1 excludes "
+    "from the activity plane. A hook process's own timings are not a session, "
+    "a duration, or an agent's working time, and are not published as one "
+    "(barony ADR-018). The baron rows ARE counted, in `guard_decisions` / "
+    "`baron_events_by_kind`.")
+
+#: Suffix for a mixed export (activity + baron) where the activity side cannot
+#: supply the metric. Without it the reader sees "no spans stream in export"
+#: while looking at a file full of spans.
+GUARD_PRESENT_SUFFIX = (
+    "; the barony observation-plane row(s) in this export are governance "
+    "evidence about tool calls, excluded from the activity plane by design "
+    "(barony ADR-018), so they cannot supply this metric")
+
+
+def absent_activity(base_note, baron_records, baron_only):
+    """`not_measurable` for an activity metric, with a note that is TRUE.
+
+    With no baron rows this returns exactly the pre-1.1 note, which is what
+    keeps the change additive for every pre-1.1 export.
+    """
+    if baron_only:
+        return not_measurable(GUARD_ONLY_ABSENT)
+    if baron_records:
+        return not_measurable(base_note + GUARD_PRESENT_SUFFIX)
+    return not_measurable(base_note)
+
+
+def count_values(recs, key, canonical):
+    """Count one attribute's values. `canonical` keys are always present.
+
+    Unrecognised values are counted under their own key rather than dropped —
+    a producer that starts emitting a new value must show up in the numbers,
+    not vanish from them. Returns (counts, sorted unrecognised values).
+    """
+    counts = {k: 0 for k in canonical}
+    unknown = []
+    for r in recs:
+        v = r["attrs"].get(key)
+        v = "(absent)" if v is None else str(v)
+        if v not in counts:
+            unknown.append(v)
+        counts[v] = counts.get(v, 0) + 1
+    return dict(sorted(counts.items())), sorted(set(unknown))
+
+
+def compute_guard_metrics(baron_records, src_names):
+    """Counts over the withheld barony partition (v1.1; ADR-018).
+
+    `baron_records` is the partition from :func:`partition_guard_records` —
+    the same rows withheld from the activity plane, counted here so they are
+    excluded from the pre-existing metrics without being discarded.
+
+    Two new aggregate keys; no existing metric changes shape. Both are
+    `measured` whenever any baron row is present — they are DIRECT COUNTS of
+    an attribute that is either there or not. Nothing here is inferred: with
+    no baron rows both come back `not measurable` with the attribute named.
+
+    DELIBERATELY ABSENT: a count of `baron.enforcement`. That attribute is
+    under correction (DECISIONS-FOR-REVIEW D1; ADR-013 §9.1 measured it
+    booking structural refusals as `enforced` and genuine persona-dependent
+    allows as `not-applicable`). Publishing a `measured` aggregate over a
+    field whose producer-side definition is known wrong is the over-claim this
+    project exists to catch. It lands when the label does — ADR-018 §5.
+    """
+    if not baron_records:
+        absent = not_measurable(
+            "attribute absent — no barony observation-plane rows "
+            "(baron.outcome) in export; barony emits them when "
+            "BARON_EVENTS_SINK=disk is set (default is `null`, which "
+            "discards)")
+        return {"guard_decisions": absent, "baron_events_by_kind": absent}
+
+    decisions = [r for r in baron_records if is_baron_decision_record(r)]
+    counts, unknown = count_values(decisions, BARON_ATTR_KEYS["outcome"],
+                                   BARON_OUTCOMES)
+    note = (f"direct count over {len(decisions)} of {len(baron_records)} "
+            "barony rows — the adjudication kinds (guard.decision, "
+            "guard.override) only; the evidence kinds are in "
+            "`baron_events_by_kind`. `deny` is a capability denial, `error` "
+            "is a fail-closed deny because guard could not evaluate at all — "
+            "they are different operational signals and are never folded "
+            "together. WHAT THIS IS NOT: it is not a fidelity score. It "
+            "measures the traffic mix of one export, which shifts with "
+            "whatever the agents happened to run")
+    if unknown:
+        note += (f"; unrecognised outcome value(s) {unknown} were counted "
+                 "under their own keys rather than dropped")
+
+    by_kind: dict[str, int] = {}
+    for r in baron_records:
+        by_kind[r["name"]] = by_kind.get(r["name"], 0) + 1
+
+    return {
+        "guard_decisions": measured(counts, src_names, note=note),
+        "baron_events_by_kind": measured(
+            dict(sorted(by_kind.items())), src_names,
+            note=(f"every one of the {len(baron_records)} barony "
+                  "observation-plane row(s) withheld from the activity "
+                  "plane, by span name. Published so the exclusion is "
+                  "auditable rather than silent: nothing partitioned out is "
+                  "discarded without appearing here")),
+    }
+
+
 def session_key(rec, session_attr: str | None):
     """Return (key, method) for grouping a record into a session."""
     if session_attr:
@@ -674,7 +887,14 @@ def compute_metrics(records, file_reports, session_attr=None):
     src_names = [Path(p).name for p in sources]
     reports_by_name = {Path(r["path"]).name: r for r in file_reports}
 
-    sessions_raw = build_sessions(records, session_attr)
+    # v1.1 — split barony observation rows out BEFORE anything is grouped.
+    # Everything below this line sees agent activity only; the baron rows are
+    # counted on their own axis at the end. See partition_guard_records for
+    # what leaked when this was missing (barony ADR-018).
+    activity_records, baron_records = partition_guard_records(records)
+    baron_only = bool(baron_records) and not activity_records
+
+    sessions_raw = build_sessions(activity_records, session_attr)
     sessions = [compute_session(s, reports_by_name)
                 for s in sessions_raw.values()]
     sessions.sort(key=lambda s: (s["start"] or "", s["session_id"]))
@@ -685,8 +905,9 @@ def compute_metrics(records, file_reports, session_attr=None):
     fallback_sessions = [s for s in sessions
                          if "fallback" in s["identity_method"]]
     if not sessions:
-        agg["session_count"] = not_measurable(
-            "no spans or events could be parsed from the input files")
+        agg["session_count"] = absent_activity(
+            "no spans or events could be parsed from the input files",
+            baron_records, baron_only)
     elif fallback_sessions:
         agg["session_count"] = inferred(
             len(sessions), src_names,
@@ -705,14 +926,21 @@ def compute_metrics(records, file_reports, session_attr=None):
         agg["session_duration_p50_s"] = measured(
             round(statistics.median(durations), 3), src_names)
     else:
-        agg["session_duration_total_s"] = not_measurable(
-            "attribute absent — no records carried parseable timestamps")
+        agg["session_duration_total_s"] = absent_activity(
+            "attribute absent — no records carried parseable timestamps",
+            baron_records, baron_only)
         agg["session_duration_p50_s"] = agg["session_duration_total_s"]
 
     # tool calls
     n_tools = sum(s["tool_calls"] for s in sessions)
     n_tool_errors = sum(s["tool_errors"] for s in sessions)
-    any_spans = any(r["spans"] for r in file_reports)
+    # Counted over the ACTIVITY records, not `file_reports`, so a file of pure
+    # baron rows is not mistaken for a spans stream (which would publish a
+    # `measured` zero tool calls for an export that never described any).
+    # Equivalent to the pre-1.1 `any(r["spans"] for r in file_reports)` when no
+    # baron rows are present: load_file counts exactly the span records it
+    # returns.
+    any_spans = any(r["kind"] == "span" for r in activity_records)
     if n_tools or any_spans:
         agg["tool_calls_total"] = measured(n_tools, src_names)
         agg["tool_errors_total"] = measured(
@@ -731,9 +959,9 @@ def compute_metrics(records, file_reports, session_attr=None):
         agg["tool_calls_by_name"] = measured(dict(sorted(by_name.items())),
                                              src_names)
     else:
-        agg["tool_calls_total"] = not_measurable(
+        agg["tool_calls_total"] = absent_activity(
             "no spans stream in export — tool calls require trace spans "
-            "or tool_result events")
+            "or tool_result events", baron_records, baron_only)
         agg["tool_errors_total"] = agg["tool_calls_total"]
         agg["tool_error_rate"] = agg["tool_calls_total"]
         agg["tool_calls_by_name"] = agg["tool_calls_total"]
@@ -741,7 +969,7 @@ def compute_metrics(records, file_reports, session_attr=None):
     # llm calls + tokens + cost
     n_llm = sum(s["llm_calls"] for s in sessions)
     agg["llm_calls_total"] = measured(n_llm, src_names) if sessions else \
-        not_measurable("no parseable records")
+        absent_activity("no parseable records", baron_records, baron_only)
     tok_specs = [
         ("input_tokens_total", "input",
          "no input-token attribute (input_tokens / "
@@ -773,7 +1001,8 @@ def compute_metrics(records, file_reports, session_attr=None):
     turn_vals = [s["human_turns"] for s in sessions]
     known = [v for v in turn_vals if v is not None]
     if not sessions:
-        agg["human_turns_total"] = not_measurable("no parseable records")
+        agg["human_turns_total"] = absent_activity(
+            "no parseable records", baron_records, baron_only)
     elif not known:
         agg["human_turns_total"] = not_measurable(
             "attribute absent — no user-prompt events "
@@ -832,12 +1061,21 @@ def compute_metrics(records, file_reports, session_attr=None):
 
     agg["distinct_models"] = measured(
         sorted({m for s in sessions for m in s["models"]}), src_names) \
-        if sessions else not_measurable("no parseable records")
+        if sessions else absent_activity("no parseable records",
+                                         baron_records, baron_only)
+    # The roster of agents OBSERVED WORKING. A persona that guard merely
+    # evaluated is not on it — see partition_guard_records.
     agg["distinct_agent_identities"] = measured(
         sorted({a for s in sessions for a in s["agents"]}), src_names,
         note="from agent.name / agent_id / subagent_type / service.name / "
              "user.email attributes") \
-        if sessions else not_measurable("no parseable records")
+        if sessions else absent_activity("no parseable records",
+                                         baron_records, baron_only)
+
+    # Barony observation plane (v1.1) — appended last so every pre-existing
+    # key above keeps its position, and computed over the withheld partition
+    # so the two planes cannot double count each other.
+    agg.update(compute_guard_metrics(baron_records, src_names))
 
     for s in sessions:
         s.pop("_tok_pairs", None)

@@ -193,14 +193,23 @@ architecture decision with an ADR attached, not a conflict resolution, so I stop
 **Nothing is lost.** The branch is intact at `harden/otel` (3 commits, tip `3b9a4d8`). Its
 consumer-side work is producer-independent and should be re-merged once D1 is settled:
 
-- `ingest_otel.py`'s `partition_guard_records` — splits guard rows out **before**
-  `build_sessions`, so guard's sub-second hook timings stop registering as agent sessions.
-  Measured contamination on committed fixtures: `session_count` 1→2,
-  `session_duration_p50_s` 600.0→300.297, agent roster polluted with two personas,
-  `human_turns_total` silently downgraded `measured`→`inferred`.
-- `test_no_contamination_from_paired_export`, which its author **verified can fail** by
-  reverting the fix (6 distinct metrics across 3 fixtures).
+- ~~`ingest_otel.py`'s `partition_guard_records`~~ — **PORTED 2026-08-09, ADR-018.** Split
+  out before `build_sessions`, keyed on the `baron.outcome` attribute rather than a span
+  name, and generalised to all six ADR-013 kinds. Re-measured against the *merged* producer
+  rather than carried over: it is worse here, because ADR-013 also puts `tool.name` on every
+  row. Nine activity metrics move when a baron export is paired with `flat_spans.jsonl` —
+  `session_duration_p50_s` 600.0→300.455, `tool_calls_total` 1→12, roster polluted with two
+  personas plus a literal `unknown`, `human_turns_total` downgraded `measured`→`inferred`.
+  ADR-018 §2 has the full table.
+- ~~`test_no_contamination_from_paired_export`~~ — **PORTED.** Re-verified the same way its
+  author did: reverting the fix fails 34 of its checks (45 across the suite). The audit
+  skill's tests are also now in CI, which they never were.
 - ADR-014 §4.2 and §9.1, and the `Decision.adjudicated` reasoning D1 recommends adopting.
+  **Still pending** — producer-side, blocked on D1.
+
+**Deliberately NOT ported:** `harden/otel`'s `guard_enforcement_class` aggregate. Counting
+`baron.enforcement` while D1 is open would publish a `measured` number over a field this
+very document says is wrong in both directions. ADR-018 §5.
 
 ---
 
@@ -233,6 +242,12 @@ Stated plainly, because a green suite invites the wrong inference.
    §5–§6 for their own ADR.
 7. **The known guard bypass is unchanged.** `bash -c '...'` and friends run their payload
    uninspected. Documented in `guard.py`'s module docstring; not a regression, not fixed here.
+8. **The audit ingester's baron partition is verified against fixtures, not a live audit**
+   (ADR-018). `baron_events.jsonl` is real `baron guard` output, and the contamination test
+   is verified to fail when the fix is reverted — but no end-to-end audit has been run over
+   a real project's `.baron/events/` directory, because the default sink is `null` and no
+   project is emitting yet. The partition predicate also assumes no non-baron producer emits
+   a `baron.outcome` attribute; that is an assumption about a namespace, not a measurement.
 
 ---
 
