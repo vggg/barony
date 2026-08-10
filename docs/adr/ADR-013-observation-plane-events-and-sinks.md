@@ -282,6 +282,39 @@ to that path is a latency regression nobody has quantified. The likely resolutio
 adapters render `events.sink` into the hook environment at `baron init` time, so the hot
 path still reads only an env var. That belongs in the ADR that measures it.
 
+### 7.1 DECIDED 2026-08-10 — the shipped default stays `null` (`DECISIONS-FOR-REVIEW.md` D4)
+
+**The owner has signed the default. `BARON_EVENTS_SINK` remains `"null"` in every shipped
+configuration.** This is a **decision, not a deferral**, and it carries **no code change** —
+the default above is already correct, so the signature is the whole of it. That is worth
+recording precisely because it is invisible in a diff: a default nobody signed and a default
+somebody signed look identical, and only one of them is a decision.
+
+**The reasoning.** A downstream repo should not begin writing to disk because it upgraded.
+Enabling telemetry is an operator's act, not a consequence of installing a governance tool.
+This is also what made the `baron init` scaffold change safe to land: a freshly generated repo
+behaves identically with the four hook blocks wired.
+
+**The cost, not buried.** The **0.53 operational-fidelity measurement that motivated this
+entire plane still has no data**, and will keep having none until someone sets the variable.
+That cost is not reduced by this decision — it is accepted by it. The owner intends to enable
+sinks in his **own** projects to generate the data; **the shipped default is a separate
+question from his local one**, and is answered separately on purpose. "The author runs it hot"
+is not a reason to make every downstream repo run it hot, and an opted-in population is the
+only one whose numbers mean anything anyway.
+
+**Interlock with the ADR-014 retirement** ([ADR-014](ADR-014-guard-telemetry.md) §4.1). The
+recorded hazard of flipping this default was a **schema fork**: two transports writing the same
+governance fact in two wire shapes into `.baron/events/` and `.baron/telemetry/`. That hazard
+is now **moot** — the same 2026-08-10 pass retired the second transport. Neither decision
+depends on the other; both point the same way.
+
+**Still reversible.** Flipping the default later is one line plus an ADR. What the `null`
+default preserves is the **no-consumer window** that made ADR-018's and ADR-019's breaking
+changes to published attributes acceptable — see §9.1 and the `baron.hook_event` →
+`baron.trigger` rename. That window closes the moment this default flips, which is the
+strongest remaining argument for keeping it open until there is a reason to close it.
+
 ## 8. What shipped
 
 - `cli/src/baron/events.py` — `EVENTS_VERSION`, frozen `Event`, `to_row()`, `sink_name()`,

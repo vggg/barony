@@ -15,7 +15,7 @@ related:
 
 | Field | Value |
 |---|---|
-| **Status** | **Proposed** — the export ships; the knowledge-substrate adapter is deliberately withheld pending §4's owner decision |
+| **Status** | **Proposed** — the export ships; the knowledge-substrate adapter is deliberately withheld. **§4.1's blocking owner decision was RESOLVED 2026-08-10 ([ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)): projection, answer (a).** The adapter stays withheld on §4.2's grounds, which are unaffected. |
 | **Date** | 2026-08-09 |
 | **Authors** | Claude (the Cognee workstream of the 2026-08 hardening effort) |
 | **Scope** | `AGENT-TASKS.md` **3.4** — pluggable knowledge substrate + semantic-memory spike |
@@ -25,6 +25,10 @@ related:
 > **This ADR proposes; it does not decide.** §4.1 is an owner call that predates this
 > workstream (`projects/AgentBootstrapNasikoMix/2026-08-04-codex-agent-reconciliation.md`,
 > reconciliation item C) and is still open. Nothing here forecloses either answer.
+>
+> **Update 2026-08-10 — §4.1 is decided.** [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)
+> answers it **(a)** and amends product-vision invariant #1 in the process. The rest of this
+> ADR is unchanged and still proposed.
 
 ## 1. Summary
 
@@ -150,7 +154,27 @@ before emission; YAML dates are coerced to ISO strings; and `age_days` — which
 
 ## 4. What is deliberately NOT here, and why
 
-### 4.1 The blocking owner decision
+### 4.1 The blocking owner decision — **RESOLVED 2026-08-10, see [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)**
+
+> **ANSWERED: (a), a rebuildable projection.** And the vision it was measured against was
+> **amended** at the same time, which is why this needs reading rather than skipping.
+>
+> **Product-vision invariant #1 is now:** git + markdown is the **DEFAULT** substrate; plugins
+> may extend it to other suitable platforms — **bounded** by *governance state stays complete
+> in git*. "Who may do what", "who did what" and "what is true now" must remain answerable
+> from the repository **alone**. A plugin may be authoritative for **derived or auxiliary**
+> domains (semantic search, embeddings, cross-project recall) and **never** for **authority,
+> evidence, or the ledger**. ADR-022 §3 argues the bound rather than asserting it: the
+> product's audit claim is *governance you can verify by reading a diff*, and that holds only
+> while the repo is complete — otherwise the claim degrades to "trust the index".
+>
+> **Mode (b) is refused on the merits**, not merely dropped: "it holds things the repo does
+> not" is authority-bearing by construction, which the bound forbids. The amendment **permits**
+> a plugin to be authoritative for auxiliary domains; it does **not** make any vendor
+> authoritative, and it **mandates building nothing** — 3.4 remains gated on 3.3, which does
+> not exist, and **nothing about the candidate vendor has been run** (§6).
+>
+> The original framing, which the decision was made against, follows.
 
 `AGENT-TASKS.md` 3.4 evaluates the semantic-memory backend two ways: **(a)** a rebuildable
 projection over git+markdown, and **(b)** a candidate *authoritative* knowledge source. The
@@ -168,6 +192,12 @@ would put a credentialed third-party service on the read path of a product whose
 is that the substrate is inspectable markdown.
 
 **Nothing in this ADR depends on the answer.** The export is the input either mode consumes.
+
+> **Post-decision note.** That last sentence held: the export is the right seam under (a)
+> unchanged. Its citation gate — a source that is untracked or dirty is **skipped by name**
+> rather than emitted with a SHA that resolves to different bytes — is precisely what makes a
+> projection auditable, since every retrieval result points back at bytes `git show
+> <sha>:<path>` reproduces. That is the mechanism by which a projection stays a projection.
 
 ### 4.2 No entry-point group, no sink protocol
 
@@ -188,6 +218,19 @@ protocol, mirroring `baron.forges`. It is not here, for three reasons:
 
 `test_no_new_entry_point_group_was_published` asserts `baron.forges` is still the only group,
 so a future change here is a deliberate, reviewed act.
+
+> **Two corrections, both 2026-08-09/10.**
+>
+> 1. **That test was narrowed and renamed** to `test_no_knowledge_entry_point_group_was_published`
+>    at the ops-plane merge. `groups == ["baron.forges"]` was a global claim wider than the rule
+>    it protected, and ADR-013 legitimately published `baron.sinks` — the case §4 *permits*,
+>    since it ships two built-in consumers loaded through real `importlib.metadata` discovery.
+>    It now asserts no `baron.knowledge`, no vendor-named group, and an **allowlist**
+>    (`baron.forges`, `baron.sinks`) so a third unreviewed group still fails.
+> 2. **§4.1 being resolved does not release this.** [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)
+>    §5.1 is explicit: the group is **still not published**, the test **stays green and is not
+>    relaxed**, and reasons 1–3 above are untouched. Reason 2 in particular is the load-bearing
+>    one — permission is not a consumer, and an entry-point group name is unretractable.
 
 ### 4.3 No vendor in core
 

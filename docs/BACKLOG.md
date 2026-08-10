@@ -264,3 +264,14 @@ Positioning note: this is Phase-3/4 territory and overlaps the per-agent Memory
 capability some runtimes ship (e.g. pydantic-ai-harness) — but those are
 in-process/per-agent/private; Barony's differentiator is shared, human-legible,
 git-audited memory. Build only on real demand.
+
+> **2026-08-10 — [ADR-022](adr/ADR-022-substrate-invariant-amended-default-not-only.md) does
+> NOT un-cut this.** Product-vision invariant #1 was amended (git + markdown is now the
+> *default* substrate; plugins may extend it, bounded by *governance state stays complete in
+> git*), and the Cognee question was answered **(a)**, a rebuildable projection. **"Build only
+> on real demand" stands, and so do the five prior reviews that cut this surface.** Those cuts
+> were about **sequencing and evidence** — not about the vision forbidding the shape — so
+> resolving the vision question leaves them exactly where they were. What changed is the answer
+> to *"may we ever?"*, not to *"may we now?"*. A future proposal must still show real demand, a
+> 3.3 harness result beating the git + markdown baseline, a passing deletion test (ADR-022 §2),
+> and a consumer before any entry-point group is published.

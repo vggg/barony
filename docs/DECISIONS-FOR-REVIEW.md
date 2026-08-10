@@ -1,14 +1,23 @@
 # Decisions for review — the ops-plane hardening consolidation
 
-**Date:** 2026-08-09 · **Branch:** `harden/ops-plane`
+**Date:** 2026-08-09 · **Revised:** 2026-08-10 · **Branch:** `harden/ops-plane`
 · **Suite:** cli **424 passing** (base was 148) · audit skill **265 checks, 0 fail**
 · repo lint PASS · bi-runtime acceptance PASS
-· **Merged:** 9 workstreams; `harden/otel` still out (see §D)
+· **Merged:** 9 workstreams; `harden/otel` retired, not merged (see §D)
 
 Read this file first. It is ordered by *what needs you*, not by what shipped.
 
-- **§A — decisions.** Four. **D1 and D3 are now RESOLVED** and implemented; **D2 is still
-  blocking**; **D4 is open and now unblocked.**
+> **2026-08-10 — ALL FOUR DECISIONS ARE NOW SIGNED.** D1 and D3 were resolved on 2026-08-09.
+> **D2** is resolved by [ADR-022](adr/ADR-022-substrate-invariant-amended-default-not-only.md),
+> which **amends product-vision invariant #1**: git + markdown is now the *default* substrate
+> rather than the only one, bounded by "governance state stays complete in git". **D4** is
+> resolved as *decided, not deferred*: the shipped sink default stays `null`. **F3** is
+> resolved: ADR-014's transport is **retired** (recorded in
+> [ADR-014](adr/ADR-014-guard-telemetry.md); nothing deleted, nothing merged). Nothing in §A
+> is waiting on you. §E (what is NOT verified) and §F1/F2/F4 are unchanged and still open.
+
+- **§A — decisions.** Four. **All four are now RESOLVED** — D1 and D3 on 2026-08-09, **D2 and
+  D4 on 2026-08-10.**
 - **§B — made during implementation, reversible.** You can wave these through.
 - **§C — made during implementation, one-way doors.** Worth a read even if you agree.
 - **§D — what did not merge, and why.**
@@ -24,18 +33,19 @@ and nothing checks. ADR-002/ADR-008 forbid blurring those, and this file tries h
 |---|---|---|
 | **D1** semantics | BLOCKING, unresolved | **RESOLVED** — ADR-018, both measured defects flip |
 | **D1** ingester half | recommended, unmerged | **RESOLVED** — ADR-021 merged |
-| **D1** `telemetry.py` | to retire | **still open** — the one piece left |
+| **D1** `telemetry.py` | to retire | **RESOLVED 2026-08-10** — retired, ADR-014 · F3 closed |
 | **D3** read-verb label | untickable, 1 of 4 adapters measured | **RESOLVED** — ADR-020, 4 of 4 measured |
-| **D2** Cognee | BLOCKING | **BLOCKING, untouched** |
-| **D4** default-on | open, blocked behind D1 | **open, precondition met** |
+| **D2** Cognee | BLOCKING | **RESOLVED 2026-08-10** — ADR-022 amends invariant #1; Cognee answered **(a)** |
+| **D4** default-on | open, blocked behind D1 | **RESOLVED 2026-08-10** — stays OFF, decided not deferred |
 | runtime neutrality | asserted | **measured** — ADR-019, second producer |
 
 ---
 
 ## §A. Decisions
 
-**D1 and D3 are resolved and implemented — read them for what was decided and on what
-evidence, not for an action. What still needs you is D2 (blocking) and D4 (now unblocked).**
+**All four are resolved — read them for what was decided and on what evidence, not for an
+action.** D1 and D3 were signed 2026-08-09 and are implemented; D2 and D4 were signed
+2026-08-10 and neither carries a code change.
 
 ### D1 — RESOLVED 2026-08-09. Three workstreams each built an observation plane.
 
@@ -79,9 +89,11 @@ evidence, not for an action. What still needs you is D2 (blocking) and D4 (now u
 > test that emits two real rows carrying `write_path` — one adjudicated, one structural — and
 > asserts naive count 2 vs correct count 1.
 >
-> **What is still open under D1** — one piece of merge work, not a product call: **retire
-> `telemetry.py`** (ADR-014's transport, still unmerged on `harden/otel`; the owner's call on
-> that branch is pending, see §D and §F). D4 is no longer blocked by D1.
+> **~~What is still open under D1~~ — CLOSED 2026-08-10.** The last item was **retire
+> `telemetry.py`**, and the owner has: it is **retired**, recorded in
+> [ADR-014](adr/ADR-014-guard-telemetry.md). Because it was never merged, retiring it is a
+> **recording** action — no deletion, no revert, no code change, and `harden/otel` stays
+> intact as history. See §D and F3.
 >
 > The rest of this section is the analysis that produced the decision. It is left intact, and
 > its "NOT merged" / "currently-merged" statements should be read as **historical**.
@@ -149,7 +161,58 @@ sink is `null`, so nothing is emitting yet. **That window is why this is worth d
 
 ---
 
-### D2 — BLOCKING, and carried over. Cognee: projection, or authoritative source?
+### D2 — RESOLVED 2026-08-10. The substrate invariant is AMENDED. Cognee is answered **(a)**.
+
+> **DECIDED — and this is a product-vision change, not a disposition of work already done.**
+> Recorded in **[ADR-022](adr/ADR-022-substrate-invariant-amended-default-not-only.md)**, the
+> most consequential item of this pass.
+>
+> **Product-vision invariant #1 is amended.**
+>
+> | | |
+> |---|---|
+> | **From** | git + markdown **IS** the substrate. |
+> | **To** | git + markdown is the **DEFAULT** substrate. Plugins may extend it to other suitable platforms. |
+>
+> **The bound, which is the load-bearing half.** Governance state stays **COMPLETE IN GIT**.
+> *"Who may do what"*, *"who did what"* and *"what is true now"* must remain answerable from
+> the repository **alone**. A plugin may be authoritative for **derived or auxiliary** domains
+> — semantic search, embeddings, cross-project recall — and **never** for **authority,
+> evidence, or the ledger**.
+>
+> **Why the bound, argued rather than asserted (ADR-022 §3).** The product's audit claim is
+> *governance you can verify by reading a diff*. That holds only while the repo is complete.
+> If a plugin holds authoritative governance state, a capability grant stops appearing in a
+> PR, the auditor needs credentials rather than a `git clone`, and the failure is silent — a
+> stale index does not announce itself. The claim degrades from **"read the diff"** to
+> **"trust the index"**, which is a different product. A project that publishes its own
+> measured fidelity of 0.53 rather than rounding up should not ship a headline claim that can
+> only be taken on trust. **The amendment must not be read as permission for that.**
+>
+> **The test that makes the bound checkable** (ADR-022 §2): delete every plugin, clone fresh,
+> ask the three questions. If an answer is lost or now needs a second system, the plugin was
+> holding governance state and is forbidden. If only *speed of finding it* is lost, it is
+> permitted.
+>
+> **Cognee is answered (a): a rebuildable projection.** Mode (b) — "it holds things the repo
+> does not" — is authority-bearing by construction and is **refused on the merits**. The
+> amendment *permits* a plugin to be authoritative for auxiliary domains; it does **not** make
+> Cognee authoritative for anything, and it **mandates building nothing**. 3.4 is still gated
+> on 3.3, which does not exist. **Nothing about the vendor has been run** (ADR-015 §6) and
+> this decision adds no measurement.
+>
+> **Still NOT published: the `baron.knowledge` entry-point group.** There is no consumer, and
+> the group is public API that cannot be retracted.
+> `test_no_knowledge_entry_point_group_was_published` **stays green and is not relaxed** — it
+> protects a different rule (no group without a consumer) that this decision does not touch.
+>
+> **What this reverses, and what it does not** (ADR-022 §6). `docs/BACKLOG.md` records that
+> five prior reviews cut this surface, and ADR-015 §4 cut it a sixth. **Those cuts stand.**
+> What was cut was *building it now*, on sequencing and evidence grounds. What is amended is
+> *what would be permissible if the demand and the measurement arrived*. This changes the
+> answer to **"may we ever?"**, not to **"may we now?"** — and "may we now?" is still no.
+>
+> The analysis the decision was made against follows, unedited.
 
 Unchanged from the 2026-08-04 reconciliation and from ADR-015 §4.1. Still not mine to answer.
 
@@ -167,6 +230,12 @@ three. `docs/BACKLOG.md` records that five prior reviews already cut this surfac
 
 **Reversible?** The export, yes. Publishing a `baron.knowledge` entry-point group, no —
 that is public API you cannot retract. Do not create it until there is a consumer.
+
+> **Post-decision note on reversibility.** The *wording* stays reversible while no plugin
+> exists — re-tightening costs a follow-up ADR. **Anything built under the amendment is not.**
+> Once a plugin ships and downstream repos depend on it, the permission has consumers and the
+> bound is the only thing between the audit claim and "trust the index". Defend the bound in
+> review, every time — not the amendment.
 
 ---
 
@@ -214,7 +283,40 @@ and declined as too expensive for this pass.
 
 ---
 
-### D4 — OPEN, and now unblocked. Should the observation plane be on by default? (Recommend: no, but decide knowingly)
+### D4 — RESOLVED 2026-08-10. Sinks stay OFF by default. Decided, not deferred.
+
+> **DECIDED.** The shipped default remains **`BARON_EVENTS_SINK=null`**. Recorded in
+> [ADR-013 §7.1](adr/ADR-013-observation-plane-events-and-sinks.md).
+>
+> **This is a decision, not a deferral, and there is NO CODE CHANGE** — the current default is
+> already correct, so the signature is the whole of the change. Saying so explicitly matters:
+> a default left alone because nobody signed it and a default left alone because someone did
+> look identical in the diff and are not the same fact.
+>
+> **The reasoning that survives.** Downstream repos should not start writing to disk because
+> they upgraded. Enabling telemetry is an operator's act, not a consequence of installing a
+> governance tool — and a freshly generated repo behaves identically with the four new hook
+> blocks wired, which is what made the scaffold change safe to land in the first place.
+>
+> **The cost, stated plainly and not buried.** The **0.53 operational-fidelity measurement
+> that motivated this entire workstream still has no data**, and will keep having none until
+> someone sets the variable. That cost is not reduced by this decision; it is accepted by it.
+> A framework whose own telemetry is off by default measures itself as often as anyone
+> remembers to.
+>
+> **What closes the gap instead.** The owner intends to enable sinks in his **own** projects
+> to generate that data. **The shipped default is a separate question from his local one** —
+> and it is deliberately answered separately, because "the author runs it hot" is not a reason
+> to make every downstream repo run it hot. The measurement will come from opted-in projects,
+> which is also the only population where the numbers mean anything.
+>
+> **The F3 interlock.** The hazard recorded below — that turning sinks on with two transports
+> live forks the schema in downstream repos — is now **moot**, because F3 retires the second
+> transport (ADR-014 §4.1). **The two decisions interlock:** F3 removes the fork, and D4 keeps
+> the no-consumer window open regardless. Neither depends on the other, and both point the
+> same way.
+>
+> The original framing, which the decision was made against, follows.
 
 Every merged plane defaults to `BARON_EVENTS_SINK=null`. Baron writes nothing unless an
 operator opts in, which is why the scaffold change was safe to land: a freshly generated repo
@@ -231,7 +333,8 @@ in every downstream repo by default, and that deserves your signature, not mine.
 **Reversible?** Yes, trivially — but note that D1 should be settled *first*: turning sinks on
 before the `baron.enforcement` semantics are fixed starts accumulating rows with the labelling
 defect baked in. **Update 2026-08-09:** that precondition is met (ADR-018). This is now a
-straight default-flip call, still unsigned.
+straight default-flip call, still unsigned. **Update 2026-08-10: signed — the default stays
+`null`.** Still reversible; flipping it later remains one line plus an ADR.
 
 ---
 
@@ -264,9 +367,37 @@ straight default-flip call, still unsigned.
 
 ---
 
-## §D. What did not merge
+## §D. What did not merge — RESOLVED 2026-08-10
 
-### `harden/otel` — NOT MERGED. Aborted cleanly; `harden/ops-plane` left green.
+### `harden/otel` — NOT MERGED, and now RETIRED. Aborted cleanly; `harden/ops-plane` left green.
+
+> **RESOLVED 2026-08-10 — the owner's call is in.** ADR-014's producer transport is
+> **retired**; the branch is kept as history; an out-of-tree plugin over the existing
+> `baron.sinks` group is the future path for a live OTel exporter. Recorded in
+> **[ADR-014](adr/ADR-014-guard-telemetry.md)**, which is a **status record** on the reserved
+> number — the 435-line ADR itself was never merged and still lives at
+> `harden/otel:docs/adr/ADR-014-guard-telemetry.md`.
+>
+> **"Retired" is a RECORDING action here, not a deletion.** `telemetry.py` was never merged,
+> so there is nothing to remove: **no deletion, no revert, no code change, suite unchanged at
+> 424.** `harden/otel` is **NOT deleted** and nothing further is merged from it — both
+> producer-independent halves already landed (`Decision.adjudicated` → ADR-018,
+> `partition_guard_records` → ADR-021).
+>
+> **Not "rejected", and the distinction is the point.** ADR-014's analysis was **correct and
+> was ADOPTED in part** — ADR-018 cites it as *"the correct basis"* and ports
+> `Decision.adjudicated` from it essentially unchanged. **Its TRANSPORT is what is retired.**
+> Recording it as rejected would misstate a history that is checkable, and would lose the more
+> useful fact: the branch that lost the merge was the branch that was right about the label.
+> ADR-014 §12.2 had itself named this outcome as the correct resolution.
+>
+> **Forward path.** A live OTel exporter belongs **out-of-tree**, registered over the
+> **existing** `baron.sinks` entry-point group — no new group needed. ADR-014 §3 / one-way door
+> **C2** already forbids `opentelemetry-api` in baron core; **that stands, and this decision is
+> consistent with it** rather than an exception to it. The plugin carries its own dependency.
+> Nothing is authorised or planned.
+>
+> The analysis this decision was made against follows, unedited.
 
 **Why:** see **D1**. It is a second, complete, incompatible observation plane —
 `telemetry.py` with its own `Sink` Protocol, its own `baron.sinks` entry-point group
@@ -310,7 +441,8 @@ consumer-side work is producer-independent and should be re-merged once D1 is se
 
 **What is left of `harden/otel` after those three ports: its transport.** `telemetry.py`,
 `test_telemetry.py` (668 lines), the `BARON_TELEMETRY` env var and the `.baron/telemetry/`
-location. That is the piece D1 still lists as open, and it is the owner's call (§F).
+location. ~~That is the piece D1 still lists as open, and it is the owner's call (§F).~~
+**RETIRED 2026-08-10 — ADR-014. Kept on the branch as history; nothing deleted.**
 
 **Deliberately NOT ported:** `harden/otel`'s `guard_enforcement_class` aggregate. **Note the
 reason changed at consolidation.** It was withheld because `baron.enforcement` was wrong in
@@ -387,7 +519,7 @@ Named here so they are choices on the record rather than things nobody noticed.
 |---|---|---|---|
 | F1 | **The per-runtime capability matrix.** `baron rules list` prints one label per verb, but the honest answer is a **4 adapters × 10 verbs** grid: `write_code` is mechanised on Claude Code via the PreToolUse hook and in-process on pydantic-ai, and is prose-only on code-puppy and generic. One flat column cannot say that. The `(adapter, verb)`-keyed harness that ADR-020 needed to answer D3 (`cli/tests/omission.py`) is already shaped for it — it was built keyed on the pair for exactly this reason. | It is a **user-visible output redesign** (a table, a `--json` schema change, and a decision about what to print when a repo has several adapters hydrated), not a measurement gap. Doing it inside a consolidation pass would smuggle a product decision through a merge — the thing D1 exists to prevent. | Low and shrinking. The harness is the expensive half and it is merged and under test. |
 | F2 | **Delivery-verified `instructed`, via the ritual-fence technique.** Today `instructed` means "baron emitted the sentence into the kit" — verified at *emission*, never at *receipt*. Nothing checks that the persona's runtime actually loaded the file, so a silently-ignored `AGENTS.md` is indistinguishable from a heeded one. The ritual-fence technique (make the agent echo a token it can only have obtained by reading the instruction) would upgrade this from emitted to **delivered**. | It needs a live runtime in CI, which §E item 1 records as the standing bound of this whole project. It is also a **new claim class** — "delivered" is neither `enforced` nor `instructed` — and deserves its own ADR and its own vocabulary decision, not a quiet third value. | Medium. This is the honest ceiling on the `instructed` label, and the 0.53 fidelity number lives here. |
-| F3 | **ADR-014's producer transport — `telemetry.py` — is still unmerged and still the owner's call.** Both producer-independent halves have now been ported (`Decision.adjudicated` → ADR-018, `partition_guard_records` → ADR-021), so what remains on `harden/otel` is a genuine second transport: `telemetry.py`, `test_telemetry.py` (668 lines), `BARON_TELEMETRY`, `.baron/telemetry/`. | Retiring it is the last open item under D1 and is **not** a merge resolution — it discards a verified 668-line suite, or keeps two transports. ADR-014 C2 also forbids `opentelemetry-api` in core, so a live OTel exporter belongs out-of-tree under `baron.sinks` either way. | Low *right now*, rising the moment D4 flips: two transports both writing is a schema fork in downstream repos. |
+| ~~F3~~ | ~~**ADR-014's producer transport — `telemetry.py` — is still unmerged and still the owner's call.**~~ **RESOLVED 2026-08-10 — [ADR-014](adr/ADR-014-guard-telemetry.md).** The transport is **RETIRED**: `telemetry.py`, `test_telemetry.py` (668 lines), `BARON_TELEMETRY`, `.baron/telemetry/`. A **recording** action — none of it was ever merged, so nothing is deleted, `harden/otel` stays intact as history, and the suite is unchanged at 424. ADR-014's *analysis* was adopted in part (ADR-018 cites it as "the correct basis"); only the transport is retired, and it is **not** recorded as rejected. | Decided. The alternative was keeping two transports, which forks the schema downstream the moment sinks are on. ADR-014 §3 / C2 forbids `opentelemetry-api` in core — that stands — so the forward path for a live OTel exporter is **out-of-tree over the existing `baron.sinks` group**. Nothing is authorised or planned. | **Discharged.** The rising cost was contingent on D4 flipping; D4 was decided the same day to stay OFF, and retiring the second transport moots the fork independently. The two decisions interlock. |
 | F4 | **No aggregate over `baron.enforcement` in the audit skill.** Now un-built rather than blocked — see §D. | Needs the `enforcement == "enforced"` filter applied before grouping, and no consumer has asked. | Low. |
 
 **Bounds this pass did NOT move**, restated so §F is not mistaken for a clean sweep: §E items
@@ -402,7 +534,7 @@ parsed but never activated) and 7 (the `bash -c` guard bypass) are all unchanged
 |---|---|---|---|
 | 1 | `harden/hooks` | ADR-012 | 208 |
 | 2 | `harden/events` | ADR-013 | 256 |
-| — | `harden/otel` | ADR-014 | *not merged, see §D + F3* |
+| — | `harden/otel` | ADR-014 | *not merged; transport **RETIRED** 2026-08-10, analysis adopted in part — see §D + F3* |
 | 3 | `harden/cognee` | ADR-015 | 286 |
 | 4 | `harden/rules` | ADR-016 | 348 |
 | 5 | `harden/evalgaps` | ADR-017 | 386 |

@@ -189,12 +189,19 @@ adapter labels "2.75" rather than round up.
 - **Not a machine-tempo orchestrator.** There is no scheduler, message bus, or
   agent-to-agent RPC. Coordination happens at git tempo — commits, handoffs,
   PRs — which is the point: every coordination event leaves a reviewable record.
-- **Not a server.** Nothing runs. The markdown/git substrate is the only
-  database; `baron` is a disciplined reader/writer over files you can edit by
-  hand, and structured output (`--json`) is a view, never a second store.
+- **Not a server.** Nothing runs. The markdown/git substrate is the **default**
+  database and the only one baron itself uses; `baron` is a disciplined
+  reader/writer over files you can edit by hand, and structured output
+  (`--json`) is a view, never a second store. A plugin may add an auxiliary
+  layer beside it — semantic search, embeddings, cross-project recall — but
+  **governance state stays complete in git**: *who may do what*, *who did what*
+  and *what is true now* must stay answerable from a `git clone` alone. That
+  bound is what makes the audit claim "read the diff" rather than "trust the
+  index".
 
 These are design choices, not roadmap gaps — see
-[ADR-003](docs/adr/ADR-003-baron-cli.md) §2.2.
+[ADR-003](docs/adr/ADR-003-baron-cli.md) §2.2 and
+[ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md).
 
 ## Status, versioning, links
 

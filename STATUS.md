@@ -4,10 +4,16 @@ Tracks current progress and deferred candidates. Update on every PR that ships a
 `CONTRIBUTING.md`). Full release history lives in `CHANGELOG.md`; the v0→v1 migration story
 lives in [`docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md`](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md).
 
-> **CONSOLIDATION IN REVIEW (2026-08-09).** `harden/ops-plane` merges five hardening
-> workstreams; a sixth (`harden/otel`) is NOT merged because it is a second, incompatible
-> observation plane. Two BLOCKING owner decisions are open. Start at
-> [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).
+> **CONSOLIDATION IN REVIEW (2026-08-09; decisions signed 2026-08-10).** `harden/ops-plane`
+> merges nine hardening workstreams; a tenth (`harden/otel`) is NOT merged because it is a
+> second, incompatible observation plane — and its transport is now **retired**
+> ([ADR-014](docs/adr/ADR-014-guard-telemetry.md); branch kept as history, nothing deleted).
+> **All four owner decisions are now signed** — the last three on 2026-08-10: the substrate
+> invariant is **amended** ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)),
+> the shipped sink default **stays off** ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)),
+> and ADR-014's transport is retired. None of the three changed code. Start at
+> [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md); what remains open is §E
+> (what is NOT verified) and §F1/F2/F4.
 
 ## P1 — pilot hardening promoted into the canonical templates — COMPLETE (unreleased)
 
@@ -60,10 +66,16 @@ group, and any semantic-memory adapter — 3.4 is gated on 3.3 (which does not e
 entry-point group with no consumer is unretractable public API (ADR-015 §4). **Nothing about
 the candidate vendor was run** — public docs read, no ingest, no retrieval, no measurement.
 
-> **OWNER DECISION OUTSTANDING** (ADR-015 §4.1, from the 2026-08-04 reconciliation item C):
-> semantic memory as a *rebuildable projection* over git+markdown, or as an *authoritative*
-> knowledge source? The latter contradicts product-vision invariant #1. Recommendation: keep it
-> a projection and amend 3.4 to drop mode (b). No adapter until this is answered and 3.3 exists.
+> **~~OWNER DECISION OUTSTANDING~~ — RESOLVED 2026-08-10
+> ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)).** Semantic
+> memory is a **rebuildable projection** — answer (a). The *authoritative* mode is refused.
+> **Product-vision invariant #1 was amended in the process:** git + markdown is now the
+> **DEFAULT** substrate and plugins may extend it to other suitable platforms, **bounded** by
+> *governance state stays complete in git* — "who may do what", "who did what" and "what is
+> true now" stay answerable from the repo alone; a plugin may be authoritative for derived or
+> auxiliary domains, never for authority, evidence or the ledger. **Nothing is authorised to
+> be built:** no adapter, no `baron.knowledge` entry-point group (its test stays green), 3.4
+> still gated on 3.3, and still nothing about the vendor has been run.
 ## Shipped (unreleased) — `baron doctor`, the guard wiring self-test ([ADR-017](docs/adr/ADR-017-baron-doctor-wiring-selftest.md))
 
 Closes the first and highest-value checkbox of the `baron guard` hardening list from the

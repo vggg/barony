@@ -128,12 +128,25 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
     does not exist), and a published entry-point group with no consumer is unretractable public
     API. Tests assert `baron.forges` is still the only group, that runtime deps are still
     typer + pyyaml, and that no vendor name appears under `cli/src/baron/`.
-  - **BLOCKING OWNER DECISION** (carried from the 2026-08-04 Codex reconciliation, item C):
-    mode **(b)** "authoritative knowledge source" contradicts the product vision's invariant #1
-    ("the repo is the only source of truth; any hosted surface is a cache, rebuildable from
-    `git clone`; `cat` always works"). Either drop mode (b) and keep the substrate a projection,
-    or consciously amend invariant #1 and record why. **Recommendation: drop (b).** No adapter
-    should be built until this is answered *and* 3.3 exists.
+  - **~~BLOCKING OWNER DECISION~~ — RESOLVED 2026-08-10
+    ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)).** The owner
+    took the second branch of the choice below: **invariant #1 is consciously AMENDED**, and the
+    why is recorded. It now reads *git + markdown is the **DEFAULT** substrate; plugins may
+    extend it to other suitable platforms* — **bounded** by *governance state stays complete in
+    git*: "who may do what", "who did what" and "what is true now" must stay answerable from the
+    repository alone, and a plugin may be authoritative for **derived or auxiliary** domains
+    (semantic search, embeddings, cross-project recall) and **never** for authority, evidence or
+    the ledger. **Mode (b) is answered: refused** — "it holds things the repo does not" is
+    authority-bearing by construction. **3.4 is therefore mode (a), a rebuildable projection.**
+    Note what did *not* change: **no adapter is authorised**, 3.4 is still gated on 3.3 (which
+    does not exist), the `baron.knowledge` entry-point group is still **not** published and its
+    test stays green, and nothing about the vendor has been run. The original framing follows.
+    - *(original)* Carried from the 2026-08-04 Codex reconciliation, item C:
+      mode **(b)** "authoritative knowledge source" contradicts the product vision's invariant #1
+      ("the repo is the only source of truth; any hosted surface is a cache, rebuildable from
+      `git clone`; `cat` always works"). Either drop mode (b) and keep the substrate a projection,
+      or consciously amend invariant #1 and record why. **Recommendation: drop (b).** No adapter
+      should be built until this is answered *and* 3.3 exists.
   - **Nothing about the vendor has been run.** Its public docs were read on 2026-08-09; no
     ingest, no retrieval, no measurement. Do not let any surface imply otherwise (ADR-015 §6).
 

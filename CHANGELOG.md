@@ -15,21 +15,115 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > `ingest_otel.py`'s `partition_guard_records` is **merged**
 > ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)), and the event
 > plane is proved runtime-neutral by a second producer
-> ([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md)). What remains of D1 is one
-> piece of merge work: retire `telemetry.py`. One decision is still BLOCKING: whether Cognee
-> is a projection or an authoritative source (ADR-015 §4.1). D4 (sink on by default) is open
-> and its stated precondition — D1 — is now met.
+> ([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md)).
 >
-> **ADR-014 is deliberately absent from `docs/adr/`.** A workstream (`harden/otel`) built a
-> second, incompatible observation plane; it is NOT merged and its branch is intact at
-> `harden/otel`. The number is reserved for it. Its two genuinely producer-independent
-> halves have now been ported by other branches (`Decision.adjudicated` → ADR-018,
-> `partition_guard_records` → ADR-021). See DECISIONS-FOR-REVIEW §D.
+> **2026-08-10 — the remaining three decisions are signed, and NONE of them changes code.**
+> **D2** is resolved by [ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md),
+> which **amends product-vision invariant #1**: git + markdown is now the *default* substrate
+> rather than the only one, bounded by *governance state stays complete in git*. Cognee is
+> answered **(a)**, a rebuildable projection. **D4** is resolved as *decided, not deferred*:
+> the shipped sink default stays `BARON_EVENTS_SINK=null`
+> ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)). **F3 / the last
+> item of D1** is resolved: ADR-014's producer transport is **retired**
+> ([ADR-014](docs/adr/ADR-014-guard-telemetry.md)). The suite is unchanged at **424**.
+>
+> **ADR-014 now has a status record in `docs/adr/`, and it is NOT the ADR.** A workstream
+> (`harden/otel`) built a second, incompatible observation plane; it is **NOT merged**, its
+> branch is **intact and not deleted** at `harden/otel` (3 commits, tip `3b9a4d8`), and the
+> 435-line ADR itself still lives only there. Its two genuinely producer-independent halves
+> were ported by other branches (`Decision.adjudicated` → ADR-018, `partition_guard_records`
+> → ADR-021), and **its transport is now retired** — a *recording* action, since nothing of it
+> was ever merged. `docs/adr/ADR-014-guard-telemetry.md` records that disposition on the
+> reserved number so the repo answers "what is true now" on its own. It is **adopted in part,
+> not rejected**: ADR-018 cites ADR-014 §4.2 as "the correct basis". See
+> DECISIONS-FOR-REVIEW §D and F3.
 >
 > **ADR numbering.** Three workstreams independently claimed ADR-018. At consolidation the
 > number stayed with the adjudicated-enforcement decision (which ADR-019 already built on by
 > number); the read-verb posture ADR became **ADR-020** and the audit-ingester ADR became
 > **ADR-021**. No content changed in the renumber.
+
+### Changed — **product-vision invariant #1 is amended** (ADR-022, owner decision, D2)
+
+**git + markdown is now the DEFAULT substrate, not the only one.** Plugins may extend it to
+other suitable platforms. This is a vision change and the most consequential item of the
+2026-08-10 decision pass; [ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)
+is the record. **No code change.**
+
+- **The bound is the load-bearing half, and it is normative.** Governance state stays
+  **complete in git**: *"who may do what"*, *"who did what"* and *"what is true now"* must
+  remain answerable from the repository **alone** — no credentials, no running service, no
+  index. A plugin may be authoritative for **derived or auxiliary** domains (semantic search,
+  embeddings, cross-project recall) and **never** for **authority, evidence, or the ledger**.
+- **Why, argued rather than asserted** (ADR-022 §3). The product's audit claim is *governance
+  you can verify by reading a diff*, and it holds only while the repo is complete. Under an
+  authoritative plugin a capability grant stops appearing in a PR, the auditor needs the
+  vendor's cooperation rather than a `git clone`, and the failure is silent — a stale index
+  does not announce itself. The claim degrades from **"read the diff"** to **"trust the
+  index"**. A project publishing its own measured fidelity of 0.53 rather than rounding up
+  should not ship a headline claim that can only be taken on trust.
+- **The deletion test** makes the bound checkable rather than interpretable: delete every
+  plugin, clone fresh, ask the three questions. Answer lost or now needing a second system →
+  forbidden. Only *speed of finding it* lost → permitted.
+- **Cognee is answered (a), a rebuildable projection.** Mode (b) is **refused on the merits**.
+  The amendment *permits* a plugin to be authoritative for auxiliary domains; it does **not**
+  make any vendor authoritative and **mandates building nothing**.
+- **Nothing is authorised, and nothing is un-cut.** No `baron.knowledge` entry-point group —
+  `test_no_knowledge_entry_point_group_was_published` **stays green and is not relaxed**,
+  because it protects a different rule (no group without a consumer). 3.4 is still gated on
+  3.3, which does not exist. **Nothing about the candidate vendor has been run.**
+  `docs/BACKLOG.md`'s five prior cuts of the cross-project-memory surface **stand**: they were
+  sequencing-and-evidence calls, so this changes the answer to *"may we ever?"*, not to *"may
+  we now?"*.
+- **Updated to match, found by grep rather than memory:** ADR-015 §4.1 and its status header,
+  ADR-003 §2.2 (scoped, claim unchanged), `README.md` § *What Barony is NOT*, `AGENT-TASKS.md`
+  3.4, `STATUS.md`, `docs/BACKLOG.md`, `docs/DECISIONS-FOR-REVIEW.md` D2. `docs/history.md`'s
+  "the substrate never changed" is **deliberately left alone** — it is a true statement about
+  the period it narrates, and editing history to match a later decision is what this project's
+  ledger conventions exist to prevent.
+
+### Decided — the shipped sink default stays OFF (ADR-013 §7.1, owner decision, D4)
+
+**`BARON_EVENTS_SINK=null` remains the shipped default. This is a decision, not a deferral,
+and there is no code change** — the default was already correct, so the signature is the whole
+of it. Recorded explicitly because a default nobody signed and a default somebody signed look
+identical in a diff.
+
+- **Reasoning that survives:** a downstream repo should not begin writing to disk because it
+  upgraded. Enabling telemetry is an operator's act, not a consequence of installing a
+  governance tool.
+- **The cost, not buried:** the **0.53 operational-fidelity measurement that motivated this
+  entire plane still has no data**, and will keep having none until someone sets the variable.
+  That cost is *accepted* by this decision, not reduced by it. The owner intends to enable
+  sinks in his **own** projects to generate the data; **the shipped default is a separate
+  question from his local one**, answered separately on purpose.
+- **Interlock with the ADR-014 retirement:** the recorded hazard of flipping this default was
+  a schema fork from two transports writing at once. Retiring the second transport moots it.
+  The two decisions are independent and point the same way.
+
+### Retired — ADR-014's producer transport (ADR-014 status record, owner decision, F3)
+
+**`baron.telemetry` is retired. Its analysis was adopted in part and is NOT recorded as
+rejected.** `docs/adr/ADR-014-guard-telemetry.md` is a **status record** on the reserved
+number, not a copy of the ADR — the 435-line original stays at
+`harden/otel:docs/adr/ADR-014-guard-telemetry.md`.
+
+- **A recording action, not a deletion.** `telemetry.py` was **never merged**, so there is no
+  revert and no removal. `harden/otel` is **not deleted** (3 commits, tip `3b9a4d8`) and
+  **nothing further is merged from it**. Suite unchanged at **424**.
+- **Retired:** `telemetry.py`, `test_telemetry.py` (668 lines), `BARON_TELEMETRY`,
+  `.baron/telemetry/`, and that branch's separate `baron.sinks` declaration.
+- **Adopted, and where it lives:** §4.2's `Decision.adjudicated` and the
+  `enforced`/`unevaluated` vocabulary → **ADR-018**, which cites ADR-014 as *"the correct
+  basis"*; §9.1's guard/activity partition → **ADR-021**; §3's *no `opentelemetry-api` in core,
+  ever* → **stands** (ADR-013 §6, one-way door C2). ADR-014 §12.2 had itself named this
+  outcome as the correct resolution.
+- **Forward path:** a live OTel exporter belongs **out-of-tree**, registered over the
+  **existing** `baron.sinks` entry-point group — no new group needed, and the plugin carries
+  its own dependency. Consistent with C2, not an exception to it. **Nothing is authorised or
+  planned.**
+- `ingest_otel.py` keeps matching ADR-014's `baron.guard.evaluate` span name (ADR-021 §7) —
+  deliberately, since the branch exists and someone may have run it.
 
 ### Fixed — the audit fixture was a fossil of the pre-ADR-018 producer (found at consolidation)
 
@@ -392,12 +486,17 @@ entry-point group with no consumer is public API that cannot be retracted. Two f
 pin the boundary: runtime dependencies are still exactly `["typer", "pyyaml"]`, and
 `baron.forges` is still the only entry-point group.
 
-**Open owner decision** ([ADR-015](docs/adr/ADR-015-baron-export.md) §4.1, carried from the
-2026-08-04 reconciliation): is a semantic-memory backend a *rebuildable projection* over
-git+markdown, or a candidate *authoritative* source? The latter contradicts the product
-vision's invariant #1 ("the repo is the only source of truth; `cat` always works"). The export
-is the input either answer consumes, so it is not wasted under either branch. **Nothing here
-claims a working third-party integration — none was built and none was run** (ADR-015 §6).
+**~~Open owner decision~~ — RESOLVED 2026-08-10**
+([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md); the question was
+[ADR-015](docs/adr/ADR-015-baron-export.md) §4.1, carried from the 2026-08-04 reconciliation):
+is a semantic-memory backend a *rebuildable projection* over git+markdown, or a candidate
+*authoritative* source? **Answer: a projection.** The authoritative mode is refused, and
+product-vision invariant #1 was **amended** in the process — git + markdown is the *default*
+substrate, plugins may extend it, and governance state stays complete in git. The export is
+the input either answer consumed, so it was not wasted under either branch, and under (a) it
+is the right seam unchanged. **The boundary above is unaffected: still no `baron.knowledge`
+group, still no adapter, still gated on 3.3, and still nothing here claims a working
+third-party integration — none was built and none was run** (ADR-015 §6).
 ### Added — externalizable capability rules, step 1: the rule-list representation and `baron rules` (ADR-016)
 
 Teams want project-specific guard rules without forking baron. `docs/BACKLOG.md`

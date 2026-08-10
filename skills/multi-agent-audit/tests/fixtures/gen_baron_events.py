@@ -22,9 +22,12 @@ timestamps.
 WHICH PRODUCER THIS IS. The observation plane merged on `harden/ops-plane` is
 ADR-013's: span names from `events.KNOWN_KINDS`, output under
 `.baron/events/`, selected by `BARON_EVENTS_SINK`. ADR-014's `telemetry.py`
-(`baron.guard.evaluate`, `BARON_TELEMETRY`) is a *different, unmerged*
-producer. This script drives the one that exists here. If ADR-014's transport
-ever lands, regenerate rather than hand-editing.
+(`baron.guard.evaluate`, `BARON_TELEMETRY`) was a *different, unmerged*
+producer, and it is now **RETIRED** (2026-08-10, docs/adr/ADR-014-guard-
+telemetry.md) — never merged, so nothing was removed, and its branch stays as
+history. ADR-013's is therefore the only producer, not merely the merged one.
+The ingester still recognises `baron.guard.evaluate` on purpose (ADR-021 §7),
+so a file emitted by that branch, or by a third party, still partitions.
 
 WHAT IS DELIBERATELY NOT ASSERTED HERE. The otel-branch version of this script
 asserted the exact `(outcome, baron.enforcement, verbs)` triple per scenario.
