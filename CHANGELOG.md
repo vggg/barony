@@ -183,6 +183,57 @@ Thirteen new tests, two artifact-derived ones removed; suite 386 → 397. Both m
 defects flip under test. ADR-013 §4.1's
 label paragraph is struck through in place and §9.1 is rewritten from "MEASURED DEFECT … do
 not read as trustworthy" to the resolution, keeping the measurement that forced it.
+
+### Changed — the observation plane is runtime-neutral, and a second producer proves it ([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md))
+
+The plane *looked* neutral — `events.KNOWN_KINDS` names no runtime, Claude Code's 31 hook
+names sit behind a dispatch table — but exactly one producer had ever written a row, and one
+attribute carried Claude Code's vocabulary onto the shared wire. Nothing distinguished "this
+plane is runtime-neutral" from "this plane has one producer and it is Claude Code". That is
+the same asserted-not-measured claim ADR-018 had just removed from `baron.enforcement`, one
+level up. `docs/BACKLOG.md` had named the gap: *"the pydantic-ai adapter enforces in-process
+but emits nothing."*
+
+- **BREAKING — `baron.hook_event` is renamed to `baron.trigger`, with no alias.** The key is
+  now neutral; the **value stays the runtime's own seam name** (`PreToolUse`,
+  `before_tool_execute`), because normalising the values would put an unverifiable
+  translation between the reader and the name the runtime uses in its own docs. Only
+  meaningful read together with `baron.runtime`. No consumer exists (default sink is still
+  `null`), which is why a clean rename beat an alias — the same "last cheap moment" call
+  ADR-018 made three commits earlier.
+- **NEW `baron.runtime` on every guard-sourced row** — `claude-code`, `pydantic-ai`, or
+  `unknown`; landed set pinned as `guard.KNOWN_RUNTIMES`. Without it a merged stream is
+  unpartitionable and a consumer cannot tell *"pydantic-ai never denied anything"* from
+  *"pydantic-ai never ran"*. **Defaults to `unknown`, not `claude-code`:** a producer that
+  forgets is unattributed, never mis-attributed — ADR-018's under-claim rule applied to a
+  second field.
+- **`guard.observe_decision(...)` — the public producer seam.** It takes a `Decision`, has
+  **no `enforcement=` argument**, and infers nothing from `outcome`/`verbs`/`subject`, so
+  ADR-018's "read the label off `Decision.adjudicated` and nothing else" survives exposure as
+  public API. Passing `None` yields `unevaluated` even while asserting a deny.
+- **pydantic-ai is now a real second producer.** `BaronGuardCapability.before_tool_execute`
+  emits `guard.decision` into the same plane. `check()` gained a sibling
+  `decide() -> Decision | None` because `str | None` collapsed "allowed" and "no
+  jurisdiction", and emission needs them apart. Read tools emit nothing, mirroring
+  `Read`/`Grep` under PreToolUse; correlation uses pydantic-ai's `conversation_id` (then
+  `run_id`) through the same `_trace_id` hash; a broken sink still cannot stop the veto.
+- **The evidence, measured rather than asserted:** driven with the same persona and the same
+  command, both producers append to the **same** `.baron/events/` file and the two rows
+  differ in **exactly four** attributes — `baron.runtime`, `baron.trigger`, `tool.name`
+  (runtimes name their own tools) and `session.id`. Verdict, verb, enforcement label, actor,
+  subject and reason are byte-identical, and the difference set is asserted exactly. The
+  headline test drives a **real `Agent.run_sync`** and reads what the **real `DiskSink`**
+  wrote — ADR-001's standard for an adapter claim.
+- **HONEST GAP — code-puppy is deliberately absent from `KNOWN_RUNTIMES`.** It has no
+  PreToolUse equivalent (recorded in `docs/BACKLOG.md` since ADR-012) and this change does
+  not invent one: emitting from a post-hoc log would imply an adjudication that never
+  happened. The proof is **two producers, not three**, and the third is blocked on the
+  runtime, not on baron. Pinned by a test so the tuple grows with a landed adapter and never
+  with an intention.
+
+Twenty new tests (`cli/tests/test_runtime_neutrality.py`); suite 397 → 417. ADR-012 §4 and
+ADR-013 §2 carry supersession notes.
+
 ### Added — `baron export`: the governed corpus as citable records ([ADR-015](docs/adr/ADR-015-baron-export.md))
 
 `baron export [--kind …] [--json]` walks the four corpora a collab repo already keeps —

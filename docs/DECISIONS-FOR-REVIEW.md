@@ -254,6 +254,16 @@ Stated plainly, because a green suite invites the wrong inference.
    §5–§6 for their own ADR.
 7. **The known guard bypass is unchanged.** `bash -c '...'` and friends run their payload
    uninspected. Documented in `guard.py`'s module docstring; not a regression, not fixed here.
+8. **Runtime neutrality is proved with TWO producers, not three** (ADR-019, added
+   2026-08-09). pydantic-ai now emits into the same plane in the same wire shape, and the
+   two producers' rows for one governance fact differ in exactly four attributes — that is
+   a measurement, and it does falsify "the plane is Claude-Code-shaped". It is **not** proof
+   the shape fits every runtime. **code-puppy has no pre-tool seam**, so it emits nothing
+   and is deliberately absent from `guard.KNOWN_RUNTIMES`; inventing a post-hoc producer
+   would put rows on the plane implying an adjudication that never happened. Also note
+   `baron.hook_event` was **renamed to `baron.trigger` with no alias** — a second breaking
+   change to a published attribute, taken in the same "default sink is `null`, no consumer
+   exists" window as ADR-018, and the argument expires the moment D4 flips.
 
 ---
 

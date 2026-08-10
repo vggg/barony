@@ -183,8 +183,17 @@ direction — the ingester joins on the **bare** keys `agent.name`, `tool.name` 
 `session.id` (its `AGENT_KEYS` / `TOOL_NAME_KEYS` / `SESSION_ATTR_KEYS`), which
 ADR-013 makes fixed slots on every row. Prefixing them would have broken the join
 the stream exists to serve. The frozen set is therefore the `baron.` namespace
-**plus** `events.version` and ADR-013's `FIXED_ATTR_KEYS`. Keys guard
-writes: `baron.events_version`, `baron.hook_event`, `baron.session_id`,
+**plus** `events.version` and ADR-013's `FIXED_ATTR_KEYS`.
+
+> **Superseded in part by [ADR-019](ADR-019-runtime-neutral-event-plane.md) (2026-08-09):**
+> `baron.hook_event` is **renamed to `baron.trigger`, with no alias**, and joined by
+> `baron.runtime`. The old key put a Claude Code concept on a runtime-neutral wire, and its
+> `PreToolUse` fallback was unreachable here (evidence handlers are never called for
+> `PreToolUse`) as well as wrong; the fallback is now `""`. Read the two keys together — the
+> key is neutral, the value stays the runtime's own seam name.
+
+Keys guard
+writes: `baron.events_version`, `baron.runtime`, `baron.trigger`, `baron.session_id`,
 `baron.cwd`, `baron.agent_id`, `baron.agent_type`, `baron.permission_mode`,
 `baron.tool_name`, `baron.target`, `baron.persona`, `baron.verbs`, `baron.reason`,
 `baron.has_tool_response`, `baron.duration_ms`, `baron.is_interrupt`,

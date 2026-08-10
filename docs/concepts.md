@@ -197,6 +197,20 @@ would brick the agent rather than correct it. Hence the asymmetry — enforcemen
 fails **closed**, evidence fails **open** and silently
 (`BARON_EVENTS_DEBUG=1` to see it). Any hook event baron does not recognise is
 inert; Claude Code emits 31 distinct event names and that number keeps moving.
+
+**And the plane is not Claude Code's**
+([ADR-019](adr/ADR-019-runtime-neutral-event-plane.md)). The event vocabulary was
+runtime-neutral from the start, but for a while only one runtime ever wrote to it,
+which makes neutrality an intention rather than a fact. It is now a measurement:
+the pydantic-ai adapter's in-process seam (`before_tool_execute`) is a second
+producer on the same plane. Driven with the same persona and the same command, the
+two runtimes append to the *same* log file and their rows differ in exactly four
+attributes — `baron.runtime`, `baron.trigger` (the runtime's own name for its seam),
+`tool.name` (each runtime names its own tools) and `session.id`. Verdict, verb,
+enforcement label, actor and subject are identical. A third runtime registers by
+finding its own pre-execution seam and calling `guard.observe_decision`; **code-puppy
+has none today**, so it is deliberately absent rather than emitting post-hoc rows
+that would imply an adjudication that never happened.
 **The bigger failure was never a bypass — it was absence.** The badminton-analyzer
 incident merged 15 PRs under a persona denied `merge_pr`, and nothing had gone
 wrong: the hook had never been wired into `.claude/settings.json`, so the denial

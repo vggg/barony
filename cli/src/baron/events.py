@@ -50,6 +50,14 @@ kind                 emitted when                                 typical ``baro
 Reserved ``baron.*`` attribute keys (frozen for v1; new keys are additive):
 
 - ``baron.actor`` / ``baron.subject`` / ``baron.outcome`` — always present.
+- ``baron.runtime`` — WHICH runtime's producer emitted the row
+  (``"claude-code"``, ``"pydantic-ai"``; ``"unknown"`` when a producer did not
+  say). This plane is runtime-NEUTRAL, not Claude-Code's: read this attribute
+  before comparing anything across rows (ADR-019 §2).
+- ``baron.trigger`` — WHICH seam in that runtime fired (``"PreToolUse"``,
+  ``"before_tool_execute"``, …). The key is neutral; the VALUE is deliberately
+  the runtime's own name for the seam and is only meaningful read together
+  with ``baron.runtime``. Replaces ADR-012's ``baron.hook_event`` (ADR-019 §3).
 - ``baron.capability.verb`` — comma-joined capability verbs a call mapped to.
 - ``baron.enforcement`` — ``"enforced"`` | ``"unevaluated"`` | ``"unknown"``, a
   PER-CALL OBSERVATION: did a capability adjudicate THIS call? ``enforced``
