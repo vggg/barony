@@ -755,7 +755,11 @@ def rules_list(
             typer.echo(f"{'':<21}rules: {', '.join(rule_ids)}")  # type: ignore[arg-type]
     if qualified:
         verbs = ", ".join(str(row["verb"]) for row in qualified)
-        typer.echo(f"\nnote ({verbs}): {rules_mod.LABEL_CAVEAT}")
+        # The claim, then its evidence one adapter per line. The JSON payload
+        # carries both in a single `label_caveat` string (ADR-018 §5).
+        typer.echo(f"\nnote ({verbs}): {rules_mod.LABEL_CAVEAT_SUMMARY}")
+        for adapter, why in rules_mod.READ_VERB_MEASUREMENTS.items():
+            typer.echo(f"  measured — {adapter}: {why}")
 
 
 @rules_app.command("validate")

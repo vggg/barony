@@ -184,12 +184,22 @@ def test_rules_list_table_names_the_honesty_caveat() -> None:
     assert "adapter-dependent" in result.output
     # The caveat must be scoped to what was actually MEASURED. Round 2 said
     # "no adapter baron ships does", asserting a property of four adapters from
-    # one instrumented test; only pydantic-ai was measured. The claim now names
-    # its evidence and admits the rest are unmeasured.
+    # one instrumented test; round 3 narrowed that to "pydantic-ai measured, the
+    # rest UNMEASURED". ADR-018 measured the other three, so the round-3 scoping
+    # is obsolete: the claim now names FOUR measurements and the bound on them.
+    from baron import rules as rules_mod
+
     assert "MEASURED" in result.output
-    assert "pydantic-ai" in result.output
-    assert "UNMEASURED" in result.output
+    assert "UNMEASURED" not in result.output
+    assert "baron emits no mechanism" in result.output
     assert "no adapter baron ships does" not in result.output
+    # One evidence line per shipped adapter, and the claim they back.
+    assert rules_mod.LABEL_CAVEAT_SUMMARY in result.output
+    for adapter, why in rules_mod.READ_VERB_MEASUREMENTS.items():
+        assert f"  measured — {adapter}: {why}" in result.output
+    # The table's summary must be the same claim the JSON publishes, not a
+    # softer paraphrase of it.
+    assert rules_mod.LABEL_CAVEAT.startswith(rules_mod.LABEL_CAVEAT_SUMMARY)
 
 
 def test_rules_validate_passes_on_the_shipped_artifact() -> None:

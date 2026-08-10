@@ -104,7 +104,17 @@ that is public API you cannot retract. Do not create it until there is a consume
 
 ---
 
-### D3 — `baron rules list` will report *less* enforcement than it used to (ADR-016 §8 D-1)
+### D3 — DECIDED 2026-08-09. `baron rules list` reports *less* enforcement than it used to (ADR-016 §8 D-1)
+
+**Approved. ADR-016 §8 D-1 is ticked, on a basis the original framing did not
+have: four measured adapters, not one measurement generalised to four.**
+Recorded in **ADR-018**; the round-3 "three of four are unmeasured" scoping is
+retired, not carried alongside. The printed label is unchanged (`instructed`);
+what changed is that the evidence is now the same size as the claim, and a fifth
+adapter breaks the basis until it is measured. The honest bound is published
+with the label: *baron emits no mechanism capable of omitting the read tools* —
+**not** *the runtime cannot enforce them*. The original text, which the decision
+was made against, follows.
 
 Left **untickable by me on purpose**; its author flagged it the same way.
 
@@ -122,6 +132,17 @@ Note the honest bound the author took: only pydantic-ai was measured. The `claud
 runtime and is **unmeasured** — they are not evidence for either label. The alternative
 branch (instrument all four adapters and possibly restore `enforced` honestly) was costed
 and declined as too expensive for this pass.
+
+> **Update (ADR-018).** That last sentence was the mis-costing. The branch was taken and it
+> was cheap, because the direction that was needed is the *negative* one: proving baron
+> emits no enforcement mechanism is a static inspection of what `baron init` generates,
+> where proving one exists would need a live runtime. All four adapters now carry a
+> measurement (`claude`, `code-puppy`, `generic` static; `pydantic-ai` keeps its live gate)
+> and all four are negative, so `enforced` was not honestly restorable. The `claude` and
+> `code-puppy` HYDRATE.md Tier-3 tables still print `enforced` for the read verbs and are
+> **not wrong** — they describe an artifact a human hand-authors from the recipe, which
+> baron never generates. Recorded as a known divergence in ADR-018 §7 rather than papered
+> over by editing one table to match the other.
 
 **Reversible?** Yes — it is a label, and the machinery to flip it is a data change.
 
@@ -214,9 +235,13 @@ Stated plainly, because a green suite invites the wrong inference.
    that.
 2. **`baron.enforcement` is known-wrong in two directions** (D1, ADR-013 §9.1). Do not build
    a dashboard on it yet.
-3. **Three of four adapters are unmeasured** for read-tool exposure (D3). Only pydantic-ai
-   was instrumented; the `claude` and `code-puppy` kits are prompt/config templates whose
-   tool exposure belongs to the host runtime.
+3. **No adapter's read-tool exposure is verified against a live runtime** (D3, ADR-018).
+   All four are now measured, but only `pydantic-ai`'s measurement runs the emitted kit;
+   the other three are static — they prove **baron emits no mechanism** capable of
+   omitting read tools, which is the claim `baron rules list` makes, and nothing more.
+   What a `claude` or `code-puppy` session actually exposes belongs to the host runtime
+   and is unobservable from here (same bound as item 1). *This replaces the earlier
+   "three of four adapters are unmeasured", which is obsolete.*
 4. **The evidence-handler tests use a contract double's writer, not `baron.sinks.disk`.** The
    double was rewritten onto the real signature and re-exports the real `Event`,
    `KNOWN_KINDS` and `FIXED_ATTR_KEYS`, so it cannot drift silently — but real-sink behaviour

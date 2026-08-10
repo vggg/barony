@@ -44,8 +44,11 @@ blocked and nothing blocks it. Accepting a bad *value* is the second worst — i
 is how a document can make baron print ``enforced`` for a verb nothing checks.
 
 **Enforcement labelling is measured, not asserted.** :meth:`CapabilityRules.label`
-returns ``enforced`` only where guard mechanically checks the verb. See
-:data:`LABEL_CAVEAT` for why the whole-tool read verbs do not qualify.
+returns ``enforced`` only where guard mechanically checks the verb. The
+whole-tool read verbs do not qualify, and that is now backed by one measurement
+per shipped adapter rather than one generalised to four —
+:data:`READ_VERB_MEASUREMENTS` names each, :data:`LABEL_CAVEAT` publishes them
+with the exact bound (ADR-018).
 
 The prose contract for consumers lives in the skill:
 ``skills/barony/references/capability-rules.md``.
@@ -176,31 +179,75 @@ SPEC_DIR_VERB = "edit_other_personas"
 ENFORCEMENT_GUARD = "guard"
 #: No guard detection, but the class is whole-tool, so a runtime adapter with a
 #: tool allow-list *could* enforce it by omitting the tool. Whether any adapter
-#: actually does is a property of that adapter, not of this table — and the one
-#: adapter that was MEASURED does NOT (see :data:`LABEL_CAVEAT`). Labels as
-#: `instructed`, because no measured enforcement backs it.
+#: actually does is a property of that adapter, not of this table — and every
+#: adapter baron ships has now been MEASURED, and none does (see
+#: :data:`READ_VERB_MEASUREMENTS`). Labels as `instructed`, because no measured
+#: enforcement backs it.
 ENFORCEMENT_ADAPTER_DEPENDENT = "adapter-dependent"
 #: No guard detection and sub-tool class — the denial is prose in the persona
 #: body and nothing checks it.
 ENFORCEMENT_INSTRUCTED = "instructed"
 
-#: Why `adapter-dependent` does not mean `enforced`. MEASURED, not assumed:
-#: `cli/tests/test_pydantic_ai.py::test_denying_read_code_does_not_omit_read_tools`
-#: hydrates a persona that denies `read_code` and asserts the read tools are
-#: still there. If an adapter ever does omit them, that test is what changes
-#: first, and the label follows it — not the other way round.
-LABEL_CAVEAT = (
+#: One measurement per SHIPPED ADAPTER for the whole-tool read verbs (ADR-018).
+#:
+#: Round 3 labelled these verbs `instructed` on one measurement (pydantic-ai)
+#: and called the other three unmeasured — honest, but it left the label
+#: speaking for four adapters on the evidence of one. It now rests on four.
+#:
+#: The keys must equal ``baron.scaffold.ADAPTERS`` — asserted by
+#: ``test_adapter_omission.py::test_the_label_rests_on_one_measurement_per_shipped_adapter``,
+#: so a fifth adapter breaks the label's basis until someone measures it.
+#: Values name the evidence and the test that produces it; if an adapter ever
+#: does omit the read tools, that test fails FIRST and the label follows it.
+READ_VERB_MEASUREMENTS: dict[str, str] = {
+    "pydantic-ai": (
+        "the emitted bootstrap constructs FileSystem unconditionally, so "
+        "read_file/list_directory/search_files survive a read_code denial "
+        "(test_pydantic_ai.py::test_denying_read_code_does_not_omit_read_tools)"
+    ),
+    "claude": (
+        "the kit's only machine-readable artifact, .claude/settings.json, wires hooks "
+        "and nothing else — no permissions/allowedTools/disallowedTools block and no "
+        ".claude/agents subagent "
+        "(test_adapter_omission.py::test_claude_kit_emits_no_read_tool_omission_mechanism)"
+    ),
+    "code-puppy": (
+        "the kit is prose only; the agent JSON whose `tools` list is code-puppy's real "
+        "enforcement surface is hand-authored in-session, never emitted "
+        "(test_adapter_omission.py::test_code_puppy_kit_emits_no_read_tool_omission_mechanism)"
+    ),
+    "generic": (
+        "Tier 1 has no tool allow-list surface to emit into; the kit is prose only "
+        "(test_adapter_omission.py::test_generic_kit_emits_no_read_tool_omission_mechanism)"
+    ),
+}
+
+_CAVEAT_CLAIM = (
     "`enforced` means baron's guard mechanically checks the call. "
-    "`adapter-dependent` verbs are NOT checked by guard and are NOT enforced by "
-    "the pydantic-ai adapter baron ships: it constructs FileSystem "
-    "unconditionally, so read_file/list_directory/search_files remain available "
-    "to a persona that denies read_code (measured by "
-    "test_denying_read_code_does_not_omit_read_tools). A runtime with a tool "
-    "allow-list could enforce them by omitting the tool. The one adapter "
-    "MEASURED (pydantic-ai, the only in-process one baron ships) does not; the "
-    "claude and code-puppy kits are prompt/config templates (adapters/*/"
-    "HYDRATE.md) whose tool exposure is the host runtime's, and are UNMEASURED "
-    "here. Absent a measurement, they label as `instructed`."
+    "`adapter-dependent` verbs are NOT checked by guard, and BARON EMITS NO "
+    "MECHANISM capable of omitting the tools that would enforce them — MEASURED "
+    "once per shipped adapter. The bound is exact: baron emits no mechanism, NOT "
+    "that a runtime cannot enforce these verbs. A hand-written `permissions.deny`, "
+    "or the Tier-3 subagent with a minimal `tools:` allow-list that the claude and "
+    "code-puppy HYDRATE.md recipes describe, does enforce them — and is outside "
+    "what `baron rules list` speaks for. Absent a mechanism baron emits, these "
+    "verbs label as `instructed`."
+)
+
+#: The claim WITHOUT the per-adapter evidence. The human table prints this and
+#: then one line per measurement: four measurements inlined into one paragraph is
+#: a wall of text nobody reads, and an unread caveat is the failure mode this
+#: field exists to prevent.
+LABEL_CAVEAT_SUMMARY = _CAVEAT_CLAIM
+
+#: The full published caveat: the claim plus every measurement behind it, built
+#: FROM :data:`READ_VERB_MEASUREMENTS` so the two cannot drift apart. This is
+#: what travels in the JSON payload, where there is no second line to print.
+LABEL_CAVEAT = (
+    _CAVEAT_CLAIM
+    + " Measured: "
+    + "; ".join(f"{adapter} — {why}" for adapter, why in READ_VERB_MEASUREMENTS.items())
+    + "."
 )
 
 
@@ -318,9 +365,9 @@ class CapabilityRules:
         """The blunt two-state label: ``enforced`` or ``instructed``.
 
         ``enforced`` iff guard mechanically checks the verb. ``adapter-dependent``
-        deliberately labels ``instructed``: the one adapter measured does not
-        omit the tools that would make it real, and the rest are unmeasured
-        (:data:`LABEL_CAVEAT`).
+        deliberately labels ``instructed``: baron emits no mechanism capable of
+        omitting the tools that would make it real, measured once per shipped
+        adapter (:data:`READ_VERB_MEASUREMENTS`, :data:`LABEL_CAVEAT`).
         """
         return "enforced" if self.enforcement(verb) == ENFORCEMENT_GUARD else "instructed"
 

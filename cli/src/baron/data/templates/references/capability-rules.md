@@ -67,7 +67,7 @@ that matched; guard's own `reason` names the concrete inference.
 | State | Meaning | `label` |
 |---|---|---|
 | `guard` | guard mechanically checks it (`detection` is `command` or `file-op`) | `enforced` |
-| `adapter-dependent` | guard does NOT parse for it; the class is whole-tool, so a runtime with a tool allow-list *could* enforce it by omitting the tool — but the one adapter **measured** does not | `instructed` |
+| `adapter-dependent` | guard does NOT parse for it; the class is whole-tool, so a runtime with a tool allow-list *could* enforce it by omitting the tool — but **baron emits no such mechanism**, measured once per shipped adapter | `instructed` |
 | `instructed` | nothing checks it (`open_pr`, `run_tests`, by design) | `instructed` |
 
 `read_code` and `read_collab` are the `adapter-dependent` pair. The pydantic-ai adapter
@@ -77,11 +77,20 @@ would be a claim about what a runtime could in principle do, printed as a fact a
 baron does — so it labels `instructed`, and a test that hydrates such a persona and
 inspects the toolset is what gates the label.
 
-*Scope of that claim:* pydantic-ai is the only **measured** adapter, and the only in-process
-one baron ships. The `claude` and `code-puppy` kits are prompt/config templates
-(`adapters/*/HYDRATE.md`) whose tool exposure belongs to the host runtime and is
-**unmeasured**. They label `instructed` because nothing measured backs anything stronger —
-not because their behaviour has been checked and found wanting.
+*Scope of that claim (ADR-018):* all **four** shipped adapters are measured, one measurement
+each. pydantic-ai is measured live (above). `claude`, `code-puppy` and `generic` are measured
+by **static emission**: the kit `baron init` generates is inspected for any construct a
+runtime reads as a tool allow/deny list, and there is none — `claude` emits only hook wiring
+in `.claude/settings.json` (no `permissions`, no `allowedTools`/`disallowedTools`, no
+`.claude/agents/` subagent), and the other two emit no machine-readable artifact at all.
+
+*The bound, which is exact:* the measured claim is **baron emits no mechanism** capable of
+omitting the read tools — **not** that a runtime cannot enforce them. A hand-written
+`permissions.deny`, or the Tier-3 subagent with a minimal `tools:` allow-list that
+`adapters/claude/HYDRATE.md` and `adapters/code-puppy/HYDRATE.md` describe, *does* enforce
+them. Those HYDRATE tables print `enforced` for the read verbs and are right about the
+artifact a human hand-authors from the recipe; `baron rules list` speaks for what baron
+ships. An instruction someone may or may not follow is what `instructed` means.
 
 `--json` carries the qualifier in the payload (`label_caveat` at the top level, `caveat` on
 each affected verb), not only in the table footer.

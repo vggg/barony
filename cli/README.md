@@ -384,16 +384,18 @@ baron rules explain agents/other/persona.yaml --write --persona-file agents/dev/
 - **`list`** reports enforcement in **three** states, but only one of them is
   `enforced`: `guard` (guard mechanically checks it → `enforced`),
   `adapter-dependent` (guard does NOT parse for it; a runtime with a tool
-  allow-list *could* enforce it by omitting the tool, but the one adapter
-  **measured** does not → `instructed`), `instructed` (nothing checks it —
-  `open_pr`, `run_tests`). `read_code` / `read_collab` are the
-  `adapter-dependent` pair: the pydantic-ai adapter builds `FileSystem`
-  unconditionally, so a persona denying `read_code` still gets the read tools
-  (measured by `test_denying_read_code_does_not_omit_read_tools`). The `claude`
-  and `code-puppy` kits are prompt/config templates whose tool exposure belongs
-  to the host runtime and is **unmeasured** here — absent a measurement they
-  label `instructed` too. `--json` carries the qualifier in the payload
-  (`label_caveat`, plus `caveat` per affected verb), not just the table footer.
+  allow-list *could* enforce it by omitting the tool, but **baron emits no such
+  mechanism** → `instructed`), `instructed` (nothing checks it — `open_pr`,
+  `run_tests`). `read_code` / `read_collab` are the `adapter-dependent` pair,
+  measured once per shipped adapter (ADR-018): the pydantic-ai adapter builds
+  `FileSystem` unconditionally, so a persona denying `read_code` still gets the
+  read tools (`test_denying_read_code_does_not_omit_read_tools`), and the
+  `claude`, `code-puppy` and `generic` kits emit nothing a runtime reads as a
+  tool allow/deny list (`test_adapter_omission.py`). The bound is exact — baron
+  emits no mechanism, **not** that a runtime cannot enforce these verbs: a
+  hand-written `permissions.deny`, or the Tier-3 subagent the HYDRATE.md recipes
+  describe, does. `--json` carries the qualifier in the payload (`label_caveat`,
+  plus `caveat` per affected verb), not just the table footer.
 - **`validate`** exits 0 clean, 1 if a check fails, **2 if the document is
   refused outright** — unreadable, not YAML, unknown `rules_version` or
   `vocabulary`, a rule or key this baron does not implement, an unknown matcher
