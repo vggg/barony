@@ -20,7 +20,7 @@ related:
 | **Date** | 2026-08-09 |
 | **Authors** | Vikram + Claude |
 | **Scope** | `skills/multi-agent-audit/` only. No change to `cli/src/baron/` — this is a CONSUMER fix, and the wire shape it consumes is correct as emitted. |
-| **Ported from** | `harden/otel` tip `3b9a4d8` (`ingest_otel.partition_guard_records`, `test_no_contamination_from_paired_export`) and ADR-014 §9.1, adapted from that branch's unmerged producer to the merged ADR-013 one |
+| **Ported from** | `harden/otel` tip `3b9a4d8` (`ingest_otel.partition_guard_records`, `test_no_contamination_from_paired_export`) and [ADR-014](ADR-014-guard-telemetry.md) §9.1, adapted from that branch's unmerged producer to the merged ADR-013 one. *ADR-014's producer transport was retired 2026-08-10; this port and ADR-018's are the two halves that survived it.* |
 | **Decision owner** | Vikram |
 
 ## 1. The defect

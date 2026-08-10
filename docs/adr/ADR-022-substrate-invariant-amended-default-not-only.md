@@ -249,6 +249,7 @@ the branch — not from memory. Every site is updated in the same commit as this
 |---|---|---|
 | `docs/adr/ADR-015-baron-export.md` §4.1 | "the blocking owner decision"; quotes invariant #1; recommends (a) | **RESOLVED**, quotes the amended invariant, points here |
 | `docs/adr/ADR-003-baron-cli.md` §2.2 | "The markdown/git substrate IS the database" | unchanged claim, **scoped** by a pointer here: default substrate, governance complete in git |
+| `docs/adr/ADR-009-baron-decision-reconciliation.md` §3 | restates ADR-003 §2.2's wording to justify obligations-in-the-ledger | unchanged claim, **scoped** by a pointer here. *Added 2026-08-10 in the currency sweep — this site was missed by the original grep, which is worth recording rather than quietly fixing.* |
 | `docs/adr/ADR-013-observation-plane-events-and-sinks.md` §7.1 | — | new: the D4 sink-default decision, which cites this ADR only for the interlock |
 | `AGENT-TASKS.md` 3.4 | "BLOCKING OWNER DECISION … or consciously amend invariant #1 and record why" | **RESOLVED** — the amendment is this ADR; (b) refused |
 | `STATUS.md` | "OWNER DECISION OUTSTANDING" | **RESOLVED**, points here |

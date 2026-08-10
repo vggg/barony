@@ -300,6 +300,22 @@ they happen to have. Everything else is self-determined.
 
 ## 7. Open questions / unresolved
 
+> **DISPOSITION, 2026-08-10.** This section was written on 2026-05-30 and its six questions
+> have not all aged the same way. Four are answered by later records; two are still open and
+> stay open. The list below is left as written — it is the state of knowledge the ADR was
+> approved in — and this table is where to look for what is true now.
+>
+> | # | Then | Now |
+> |---|---|---|
+> | 1 | cron stubs or interactive-only for v1? | **Answered — (b), the recommendation.** Autonomous archetypes ship as templates with emitted runbooks; live scheduler wiring is unbuilt and tracked in `STATUS.md` § *Deferred candidates* as "Cron / failover live wiring". Still deferred, now with a named home. |
+> | 2 | capability-vocabulary stability | **Answered.** The 10-verb vocabulary is **frozen** at v1 (`skills/barony/references/capability-vocab.v1.md`), embedded in `baron.schemas` and drift-guarded by test. Additions need observed need (vocabulary design rule 4); the enforcement table moved to versioned data in [ADR-004](ADR-004-baron-guard-enforcement.md) §4 and gained a rule-list shape in [ADR-016](ADR-016-externalizable-capability-rules.md). Whether *projects* may define their own verbs is a separate, still-unmade decision — ADR-016 §6.1. |
+> | 3 | adapter discovery / runtime key | **Answered as proposed.** Runtimes self-identify and fall back to `generic`; the known keys are the four shipped adapters. [ADR-019](ADR-019-runtime-neutral-event-plane.md) §2 later put the key on the wire as `baron.runtime`, with `guard.KNOWN_RUNTIMES` pinned by test so it grows with a landed adapter and not with an intention. |
+> | 4 | `persona.yaml` vs `AGENT.md` drift | **Answered as recommended.** `persona.yaml` is canonical; `AGENT.md` is derived. `baron validate` checks the yaml, and since barony 0.7.0 `baron validate` also checks declared personas against the runtime's registered agents (spec↔runtime drift). |
+> | 5 | vault-project mode | **Still open, and correctly so.** The v0.3 rails are quarantined in `legacy/`; `STATUS.md` § *Deferred candidates* carries "Vault-project modernization — re-derive on the runtime-agnostic architecture if demand returns". No demand has arrived. |
+> | 6 | distribution shape | **Answered by shipping both.** A plugin/skill (`barony`) and a PyPI distribution (`barony`, console script `baron`) — [ADR-005](ADR-005-naming.md) for the names, [ADR-006](ADR-006-baron-init-template-packaging.md) for how templates ship as package data with a drift guard. |
+>
+> The original list, as approved, follows.
+
 1. **Cron & failover.** Do we (a) emit OS-level cron stubs (launchd/systemd/GH-Actions)
    from the existing `_failover-cron-sections/` templates, or (b) declare autonomous
    personas interactive-only for v1 and defer scheduling? **Recommendation: (b) for v1**,

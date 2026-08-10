@@ -50,8 +50,10 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
   *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
-  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. Q1/Q3/Q4 still open —
-  pick this up after P2.3 lands.)*
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**.)*
+  **Currency, 2026-08-10: P2.3 has shipped, so the sequencing gate is discharged — what holds
+  this now is Q1 (first-cut scope), Q3 (who may run `reconcile`) and Q4 (retrofit +
+  supersession), which are owner answers, not build work.** No implementation until they land.
 - [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
@@ -152,8 +154,27 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.
+  **Note the precondition moved**: the audit ingester now partitions baron's own evidence out
+  of the activity plane ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)),
+  so a re-run is safe to pair with a baron export — but the **default sink is `null` by
+  signed decision** ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)),
+  so a project produces no `.baron/events/` rows until an operator opts in. Whoever runs this
+  has to turn sinks on in the pilot first, or the fidelity number moves for no measured reason.
 - [ ] Merger precondition verification + guard coverage growth (`docs/BACKLOG.md`).
-- [ ] pydantic-ai adapter field validation.
+- [ ] pydantic-ai adapter field validation. *(The adapter gained an in-process evidence
+  producer in [ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md); that is a second
+  measured producer on the event plane, **not** the ADR-001 acceptance bar. The bar is still
+  a real persona on a real project on this runtime, and it has not been run.)*
+
+## Deferred out of the 2026-08 ops-plane consolidation
+
+Recorded in `docs/DECISIONS-FOR-REVIEW.md` §F and carried in `docs/BACKLOG.md` §
+*Deferred out of the 2026-08 ops-plane consolidation*, not re-listed here: **F1** the
+per-runtime capability matrix (harness already merged; what remains is an output redesign),
+**F2** delivery-verified `instructed` via the ritual-fence technique (needs a live runtime in
+CI and its own vocabulary decision), **F4** an aggregate over `baron.enforcement` in the audit
+skill (un-built, not blocked), and wiring the reserved `events:` manifest node (blocked on
+measuring guard's hot path). None is queued. Promote one into P2/P3 only on the owner's call.
 
 ---
 

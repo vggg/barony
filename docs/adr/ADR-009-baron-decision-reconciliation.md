@@ -63,6 +63,13 @@ human or agent naming the surfaces is cheap; baron guessing them is not.
 Per [ADR-003](ADR-003-baron-cli.md) §2.2 the substrate IS the database. A ratified decision's
 obligations live **inside its `decisions/index.md` entry**, in a marker-delimited region:
 
+> **Scoped 2026-08-10 by [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md).**
+> Product-vision invariant #1 now reads *git + markdown is the **DEFAULT** substrate*, bounded
+> by **governance state stays complete in git**. This section is unaffected and the reasoning
+> is unchanged: reconciliation obligations are *evidence of an adjudication*, which ADR-022 §2
+> places squarely in the column a plugin may **never** be authoritative for. §9 alternative B
+> (a sidecar store) stays rejected for the same reason it always was.
+
 ```markdown
 ### D57 — VLM commodity-footage intelligence is the product (2026-07-31, Vikram)
 
@@ -267,3 +274,9 @@ you forget.
 read-side change is accepted, so §3.2 stands); Q5 answered (**P2.3 is built first**). Q1 (first-cut
 scope), Q3 (who may run `reconcile`) and Q4 (retrofit + supersession) remain open. No
 implementation until they are.
+
+> **Currency note, 2026-08-10.** Q5's *sequencing* condition is discharged: **P2.3 shipped**
+> in barony 0.7.0 (`baron validate` spec↔runtime drift). So "after P2.3 lands" no longer
+> holds this back — **Q1, Q3 and Q4 do**, and they are unanswered. Recording the difference
+> matters: a design waiting on a build is not the same as a design waiting on three owner
+> answers, and only the second is true now.

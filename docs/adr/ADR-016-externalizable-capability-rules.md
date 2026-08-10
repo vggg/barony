@@ -22,6 +22,7 @@ related:
 | **Extends** | [ADR-004](ADR-004-baron-guard-enforcement.md) §2.2 and addendum §4.1 (the rules artifact) |
 | **Answers** | `docs/BACKLOG.md` § *Considered directions → User-extensible guard rules* (2026-07-28) — the **cheap** half, in two steps, of which this is step 1 |
 | **Does NOT decide** | Whether projects may define their own verbs (§6.1), or the project-rules loader's precedence semantics (§5) |
+| **Superseded in part** | §4.1's *round-3 correction* — "pydantic-ai measured, the other kits unmeasured" — by [ADR-020](ADR-020-read-verb-posture-measured-on-four-adapters.md) (2026-08-09). The printed label is unchanged; its basis is now four measured adapters. Marked inline in §4.1 and §8. |
 | **Revised** | 2026-08-09 (round 2) — §3.2, §4.1 and §7 corrected after review. Three claims in the first draft overstated what was mechanised: the closed-matcher refusal was unreachable from document input, `read_code`/`read_collab` were labelled `enforced` on the strength of an adapter behaviour that does not exist, and §7 counted two new document-reachable refusals where there was one. Corrections are marked inline. |
 
 ## 1. Summary
@@ -479,20 +480,24 @@ set (§3.2) is what keeps this decision explicit instead of accidental.
 
 ## 8. Decision record
 
-- [ ] Approved as written
+- [x] **Approved as written** — Vikram, 2026-08-09, on the D-1 answer below.
 - [ ] Approved with changes
 - [ ] Needs revision
 - [ ] Rejected
 
-**Owner sign-off pending (Vikram) — and BLOCKING for one item.**
+**Sign-off complete (Vikram, 2026-08-09). The one blocking item, D-1, is
+answered.** The header and frontmatter carry the same status; this box was left
+unticked through three rounds and is ticked here so the two surfaces agree.
 
-Most of this ADR ships ahead of sign-off on the usual grounds: §3 is
+Most of this ADR shipped ahead of sign-off on the usual grounds: §3 is
 behaviour-preserving (`guard.py` and `runtimes/pydantic_ai.py` byte-identical,
 all pre-existing tests green) and §4 is a purely additive read-only surface.
 Neither is a one-way door; the one-way doors are all in §5 and §6 and none is
-taken here.
+taken here. **Those doors are still shut and still need their own ADR** — §8 is
+signed, §5/§6 are not decided by it.
 
-**One item is not in that category and needs an explicit answer before merge.**
+**One item was not in that category and needed an explicit answer before merge.
+It got one.**
 
 > **D-1 — narrowing `enforced` to guard-checked verbs only (§4.1).** Round 2
 > changed what `baron rules list` prints for `read_code` and `read_collab` from

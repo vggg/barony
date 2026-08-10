@@ -2,13 +2,14 @@
 created: 2026-08-09
 type: decision
 status: proposed
-decided_by: Vikram (pending)
+decided_by: Vikram (ADR not yet signed; its one blocking question was answered by ADR-022 on 2026-08-10)
 adr: 015
 project: barony
 related:
   - "[[docs/adr/ADR-003-baron-cli]]"
   - "[[docs/adr/ADR-002-ways-of-working-2026-07]]"
   - "[[docs/adr/ADR-009-baron-decision-reconciliation]]"
+  - "[[docs/adr/ADR-022-substrate-invariant-amended-default-not-only]]"
 ---
 
 # ADR-015 (PROPOSED): `baron export` — the governed corpus as citable records, and why the knowledge adapter is NOT shipped
@@ -22,13 +23,21 @@ related:
 | **Decision owner** | Vikram |
 | **Blocking question** | ~~§4.1 — projection or authoritative source?~~ **ANSWERED 2026-08-10 — (a), a projection ([ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)). Nothing in this ADR is blocking.** |
 
-> **This ADR proposes; it does not decide.** §4.1 is an owner call that predates this
+> **This ADR proposes; it does not decide.** §4.1 was an owner call that predated this
 > workstream (`projects/AgentBootstrapNasikoMix/2026-08-04-codex-agent-reconciliation.md`,
-> reconciliation item C) and is still open. Nothing here forecloses either answer.
+> reconciliation item C). Nothing here forecloses either answer.
 >
 > **Update 2026-08-10 — §4.1 is decided.** [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)
 > answers it **(a)** and amends product-vision invariant #1 in the process. The rest of this
 > ADR is unchanged and still proposed.
+>
+> **What "still proposed" means here, since the code shipped.** `baron export` is merged and
+> under test; this record is not signed. **Those are different facts and this ADR is the only
+> place on the branch where they diverge** — every other shipped ADR carries an owner
+> signature. Nothing is blocked by it: §4.1's question is answered elsewhere, and §4.2 (the
+> withheld adapter) is a *refusal to build*, which needs no signature to hold. What a
+> signature would settle is whether the scope cut in §4 is the record of the 3.4 work or a
+> proposal about it. Left unticked rather than assumed — see §9.
 
 ## 1. Summary
 
@@ -309,3 +318,24 @@ vocabulary frozen keeps this one loose).
   **§4.2 is unaffected and still withholds the adapter**: the `baron.knowledge` group stays
   unpublished, `test_no_knowledge_entry_point_group_was_published` stays green, and 3.4 stays
   gated on 3.3.
+
+## 9. Decision record
+
+- [ ] Approved as written
+- [ ] Approved with changes
+- [ ] Needs revision
+- [ ] Rejected
+
+**Unsigned as of 2026-08-10, deliberately, and this is the only ADR on the branch in that
+state.** Added here because the gap was previously visible only as `status: proposed` in the
+frontmatter, which reads as an oversight rather than a standing item.
+
+What is *not* waiting on this box: §4.1 (answered by
+[ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)), the shipped `baron export`
+command, and §4.2's refusal to publish an entry-point group — a refusal holds without a
+signature, and three tests hold it whether or not anyone ticks a box.
+
+What is: whether §4's scope cut — *"the Cognee workstream ships one command and no plugin"* —
+is accepted as the disposition of `AGENT-TASKS.md` 3.4's producer half. ADR-022 §9 records
+that this question is what kept this ADR at *proposed* through two review passes, and that the
+reason for the delay is now gone.

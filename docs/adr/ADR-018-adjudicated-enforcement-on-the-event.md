@@ -161,17 +161,26 @@ is detail, not a proxy.
 Scoped deliberately narrow, so the parts of D1 that are merge work do not ride in on a
 semantics decision:
 
-- **`telemetry.py` / `harden/otel` is still unmerged.** This ADR ports one flag and one
+- ~~**`telemetry.py` / `harden/otel` is still unmerged.** This ADR ports one flag and one
   vocabulary onto ADR-013's transport. Retiring `telemetry.py` and re-merging
-  `ingest_otel.py`'s `partition_guard_records` remain open.
-- **The default sink is still `null`** (decision D4 is untouched). Nothing emits until an
-  operator opts in.
+  `ingest_otel.py`'s `partition_guard_records` remain open.~~ **Both closed since.**
+  `partition_guard_records` was ported on 2026-08-09
+  ([ADR-021](ADR-021-audit-ingester-partitions-observation-rows.md)), and ADR-014's transport
+  was **retired** on 2026-08-10 ([ADR-014](ADR-014-guard-telemetry.md)) — a recording action,
+  since it was never merged. `harden/otel` is kept as history and nothing further comes off
+  it. The scoping this bullet describes was correct for this ADR and is now historical.
+- ~~**The default sink is still `null`** (decision D4 is untouched).~~ **D4 was decided
+  2026-08-10 and the default stays `null`** ([ADR-013 §7.1](ADR-013-observation-plane-events-and-sinks.md)) —
+  a decision, not a deferral, and no code change. Nothing emits until an operator opts in,
+  which is still the fact this ADR's §7 breaking-change argument rests on.
 - **No consumer-side metric ships here.** ADR-014 §4.3's rule that `error` rows are excluded
   from the enforcement split is a property of `compute_guard_metrics`, which is not on this
   branch. When it lands it must honour that exclusion; the span still carries `unevaluated`
   for an error row, which is the true label for that row.
 - **`read_code` / `read_collab` on `baron rules list`** (decision D3, ADR-016 §8) is the
-  posture surface, a different unit, and untouched here.
+  posture surface, a different unit, and untouched here. *(D3 was decided the same day and
+  the label is unchanged — [ADR-020](ADR-020-read-verb-posture-measured-on-four-adapters.md)
+  rebuilt its basis on four measured adapters. Still a different unit; still untouched here.)*
 
 ## 7. Consequences
 
