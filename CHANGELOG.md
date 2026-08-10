@@ -77,7 +77,12 @@ is the record. **No code change.**
   we now?"*.
 - **Updated to match, found by grep rather than memory:** ADR-015 §4.1 and its status header,
   ADR-003 §2.2 (scoped, claim unchanged), `README.md` § *What Barony is NOT*, `AGENT-TASKS.md`
-  3.4, `STATUS.md`, `docs/BACKLOG.md`, `docs/DECISIONS-FOR-REVIEW.md` D2. `docs/history.md`'s
+  3.4, `STATUS.md`, `docs/BACKLOG.md`, `docs/DECISIONS-FOR-REVIEW.md` D2. **Two sites that
+  first sweep missed**, caught verifying the claim "nothing still reads as blocking" and fixed
+  at the ops-plane merge: ADR-015 **§8**, whose consequences list still asserted *"the owner
+  decision in §4.1 stays open"* — directly contradicting that ADR's own status header — and
+  ADR-015's **`Blocking question` header field**, which named §4.1 with no answer beside it.
+  Both now strike the stale text and point at ADR-022. `docs/history.md`'s
   "the substrate never changed" is **deliberately left alone** — it is a true statement about
   the period it narrates, and editing history to match a later decision is what this project's
   ledger conventions exist to prevent.
@@ -623,10 +628,13 @@ backed it. Recorded rather than quietly fixed, per ADR-002/ADR-008.
   ten verbs, a test asking whether a rule could actually fire, and the parser change that
   makes the bad state unrepresentable from document input.
 
-> **Blocking owner decision (ADR-016 §8, D-1).** Narrowing `enforced` to guard-checked verbs
+> **~~Blocking owner decision (ADR-016 §8, D-1).~~ DECIDED 2026-08-09 — see the ADR-020 entry
+> below.** Narrowing `enforced` to guard-checked verbs
 > changed what `baron rules list` prints for `read_code`/`read_collab` from `enforced` to
 > `instructed` — a user-visible output change, and a claim about the product an implementer
-> should not sign off alone. The box is unticked and recorded as blocking for merge.
+> should not sign off alone. ~~The box is unticked and recorded as blocking for merge.~~ The
+> box is **ticked APPROVED**, on a basis this framing did not have: four measured adapters
+> rather than one measurement generalised to four. Nothing in this release is blocking.
 
 ### Not shipped, deliberately — the project-level rules loader
 
@@ -786,6 +794,8 @@ size as the claim.
   block, a Tier-3 subagent file and a code-puppy agent JSON into real generated kits and
   asserts the probe fires on each.
 - **ADR-016 §8 D-1 is ticked APPROVED**, with the basis recorded as four measured adapters.
+  The ADR-016 entry's own *"recorded as blocking for merge"* blockquote above is struck and
+  pointed here — it was written while D-1 was open and stayed unmarked in `[Unreleased]`.
   §4.1's round-3 scoping is superseded, and `DECISIONS-FOR-REVIEW.md` §D3 and §E.3 are
   updated: §E.3 no longer says "three of four adapters are unmeasured" but states the
   narrower bound that is actually true — no adapter's read-tool exposure is verified

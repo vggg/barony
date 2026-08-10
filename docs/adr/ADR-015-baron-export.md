@@ -20,7 +20,7 @@ related:
 | **Authors** | Claude (the Cognee workstream of the 2026-08 hardening effort) |
 | **Scope** | `AGENT-TASKS.md` **3.4** — pluggable knowledge substrate + semantic-memory spike |
 | **Decision owner** | Vikram |
-| **Blocking question** | §4.1 — projection or authoritative source? |
+| **Blocking question** | ~~§4.1 — projection or authoritative source?~~ **ANSWERED 2026-08-10 — (a), a projection ([ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)). Nothing in this ADR is blocking.** |
 
 > **This ADR proposes; it does not decide.** §4.1 is an owner call that predates this
 > workstream (`projects/AgentBootstrapNasikoMix/2026-08-04-codex-agent-reconciliation.md`,
@@ -302,4 +302,10 @@ vocabulary frozen keeps this one loose).
   eventual bake-off compares retrieval quality rather than plumbing.
 - Barony gains a stable extraction point that a `baron.knowledge` sink, a static site, or an
   audit script can all read — without any of them being committed to yet.
-- The owner decision in §4.1 stays open, and the cost of either answer stays the same.
+- ~~The owner decision in §4.1 stays open, and the cost of either answer stays the same.~~
+  **RESOLVED 2026-08-10 — [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md)
+  answers §4.1 (a), a rebuildable projection, and amends product-vision invariant #1 in the
+  process.** The export is the right seam under (a) unchanged, so nothing in this ADR moved.
+  **§4.2 is unaffected and still withholds the adapter**: the `baron.knowledge` group stays
+  unpublished, `test_no_knowledge_entry_point_group_was_published` stays green, and 3.4 stays
+  gated on 3.3.
