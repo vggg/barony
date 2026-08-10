@@ -157,6 +157,18 @@ contract available and adopt it on their own schedule. The `events:` manifest bl
 declared in the schema (canon v1.3) so it does not warn, but **no command reads it** —
 wiring it means measuring a manifest parse on guard's per-tool-call hot path, which is a
 follow-up with its own ADR.
+
+**`baron.enforcement` was measurably wrong and is now fixed
+([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md)).** It derived its value
+from the rules artifact's `detection` field, which describes a *verb* rather than *this
+evaluation*: a `..`-escape deny read `enforced` (structural — every persona refused
+identically) and a `write_code` allow read `not-applicable` (a real persona-dependent
+adjudication). It is now a per-call observation read off an explicit `Decision.adjudicated`
+flag set at all eleven return sites, with the vocabulary `enforced` | `unevaluated` |
+`unknown`. `instructed` was removed from the event — it asserts a control a PreToolUse hook
+cannot measure — and is **unchanged** on the posture surface (`baron rules list`). **Consumer
+caveat:** `baron.capability.verb` can be non-empty on an `unevaluated` row, so verb-level
+aggregation must filter on `baron.enforcement == "enforced"` first.
 ## Shipped (unreleased) — externalizable capability rules, step 1 (ADR-016)
 
 The enabling refactor for project-level custom guard rules, plus the audit surface.

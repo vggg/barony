@@ -169,13 +169,29 @@ Nothing in `baron.events` or `baron.sinks` can allow, deny, or alter the outcome
 command. Emission is one-way and consequence-free by construction — §4 guarantees it, since
 a component whose failure is ignored cannot be load-bearing.
 
-The one place this could be misread is the `baron.enforcement` attribute. It is a label
-describing **the capability verb** the call mapped to, and it is DERIVED at emit time from
-the rules artifact's `detection` field: `command` or `file-op` → `"enforced"`,
-`none` → `"instructed"`. It is never hardcoded, because `capability-rules.v1.yaml` sets
-`detection: none` for `open_pr` and `run_tests`, and stamping those `"enforced"` is exactly
-the overclaiming ADR-002 / ADR-008 forbid. The attribute says something about the verb.
-It says nothing about the emission, which is observation either way.
+The one place this could be misread is the `baron.enforcement` attribute.
+
+> **SUPERSEDED by [ADR-018](ADR-018-adjudicated-enforcement-on-the-event.md).** The
+> paragraph below described the attribute as a label on **the verb**, derived at emit time
+> from the rules artifact's `detection` field. That was the defect measured in §9.1: a
+> static property of a verb cannot answer a per-call question. `baron.enforcement` is now a
+> per-call OBSERVATION read off `Decision.adjudicated`, with the vocabulary
+> `enforced` | `unevaluated` | `unknown`. The original text is kept, struck through, because
+> the reasoning it got right (never claim enforcement the artifact does not back) is the
+> same reasoning that condemns it.
+
+~~It is a label describing **the capability verb** the call mapped to, and it is DERIVED at
+emit time from the rules artifact's `detection` field: `command` or `file-op` →
+`"enforced"`, `none` → `"instructed"`. It is never hardcoded, because
+`capability-rules.v1.yaml` sets `detection: none` for `open_pr` and `run_tests`, and
+stamping those `"enforced"` is exactly the overclaiming ADR-002 / ADR-008 forbid. The
+attribute says something about the verb. It says nothing about the emission, which is
+observation either way.~~
+
+What survives unchanged is the honesty rule this section exists for: nothing on this plane
+can allow or deny, and no attribute on it may claim a control baron did not exercise.
+ADR-018 tightens that rule rather than relaxing it — the label now has to earn the word
+`enforced` per call, not per verb.
 
 ## 5. Decision — the event stream is gitignored; the override log stays TRACKED
 
@@ -269,33 +285,55 @@ importable, tested contract to adopt on their own schedule.
 The tab-separated `.baron/guard-override.log` is byte-for-byte unchanged. It is cited in
 `guard._remedy()`'s user-facing text and in the docs; events are strictly additive.
 
-## 9.1 MEASURED DEFECT in `baron.enforcement` (ops-plane merge, 2026-08-09)
+## 9.1 RESOLVED — the `baron.enforcement` defect and its fix (2026-08-09)
 
-Recorded here rather than fixed, because fixing it decides a question the owner has not
-answered yet (see `docs/DECISIONS-FOR-REVIEW.md`, decision **D1**). **Do not read
-`baron.enforcement` as trustworthy until D1 is resolved.**
+**Status: fixed.** The owner settled decision **D1**; the resolution is
+[ADR-018](ADR-018-adjudicated-enforcement-on-the-event.md) and it landed on this branch.
+`baron.enforcement` on an event is a per-call observation derived from an explicit
+`Decision.adjudicated` flag, and the vocabulary is exactly
+`enforced` | `unevaluated` | `unknown`. This section keeps the measurement that forced the
+change, because a defect recorded and then silently deleted teaches nobody anything.
 
-`_enforcement()` derives the label from the rules artifact's `detection` field for the
+### What was wrong
+
+`_enforcement(verbs)` derived the label from the rules artifact's `detection` field for the
 verbs attached to a `Decision`. That describes **the verb**, not **this evaluation** — and
 the two come apart in both directions. Measured against the merged code, not argued:
 
-| call | `Decision.verbs` | emitted `baron.enforcement` | what actually happened |
-|---|---|---|---|
-| `Write ../../../outside.md` | `('write_path',)` | **`enforced`** | Structural refusal. Guard blocked it because the path escapes the repo root; **no capability adjudicated it** and every persona is denied identically. Over-counts. |
-| `Write src/x.py`, persona holds `write_code` | `()` | **`not-applicable`** | A genuine, persona-dependent adjudication — a persona without `write_code` is denied here. Under-counts. |
-| `Write _handoff/x.md` | `()` | `not-applicable` | Correct: universal zone, persona-independent. |
+| call | `Decision.verbs` | was | is now | why |
+|---|---|---|---|---|
+| `Write ../../../outside.md` | `('write_path',)` | **`enforced`** | **`unevaluated`** | Structural refusal. The path escapes the repo root; **no capability adjudicated it** and every persona is denied identically. Was over-counting. |
+| `Write src/x.py`, persona holds `write_code` | `()` | **`not-applicable`** | **`enforced`** | A genuine, persona-dependent adjudication — a persona without `write_code` is denied the identical call. Was under-counting. |
+| `Write _handoff/x.md` | `()` | `not-applicable` | `unevaluated` | Unchanged in substance: universal zone, persona-independent, nothing adjudicated. |
 
-So a consumer aggregating on `baron.enforcement` books structural refusals as capability
-enforcement and misses real capability allows. `harden/otel` (ADR-014, NOT merged) diagnosed
-exactly this and fixed it with a `Decision.adjudicated` flag set at each return site — "a
-rule matched AND the outcome turned on the acting persona" — which is the correct basis.
+Both flips are pinned by tests in `cli/tests/test_guard.py`
+(`test_structural_refusal_is_not_capability_enforcement`,
+`test_persona_dependent_allow_with_no_verbs_is_enforcement`), and the second asserts both
+halves of "persona-dependent" — the allow *and* a denial of the same call by a persona
+lacking the verb — so the claim is measured rather than asserted.
 
-One criticism ADR-014 makes does **not** currently bite: it argues `instructed` asserts a
-control guard never measured. True in principle, unreachable in practice — every verb guard
-can attach to a `Decision` (`write_code`, `write_path`, `edit_other_personas`, `push_main`,
-`force_push`, `merge_pr`) has `detection: command|file-op`, so `instructed` is not emitted on
-any real row. Verified by walking the artifact. It would become reachable the moment guard
-learns to parse for `open_pr` or `run_tests`.
+`harden/otel` (ADR-014, still NOT merged) diagnosed exactly this and fixed it with the
+`Decision.adjudicated` flag. That flag is what was ported; the transport, `Event` shape,
+`baron.sinks` plugin and fail-open asymmetry described in this ADR are unchanged.
+
+### The `instructed` question, reversed
+
+This ADR previously argued that one ADR-014 criticism did not bite: emitting `instructed`
+asserts a control guard never measured, but every verb reachable on a `Decision` has
+`detection: command|file-op`, so it never appeared on a real row. **That argument was
+correct about the facts and wrong about the conclusion.** A value that is unreachable is not
+harmless — it is a published vocabulary entry that documents a claim the field is not
+allowed to make, waiting for the day guard learns to parse `open_pr`. It has been removed
+from the event path. `instructed` remains a real and useful label on the **posture** surface
+(`baron rules list`, `CapabilityRules.label`), where it describes a (persona, verb, runtime)
+triple and not a call. ADR-018 §4 states the separation.
+
+### Consumer caveat, carried forward
+
+`baron.capability.verbs` **can be non-empty on a row whose `baron.enforcement` is
+`unevaluated`** — row 1 of the table above is exactly that. Any verb-level aggregation must
+filter on `enforcement == "enforced"` **first**. ADR-018 §5 is the normative statement and
+`test_verb_aggregation_must_filter_on_enforcement_first` is the executable version.
 
 ## 10. Consequences
 

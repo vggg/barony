@@ -7,10 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 > **Reviewers start at [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).** This
-> release consolidates five parallel hardening workstreams. Two decisions are BLOCKING and
-> need the owner: which observation plane survives (`baron.enforcement` is measurably wrong
-> in two directions today — ADR-013 §9.1), and whether Cognee is a projection or an
-> authoritative source (ADR-015 §4.1).
+> release consolidates five parallel hardening workstreams. **D1's semantics half is now
+> DECIDED and fixed** — `baron.enforcement` is a per-call observation
+> ([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md)); what remains of D1
+> is merge work (retire `telemetry.py`, re-merge `ingest_otel.py`'s
+> `partition_guard_records`). One decision is still BLOCKING: whether Cognee is a projection
+> or an authoritative source (ADR-015 §4.1).
 >
 > **ADR-014 is deliberately absent from `docs/adr/`.** A sixth workstream (`harden/otel`)
 > built a second, incompatible observation plane; it is NOT merged and its branch is intact
@@ -126,11 +128,61 @@ Three decisions worth reading ADR-013 for:
   baron's stream with zero new code. A test re-derives those keys from the script and fails
   if either side drifts.
 
-`baron.enforcement` on an event is DERIVED from the rules artifact's `detection` field
-(`command`/`file-op` → `enforced`, `none` → `instructed`), never hardcoded — a test walks
-every verb in `capability-rules.v1.yaml` and asserts the label its detection implies.
-`open_pr` and `run_tests` are `detection: none`, and calling them enforced is precisely the
-overclaiming ADR-002/ADR-008 forbid.
+`baron.enforcement` on an event was originally DERIVED from the rules artifact's `detection`
+field. **That was a defect and it is fixed below** — see *Changed — `baron.enforcement` is a
+per-call observation*.
+
+### Changed — `baron.enforcement` on an event is a per-call observation ([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md))
+
+**BREAKING for consumers of the event stream. Landed now because the default sink is `null`
+and nothing is emitting yet — this is the last cheap moment.**
+
+The attribute derived its value from the rules artifact's `detection` field for whatever
+verbs a `Decision` carried. That is a static property of a **verb** answering a **per-call**
+question, and ADR-013 §9.1 measured it wrong in both directions against merged code:
+`Write ../../../outside.md` emitted `enforced` (a structural refusal every persona is denied
+identically — nothing adjudicated it), while `Write src/x.py` by a persona holding
+`write_code` emitted `not-applicable` (a real, persona-dependent adjudication). The field
+simultaneously over-counted structural refusals and missed genuine capability allows — an
+enforcement counter that inflates itself by construction, in a project that publishes 0.53
+rather than rounding up.
+
+- **`Decision.adjudicated: bool = False`**, set EXPLICITLY at all eleven return sites in
+  `evaluate_bash` / `evaluate_write`, plus `ALLOW_ADJUDICATED` alongside the existing
+  persona-independent `ALLOW`. `enforced` now requires **both** halves: a capability rule
+  matched **and** the outcome turned on the acting persona. Ported from ADR-014 §4.2 on the
+  unmerged `harden/otel` branch, which diagnosed this independently; not redesigned.
+- **`guard._enforcement(verbs)` is deleted.** A test asserts the symbol stays gone. The flag
+  is deliberately not a function of the verb tuple, which is wrong in both directions: a
+  `write_code` allow names no verb, and the `..`-escape deny names `write_path`.
+- **`_Trace` carries the observation through `guard.process()`**, with `adjudicated`
+  defaulting to `False` and raised only by copying a real `Decision`. Every path that returns
+  without one — out-of-jurisdiction tool, malformed payload, fail-closed error, fail-closed
+  override bypass — is `unevaluated` **by construction** rather than by someone remembering.
+  A return site added tomorrow that forgets the flag under-claims, never over-claims.
+- **The vocabulary is exactly `enforced` | `unevaluated` | `unknown`** (`ENFORCEMENT_VALUES`,
+  pinned by test). `not-applicable` is gone, subsumed by `unevaluated`. **`instructed` is
+  gone from the event path entirely** — it is a static posture property of a
+  (persona, verb, runtime) triple and asserts a control a PreToolUse hook cannot measure.
+  ADR-013 §9.1 had argued this criticism did not bite because the value was unreachable in
+  practice; the facts were right and the conclusion was wrong. `instructed` is **unchanged**
+  on the posture surface (`baron rules list`, `CapabilityRules.label`), where `open_pr` and
+  `run_tests` still carry it.
+- **A fail-closed deny is `unevaluated`, not `enforced`** — guard blocked *because it could
+  not evaluate*. Otherwise a guard that crashed on every call would report perfect
+  enforcement. `unknown` is kept for the one case it means something: an unreadable rules
+  artifact, where guard cannot say what was even adjudicable.
+- **CONSUMER CAVEAT, stated in `events.py`, ADR-018 §5 and a test:**
+  `baron.capability.verb` **can be non-empty on an `unevaluated` row**. Any verb-level
+  aggregation must filter on `baron.enforcement == "enforced"` **first**;
+  `test_verb_aggregation_must_filter_on_enforcement_first` emits two real rows carrying
+  `write_path` — one adjudicated, one structural — and asserts the naive count is 2 while the
+  correct count is 1.
+
+Thirteen new tests, two artifact-derived ones removed; suite 386 → 397. Both measured
+defects flip under test. ADR-013 §4.1's
+label paragraph is struck through in place and §9.1 is rewritten from "MEASURED DEFECT … do
+not read as trustworthy" to the resolution, keeping the measurement that forced it.
 ### Added — `baron export`: the governed corpus as citable records ([ADR-015](docs/adr/ADR-015-baron-export.md))
 
 `baron export [--kind …] [--json]` walks the four corpora a collab repo already keeps —
