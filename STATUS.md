@@ -59,6 +59,46 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Shipped — ADR-023 reserved filenames (template promotion)
+
+[ADR-023](docs/adr/ADR-023-reserved-filenames.md) (**accepted 2026-08-12**, no code) promotes a rule about
+the framework's own emitted namespace: the config filenames `baron init` writes are governed
+artifact types, and a reserved name is scoped to its emitted location — in particular **no
+vault-root `COORDINATION.md`**. Driver: a 2026-08-12 Irisidian incident where a prose briefing
+at a vault root would have outranked `CONVENTIONS.md` by position alone.
+
+Both owner decisions are **resolved 2026-08-12**:
+
+**(1) The promotion is accepted**, on a **single-incident evidence base** — thinner than ADR-002's
+or ADR-008's pilot runs, and argued structurally (`baron init` creates the namespace, so exposure
+is universal) rather than statistically. Applied to `skills/barony/assets/collab-repo/CONVENTIONS.md`
+and the vendored `cli/src/baron/data/templates/` copy; drift guard green.
+
+**(2) §4.3, the precedence inversion — resolved as (a) refined by (c).** The emitted order stands
+(`CONVENTIONS → COORDINATION → AGENT.md`); the **Irisidian vault inverted its chain to match**, and
+**both** documents gained the axis that was the real defect: *constraints resolve most-general-wins;
+operational detail resolves most-specific-wins.* Rationale: the two orders disagreed most sharply on
+the **per-agent file**, and every agent's write zone includes its own workspace — so the vault's
+order let a file an agent edits itself outrank the never-list and the claims ladder. Field survey:
+both live scaffolded repos carry the template's order verbatim and **no persona `AGENT.md` overrides
+a `CONVENTIONS.md` rule**, so nothing downstream depended on the vault's order.
+
+**This reversed rev. 1** of the ADR, which recommended the opposite; the reversal is recorded inline
+at §4.3 rather than quietly edited.
+
+**Lint enforcement remains deferred, not rejected (§5)** — the one open lever if a second collision
+happens despite the prose rule.
+
+**Residual risk, stated not closed:** in the Irisidian vault, workspace `CLAUDE.md` moved from
+**first to last**. The survey covered the collab repos, not every workspace `CLAUDE.md` on the
+machine; any agent that was relying on its own workspace file to override a vault rule has lost that
+ability — which is the intent, but it was not exhaustively verified as unused.
+
+Related open item: the Irisidian **claims ladder** (2026-08-05) is a *second* convention still
+awaiting template promotion. The two could land as one `ways-of-working-2026-08` ADR in the
+ADR-002/008 family — deliberately not bundled here (ADR-023 §8 Q2), since that is a scope call
+for the owner.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
