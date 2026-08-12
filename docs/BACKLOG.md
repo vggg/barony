@@ -84,6 +84,114 @@ has no PreToolUse equivalent today), and the lock soft-timeout sweep
 (`COORDINATION.md` names a 24h soft timeout; `baron lock list` shows age — flagging
 expiry candidates could fold into `baron status`).
 
+**Open after ADR-012 (hook coverage):**
+
+- ~~**Hook-install verification** — the whole enforcement story assumes the hook is actually
+  wired. Nothing checks. ADR-012 §3 explicitly refused to put that check in a `SessionStart`
+  hook (a failed precondition there is unrecoverable from inside the session); it belongs in
+  a `baron doctor`, which does not exist yet.~~ **DONE (2026-08-09,
+  [ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)).** `baron doctor` exists and is the
+  home ADR-012 §3 predicted: nine read-only checks, exit 1 on any FAIL, and the denial probe
+  **spawns the executable the hook names** rather than importing `baron.guard`, because a
+  project wired to a stale or hand-rolled `baron` is the same drift as a missing hook. Two
+  bounds survive the close and are printed on every run: doctor verifies **wiring, not
+  invocation**, and it reads **project-level settings only** — a hook wired in
+  `~/.claude/settings.json` reads as FAIL. Both are recorded in
+  `DECISIONS-FOR-REVIEW.md` §E items 1 and 5.
+- **Process-spawn cost.** Wiring `PostToolUse` doubles the guard subprocesses per tool call.
+  Not measured. If it bites, the fix is a persistent sink, not fewer events.
+- **`UserPromptSubmit` capture** — deliberately not wired: it carries the user's raw prompt,
+  which makes the event stream a different product with different consent requirements.
+  Needs its own decision, not a config flag.
+- ~~**Other runtimes have no evidence seam.** The pydantic-ai adapter enforces in-process but
+  emits nothing; the event stream is Claude-Code-only today, exactly as enforcement was
+  before v1.6.0.~~ **DONE (2026-08-09,
+  [ADR-019](adr/ADR-019-runtime-neutral-event-plane.md)).** `BaronGuardCapability`
+  is now a producer on the same plane, in the same wire shape, with the same
+  ADR-018 `adjudicated` semantics; rows carry `baron.runtime` / `baron.trigger` and the
+  two producers' rows for one governance fact differ in exactly four attributes.
+  **What is still open here is the code-puppy seam below** — it has no pre-tool
+  interception point, so it stays out of `guard.KNOWN_RUNTIMES` rather than emitting
+  post-hoc rows that would imply an adjudication that never happened. The neutrality proof
+  is honestly two producers, not three. Registering a third is documented in ADR-019 §5
+  (find the seam → evaluate through the shared evaluators → `guard.observe_decision`).
+**`open_pr` / `run_tests` denial parsing — STILL DEFERRED as of 2026-08-09, no observed
+need.** Re-examined while closing out the 2026-08-08 Barony/Nasiko evaluation. The
+trigger for adding detection is observed need (capability vocabulary design rule 4;
+ADR-004 §2.2), and there is no observed-need evidence anywhere in this repo or in that
+evaluation — its own contribution list does not include one. Implementing it now would
+break the stated rule and spend a `rules_version` bump on a hypothesis, so
+`capability-rules.v1.yaml` is unchanged and `rules_version` stays **1**. The deferral is
+pinned by `cli/tests/test_rules.py::test_open_pr_and_run_tests_stay_unparsed_deferred`,
+which fails if either verb quietly gains detection without the bump. **Recording the
+decision is the deliverable; re-deriving it as a proposal is not** (that note's
+CORRECTIONS block ¶2 documents that exact failure mode).
+
+**Guard self-test — DONE (2026-08-09).** The roadmap's highest-value hardening item
+shipped as `baron doctor` ([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)):
+nine wiring checks, exit 1 on any FAIL, with the WIRING-not-invocation caveat printed on
+every run. Still open in this section: the lock soft-timeout sweep (below) and the
+code-puppy hook seam.
+
+**Lock soft-timeout sweep — still open, and it needs its own ADR before it is built.**
+The pieces exist (`lock.list_locks` already computes `age_days`; `render_table` prints
+it) but `status.collect()` has no lock check, and adding one crosses a deliberate
+deferral recorded under *Consciously deferred inside M1–M3*: `baron status` reads local
+git state only and does not query the forge, while `lock.list_locks` requires a `Forge`.
+So the real question is architectural — **may `baron status` make network/forge calls?**
+— not one of effort. The shape to prefer whenever it is built: a WARN-only lock check
+gated behind the existing `--fetch` opt-in, threshold from a manifest key defaulting to
+24h, waiver-able via `_apply_waivers`, degrading silently when no forge is configured.
+An unconditional check is out: it would make an offline `baron status` hang or fail.
+
+## Deferred out of the 2026-08 ops-plane consolidation
+
+Four items were identified during that pass and deliberately not done. They were recorded in
+`DECISIONS-FOR-REVIEW.md` §F, which is a *review* document for one pass; this is the standing
+record, so they live here too. **Nothing here is new scope** — each is a pointer, and §F
+carries the full cost/why-not reasoning.
+
+- **F1 — the per-runtime capability matrix.** `baron rules list` prints one label per verb,
+  but the honest answer is a **4 adapters × 10 verbs** grid: `write_code` is mechanised on
+  Claude Code via the PreToolUse hook and in-process on pydantic-ai, and is prose-only on
+  code-puppy and generic. One flat column cannot say that. **Not a measurement gap** — the
+  `(adapter, verb)`-keyed harness is already built, merged and under test
+  (`cli/tests/omission.py`, [ADR-020](adr/ADR-020-read-verb-posture-measured-on-four-adapters.md) §5,
+  shaped on the pair for exactly this reason). What is left is a user-visible output redesign:
+  a table, a `--json` schema change, and a call on what to print when a repo has several
+  adapters hydrated. ADR-020 §7's known divergence — the `claude` / `code-puppy` HYDRATE.md
+  Tier-3 tables printing `enforced` where `rules list` prints `instructed` — is what this
+  would let both surfaces state without either lying.
+- **F2 — delivery-verified `instructed`, via the ritual-fence technique.** Today `instructed`
+  means *baron emitted the sentence into the kit* — verified at emission, never at receipt.
+  A silently-ignored `AGENTS.md` is indistinguishable from a heeded one. Making the agent echo
+  a token it could only have obtained by reading the instruction would upgrade this from
+  emitted to **delivered**. Blocked on a live runtime in CI, which is the standing bound of
+  the whole project (§E item 1), and it is a **new claim class** — "delivered" is neither
+  `enforced` nor `instructed` — so it needs its own ADR and its own vocabulary decision, not
+  a quiet third value. **This is the honest ceiling on the `instructed` label, and the 0.53
+  fidelity number lives here.**
+- **F4 — no aggregate over `baron.enforcement` in the audit skill.** `harden/otel` shipped a
+  `guard_enforcement_class` metric and it was not ported. **Note the reason changed**: it was
+  withheld because the attribute was wrong in both directions, and that is fixed
+  ([ADR-018](adr/ADR-018-adjudicated-enforcement-on-the-event.md)). It is now **un-built, not
+  blocked**. An honest aggregate must apply the ADR-018 §5 caveat first — an `unevaluated`
+  row still carries a non-empty `baron.capability.verb`, so it must filter on
+  `enforcement == "enforced"` *before* grouping by verb. No consumer has asked.
+  [ADR-021](adr/ADR-021-audit-ingester-partitions-observation-rows.md) §5.
+- **The `events:` manifest node is declared and unread.** ADR-013 §7 reserved it so a manifest
+  carrying it does not trip `baron validate`, and so another workstream cannot invent a
+  competing key. **The blocker is measurement, not design:** guard is a cold Python start on
+  *every* tool call, and adding manifest discovery + a YAML parse to that path is a latency
+  regression nobody has quantified. Preferred shape when it is built: adapters render
+  `events.sink` into the hook environment at `baron init` time, so the hot path still reads
+  only an env var. Belongs in the ADR that measures it.
+
+Deliberately **not** listed here: flipping the sink default. That is decided, not deferred —
+it stays `null` ([ADR-013 §7.1](adr/ADR-013-observation-plane-events-and-sinks.md), owner
+decision D4, 2026-08-10) — and re-listing a signed decision as backlog is how a decision
+quietly becomes a question again.
+
 ## pydantic-ai adapter — field validation + follow-ups (post-v1.6.0)
 
 **What:** the adapter shipped test-proven offline (TestModel/FunctionModel); ADR-001's
@@ -159,6 +267,39 @@ rule from config.
   new matcher in `guard.py`, not a config line. Gate on observed need
   (vocabulary design rule 4), same as the core verbs.
 
+**Update (2026-08-09, ADR-016) — step 1 landed; the loader is still open.**
+"Mostly a loader" was wrong: the parsed form (`rules.CapabilityRules`) was a
+flat record with one field per built-in rule, and a fixed field per rule cannot
+hold an *additional* rule. The data was external; the shape was not extensible.
+ADR-016 fixed the shape (a rule LIST of typed `CommandRule`/`PathRule` with
+stable ids and a **closed** matcher set — the cheap/expensive split above, made
+mechanical: command rules name their `matcher` in the document, and one outside
+the closed set, or one other than the matcher guard implements for that rule, is
+refused at parse time) and shipped `baron rules list|validate|diff|explain` as
+the audit/diagnostic surface. The parser also refuses any rule or key it does
+not implement rather than ignoring it — the property the loader will need most,
+since a project rules file that is quietly half-applied is worse than none.
+`guard.py` was byte-identical across the change.
+
+The honesty label named above needed correcting in the same round: `enforced`
+now means *guard mechanically checks it* and nothing else. `read_code` /
+`read_collab` were briefly labelled `enforced` on the theory that a whole-tool
+verb is enforced by tool omission — but the shipped pydantic-ai adapter builds
+`FileSystem` unconditionally, so a persona denying `read_code` keeps its read
+tools. They label `instructed`, gated by a test that hydrates such a persona and
+inspects the toolset. When the loader lands, user rules inherit the same rule:
+`enforced` only for shapes guard mechanically checks, measured rather than
+argued.
+
+Still open, and each is a one-way door (ADR-016 §5, needs its own ADR): the
+`.baron/rules.yaml` loader itself, add-only/deny-only precedence, explicit
+supported version ranges on *both* artifacts, refuse-don't-ignore on a malformed
+project file, `load_rules()` cache safety once it is path-dependent, and the
+`.baron/` (machine state) vs root-level `.baron-waivers.yaml` (human config)
+convention collision. **Project-defined verbs are a separate, unmade decision**
+(ADR-016 §6.1) — custom rules for existing verbs need no vocabulary change and
+are the 90% case; do that first, if at all.
+
 ### Centralized cross-project memory substrate
 Within a project the collab repo already *is* the shared memory substrate
 (findings/decisions/wiki/handoffs in git+markdown). Extending to a **centralized,
@@ -179,3 +320,14 @@ Positioning note: this is Phase-3/4 territory and overlaps the per-agent Memory
 capability some runtimes ship (e.g. pydantic-ai-harness) — but those are
 in-process/per-agent/private; Barony's differentiator is shared, human-legible,
 git-audited memory. Build only on real demand.
+
+> **2026-08-10 — [ADR-022](adr/ADR-022-substrate-invariant-amended-default-not-only.md) does
+> NOT un-cut this.** Product-vision invariant #1 was amended (git + markdown is now the
+> *default* substrate; plugins may extend it, bounded by *governance state stays complete in
+> git*), and the Cognee question was answered **(a)**, a rebuildable projection. **"Build only
+> on real demand" stands, and so do the five prior reviews that cut this surface.** Those cuts
+> were about **sequencing and evidence** — not about the vision forbidding the shape — so
+> resolving the vision question leaves them exactly where they were. What changed is the answer
+> to *"may we ever?"*, not to *"may we now?"*. A future proposal must still show real demand, a
+> 3.3 harness result beating the git + markdown baseline, a passing deletion test (ADR-022 §2),
+> and a consumer before any entry-point group is published.

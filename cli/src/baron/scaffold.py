@@ -518,6 +518,24 @@ def _claude_settings(persona: Persona, ctx: _Context) -> str:
         if collab_rel != "."
         else f"${{CLAUDE_PROJECT_DIR}}/agents/{persona.slug}/persona.yaml"
     )
+    command = f'baron guard --persona-file "{persona_path}"'
+    # One command, dispatched inside baron on hook_event_name (ADR-012 §2).
+    #
+    # PreToolUse is ENFORCEMENT and is byte-frozen — matcher, command and the
+    # 15s timeout are pinned by test_scaffold.py, because this block already
+    # exists in every downstream repo `baron init` has ever generated and a
+    # change here silently diverges them.
+    #
+    # The rest are EVIDENCE: they can only emit, never block (ADR-012 §3).
+    # Newly scaffolded repos get IDENTICAL OBSERVABLE BEHAVIOUR to before,
+    # because the event plane's default sink is null — wiring them now costs
+    # nothing and means turning telemetry on later is one env var, not a
+    # re-hydration of every persona kit. Shorter timeout: an evidence hook that
+    # hangs delays a session for no benefit, so it gets a third of the
+    # enforcement budget.
+    evidence = [
+        {"type": "command", "command": command, "timeout": 5},
+    ]
     settings = {
         "hooks": {
             "PreToolUse": [
@@ -526,12 +544,24 @@ def _claude_settings(persona: Persona, ctx: _Context) -> str:
                     "hooks": [
                         {
                             "type": "command",
-                            "command": f'baron guard --persona-file "{persona_path}"',
+                            "command": command,
                             "timeout": 15,
                         }
                     ],
                 }
-            ]
+            ],
+            # Tool-scoped evidence: same matcher as enforcement, so the stream
+            # covers exactly the calls the guard adjudicates.
+            "PostToolUse": [
+                {"matcher": "Bash|Edit|Write|NotebookEdit", "hooks": evidence}
+            ],
+            "PostToolUseFailure": [
+                {"matcher": "Bash|Edit|Write|NotebookEdit", "hooks": evidence}
+            ],
+            # Session-scoped evidence: no matcher — these events carry no tool
+            # name, and a matcher would silently never fire.
+            "SessionStart": [{"hooks": evidence}],
+            "SessionEnd": [{"hooks": evidence}],
         }
     }
     return json.dumps(settings, indent=2) + "\n"

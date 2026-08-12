@@ -17,6 +17,12 @@ jobs:
         run: python tests/bi_runtime_accept.py
       - name: Repo lint (placeholders, dead links, fixture leaks, version sync)
         run: python tests/lint_repo.py
+      # The audit skill's telemetry-mode checks shipped in v1.6.0 but were
+      # never wired into CI, so nothing caught drift between baron's emitted
+      # wire shape and the ingester that reads it. Stdlib-only, like the two
+      # above.
+      - name: Audit-skill telemetry mode (ingester + baron wire shape)
+        run: python skills/multi-agent-audit/tests/test_ingest_otel.py
 
   # baron CLI (Phase 2, ADR-003; distribution `barony`) — the one packaged
   # component; tested via uv.

@@ -15,11 +15,14 @@ import typer
 
 from . import (
     clock,
+    export as export_mod,
+    doctor as doctor_mod,
     guard as guard_mod,
     handoff as handoff_mod,
     indexer,
     ledger,
     lock as lock_mod,
+    rules as rules_mod,
     runtimes,
     scaffold as scaffold_mod,
     session as session_mod,
@@ -29,6 +32,7 @@ from . import (
     worktree as worktree_mod,
 )
 from .forge import ForgeError, ForgeUnavailable
+from .schemas import CAPABILITY_VERBS
 
 app = typer.Typer(
     name="baron",
@@ -160,9 +164,15 @@ def init(
         f"  1. cd {dest.as_posix()}\n"
         "  2. baron validate .        # canonical specs — expect 0 errors\n"
         "  3. baron status            # divergence/staleness report (green when fresh)\n"
-        "  4. open your runtime at the collab root — canon/START.md routes you;\n"
-        "     each persona's kit is in agents/<slug>/runtime/ (see its README)\n"
-        "  5. every session: sync repos, read CONVENTIONS.md + COORDINATION.md,\n"
+        "  4. INSTALL each persona's runtime kit where its runtime starts —\n"
+        "     copy agents/<slug>/runtime/ into that working copy (see its README).\n"
+        "     Generating the kit is not installing it: the badminton-analyzer\n"
+        "     incident merged 15 PRs under a persona denied merge_pr because the\n"
+        "     guard hook was generated and never copied.\n"
+        "  5. baron doctor --dir <that working copy>   # proves the wiring; exit 1\n"
+        "     if the hook, executable, persona, or rules are missing (ADR-017)\n"
+        "  6. open your runtime there — canon/START.md routes you\n"
+        "  7. every session: sync repos, read CONVENTIONS.md + COORDINATION.md,\n"
         "     check _handoff/ (COORDINATION.md § Session-start checklist)\n"
         "\nedit next: agents/<slug>/persona.yaml scope blocks (init fills a generic\n"
         "placeholder scope), manifest.yaml description, and backlog.md."
@@ -503,6 +513,82 @@ def index(
     raise typer.Exit(1 if duplicates else 0)
 
 
+# --- P3.4 (partial): export -------------------------------------------------------------
+
+
+@app.command()
+def export(
+    collab: Path = _COLLAB_OPT,
+    kind: Optional[list[str]] = typer.Option(
+        None,
+        "--kind",
+        help=(
+            "Restrict to one or more kinds (repeatable): "
+            + " | ".join(export_mod.KIND_ORDER)
+            + ". Default: all four."
+        ),
+    ),
+    adr_dir: str = typer.Option(
+        export_mod.ADR_DIR, "--adr-dir", help="ADR directory, relative to the collab repo."
+    ),
+    archived: bool = typer.Option(
+        True,
+        "--archived/--no-archived",
+        help="Include archived handoffs (default ON — the export is the history, not the queue).",
+    ),
+    allow_dirty: bool = typer.Option(
+        False,
+        "--allow-dirty",
+        help=(
+            "Also emit records from MODIFIED tracked sources, stamped `meta.dirty` "
+            "(their citation resolves but returns the committed text, not what was "
+            "parsed). Untracked sources are still skipped — they have no commit to cite."
+        ),
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Export ADRs, decisions, findings and handoffs as citable records.
+
+    One flat record per artifact — `{id, kind, title, path, commit_sha, status,
+    body, links}` plus an open `meta` bag — walked from the same markdown the
+    personas write. Every record names the commit whose bytes were parsed, so
+    `git show <commit_sha>:<path>` reproduces the source exactly; that is the
+    citation requirement AGENT-TASKS.md 3.4 puts on any knowledge substrate.
+
+    A source that is untracked or has uncommitted edits is **skipped and named**
+    (`skipped[]`), never emitted with a SHA that does not match its content.
+    `--allow-dirty` relaxes that for modified tracked sources only, stamping
+    `meta.dirty` on the affected records; an untracked source is skipped
+    regardless, because `commit_sha` is never empty.
+
+    This is a plain read — no knowledge backend, no plugin seam, no network
+    ([ADR-015](../docs/adr/ADR-015-baron-export.md)). `baron export --json | jq
+    '.records[] | select(.kind=="decision")'` is the whole intended workflow
+    today. Exit 0; exit 2 if the collab path is not a git repo with history.
+    """
+    try:
+        result = export_mod.collect(
+            collab,
+            kinds=set(kind) if kind else None,
+            include_archived=archived,
+            allow_dirty=allow_dirty,
+            adr_dir=adr_dir,
+        )
+    except export_mod.ExportError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    if json_out:
+        _echo_json(result.to_dict())
+        for s in result.skipped:
+            typer.echo(
+                f"warning: skipped {s.path} ({s.reason}) — {s.records} record(s) not citable",
+                err=True,
+            )
+    else:
+        typer.echo(export_mod.render_table(result))
+    raise typer.Exit(0)
+
+
 # --- M4: guard ------------------------------------------------------------------------
 
 
@@ -515,20 +601,525 @@ def guard(
         help="The acting persona's persona.yaml (or set BARON_PERSONA_FILE).",
     ),
 ) -> None:
-    """Claude Code PreToolUse hook: deterministic capability enforcement.
+    """Claude Code hook: capability enforcement (PreToolUse) + evidence capture.
 
-    Reads the hook JSON from stdin (tool_name/tool_input/cwd per
-    https://code.claude.com/docs/en/hooks), maps the call to the frozen v1
-    capability verbs, and either stays silent (exit 0 — normal permission flow)
-    or blocks (exit 2, reason on stderr, fed to the model). Fail-closed on
-    internal errors; BARON_GUARD_OVERRIDE=<reason> allows AND appends to the
-    tracked .baron/guard-override.log. Wire-up: see the Claude adapter's
-    HYDRATE.md (matcher Bash|Edit|Write|NotebookEdit).
+    Reads the hook JSON from stdin (hook_event_name/session_id/cwd on every
+    event, plus tool_name/tool_input on tool events, per
+    https://code.claude.com/docs/en/hooks) and dispatches on hook_event_name.
+
+    PreToolUse (or no hook_event_name) is the ENFORCEMENT path: the call is
+    mapped to the frozen v1 capability verbs and guard either stays silent
+    (exit 0 — normal permission flow) or blocks (exit 2, reason on stderr, fed
+    to the model). Fail-closed on internal errors; BARON_GUARD_OVERRIDE=<reason>
+    allows AND appends to the tracked .baron/guard-override.log.
+
+    SessionStart / SessionEnd / Stop / PostToolUse / PostToolUseFailure are
+    EVIDENCE ONLY — they emit one event and always exit 0 (ADR-012). Any other
+    hook event exits 0 and does nothing. Only PreToolUse can ever block.
+
+    Wire-up: see the Claude adapter's HYDRATE.md steps 3c (enforcement) and 3d
+    (evidence).
     """
     code, stderr_text = guard_mod.process(sys.stdin.read(), persona_file)
     if stderr_text:
         typer.echo(stderr_text, err=True)
     raise typer.Exit(code)
+
+
+# --- rules: inspect the capability-rules artifact (ADR-016) ---------------------------
+
+rules_app = typer.Typer(
+    help=(
+        "Inspect the capability-rules artifact — the verb→enforcement table "
+        "`baron guard` and the runtime adapters share "
+        "(baron/data/capability-rules.v1.yaml). Read-only and diagnostic: "
+        "baron loads PACKAGED rules only, so nothing here activates a rules "
+        "file (ADR-016 §5)."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(rules_app, name="rules")
+
+
+def _load_rules_or_exit(file: Optional[Path]) -> rules_mod.CapabilityRules:
+    """The packaged artifact, or a candidate document named by ``--file``."""
+    try:
+        if file is None:
+            return rules_mod.load_rules()
+        return rules_mod.parse_file(file)
+    except rules_mod.RulesError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+
+#: Longest verb-entry value rendered inline as `was -> now`. Anything longer
+#: gets the two-line block form below.
+_INLINE_VALUE_LIMIT = 60
+
+
+def _oneline(text: str) -> str:
+    """Collapse a verb-entry value onto one line (`notes` is a YAML block)."""
+    return " ".join(text.split())
+
+
+def _echo_value_change(key: str, was: str, now: str, flag: str) -> None:
+    """Render one changed verb-entry field, never eliding the difference.
+
+    Values are printed in FULL. An earlier draft truncated to a fixed prefix,
+    which rendered two different `notes` blocks as an identical-looking pair —
+    a diff that hides the diff is worse than no diff at all.
+    """
+    was, now = _oneline(was), _oneline(now)
+    if len(was) <= _INLINE_VALUE_LIMIT and len(now) <= _INLINE_VALUE_LIMIT:
+        typer.echo(f"    {key}: {was} -> {now}{flag}")
+        return
+    typer.echo(f"    {key}:{flag}")
+    typer.echo(f"      base:      {was}")
+    typer.echo(f"      candidate: {now}")
+
+
+def _rules_for_verb(loaded: rules_mod.CapabilityRules, verb: str) -> list[str]:
+    """Ids of the rules that can imply ``verb`` (rule ids, sorted by table order)."""
+    return [rule.id for rule in loaded.rules if rule.verb == verb]
+
+
+def _verb_rows(loaded: rules_mod.CapabilityRules) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for verb in CAPABILITY_VERBS:
+        entry = loaded.verbs.get(verb, {})
+        row: dict[str, object] = {
+            "verb": verb,
+            "class": entry.get("class", ""),
+            "detection": entry.get("detection", "none"),
+            "enforcement": loaded.enforcement(verb),
+            "label": loaded.label(verb),
+            "rules": _rules_for_verb(loaded, verb),
+            "notes": entry.get("notes", "").strip(),
+        }
+        # The qualifier travels WITH the row, not just in a human-readable
+        # footer: machine consumers are the ones most likely to trust `label`
+        # unread. Absent when the label needs no qualifying.
+        caveat = loaded.caveat(verb)
+        if caveat:
+            row["caveat"] = caveat
+        rows.append(row)
+    return rows
+
+
+@rules_app.command("list")
+def rules_list(
+    file: Optional[Path] = typer.Option(
+        None, "--file", help="Read this rules document instead of the packaged artifact."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """List the verb table: class, detection modality, and the honest label.
+
+    `enforcement` is three-state on purpose (ADR-002 honesty rule):
+    `guard` = guard mechanically checks it; `adapter-dependent` = guard does
+    NOT parse for it and neither does any adapter baron ships, though a runtime
+    with a tool allow-list could; `instructed` = nothing checks it, the denial
+    is prose in the persona body.
+
+    `label` says `enforced` ONLY for `guard`. `adapter-dependent` labels
+    `instructed` because nothing baron ships enforces it — see the `caveat`
+    field (JSON) or the footer (table).
+    """
+    loaded = _load_rules_or_exit(file)
+    rows = _verb_rows(loaded)
+    qualified = [row for row in rows if row.get("caveat")]
+    if json_out:
+        payload: dict[str, object] = {
+            "rules_version": loaded.rules_version,
+            "vocabulary": loaded.vocabulary,
+            "ambiguity_policy": loaded.ambiguity_policy,
+            # Document-level too, so a consumer reading only the envelope still
+            # sees what `label` does and does not promise.
+            "label_caveat": rules_mod.LABEL_CAVEAT,
+            "verbs": rows,
+        }
+        _echo_json(payload)
+        return
+    typer.echo(
+        f"capability-rules v{loaded.rules_version} "
+        f"({loaded.vocabulary}, ambiguity: {loaded.ambiguity_policy})"
+    )
+    typer.echo(f"{'VERB':<21}{'CLASS':<12}{'DETECTION':<11}{'ENFORCEMENT':<19}LABEL")
+    for row in rows:
+        typer.echo(
+            f"{row['verb']:<21}{row['class']:<12}{row['detection']:<11}"
+            f"{row['enforcement']:<19}{row['label']}"
+        )
+        rule_ids = row["rules"]
+        if rule_ids:
+            typer.echo(f"{'':<21}rules: {', '.join(rule_ids)}")  # type: ignore[arg-type]
+    if qualified:
+        verbs = ", ".join(str(row["verb"]) for row in qualified)
+        # The claim, then its evidence one adapter per line. The JSON payload
+        # carries both in a single `label_caveat` string (ADR-020 §5).
+        typer.echo(f"\nnote ({verbs}): {rules_mod.LABEL_CAVEAT_SUMMARY}")
+        for adapter, why in rules_mod.READ_VERB_MEASUREMENTS.items():
+            typer.echo(f"  measured — {adapter}: {why}")
+
+
+@rules_app.command("validate")
+def rules_validate(
+    file: Optional[Path] = typer.Option(
+        None,
+        "--file",
+        help=(
+            "Validate this candidate rules document instead of the packaged "
+            "artifact. Validating a file does NOT activate it — baron loads "
+            "packaged rules only (ADR-016 §5)."
+        ),
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Parse a rules artifact and report the negotiation + integrity checks.
+
+    Exit 0 clean, 1 if a check fails, 2 if the document is refused outright —
+    the same refusal guard turns into a fail-closed DENY. A document is refused
+    when it is unreadable, not YAML, names an unsupported
+    `rules_version`/`vocabulary`, carries a key or a rule this baron does not
+    implement, names an unknown matcher (or one other than the matcher guard
+    implements for that rule), or omits a built-in rule. Unrecognised content is
+    never dropped silently.
+    """
+    loaded = _load_rules_or_exit(file)
+    origin = file.as_posix() if file is not None else f"packaged {rules_mod.RULES_RESOURCE}"
+
+    checks: list[dict[str, object]] = []
+
+    def check(name: str, ok: bool, detail: str) -> None:
+        checks.append({"check": name, "ok": ok, "detail": detail})
+
+    # The first two and the last are parser-enforced — a mismatch never reaches
+    # here, it exits 2 above. They are reported so `validate` shows WHAT was
+    # negotiated, not just that nothing blew up.
+    check(
+        "rules_version",
+        True,
+        f"{loaded.rules_version} == supported {rules_mod.SUPPORTED_RULES_VERSION} "
+        "(exact match, parser-enforced; negotiation is not a range)",
+    )
+    check(
+        "vocabulary",
+        True,
+        f"{loaded.vocabulary} == supported {rules_mod.SUPPORTED_VOCABULARY} "
+        "(parser-enforced)",
+    )
+    missing = sorted(set(CAPABILITY_VERBS) - set(loaded.verbs))
+    extra = sorted(set(loaded.verbs) - set(CAPABILITY_VERBS))
+    check(
+        "frozen vocabulary",
+        not missing and not extra,
+        f"{len(loaded.verbs)} verbs; missing={missing or 'none'} extra={extra or 'none'}",
+    )
+    unbound = sorted(
+        {rule.verb for rule in loaded.rules if rule.verb and rule.verb not in loaded.verbs}
+    )
+    check(
+        "rule verbs resolve",
+        not unbound,
+        f"{len(loaded.rules)} rules "
+        f"({len(loaded.command_rules)} command + {len(loaded.path_rules)} path); "
+        f"unbound={unbound or 'none'}",
+    )
+    check(
+        "ambiguity policy",
+        loaded.ambiguity_policy == "conservative-deny",
+        loaded.ambiguity_policy or "(unset)",
+    )
+    check(
+        "matchers known",
+        True,
+        f"{len(loaded.command_rules)} command rules name a matcher in the closed "
+        "set AND the one guard implements (parser-enforced, from the document); "
+        "path-rule matchers are structural, not document-supplied",
+    )
+    # RE-DERIVED here, not asserted. The parser refuses an inconsistent document
+    # before it reaches this code (rules._check_detection_consistency), so this
+    # can only fail against a CONSTRUCTED CapabilityRules — but a check whose
+    # text claims coverage must compute the thing it claims. The round-2 version
+    # of the check below was hardcoded True and printed `ok` over a document
+    # containing `detection: banana`; that is the exact failure mode ADR-002 and
+    # ADR-008 exist to prevent, so nothing here is hardcoded that can be counted.
+    misdescribed: list[str] = []
+    for verb, entry in loaded.verbs.items():
+        modality = entry.get("detection", rules_mod.DETECTION_NONE)
+        bound = [rule for rule in loaded.rules if rule.verb == verb]
+        chain = verb in rules_mod.FILE_OP_CHAIN_VERBS
+        claims = modality != rules_mod.DETECTION_NONE
+        implemented = bool(bound) or (chain and modality == rules_mod.DETECTION_FILE_OP)
+        if claims != implemented:
+            misdescribed.append(f"{verb} (detection={modality}, rules={len(bound)})")
+    check(
+        "detection matches implementation",
+        not misdescribed,
+        (
+            f"{len(loaded.verbs)} verbs; every `enforced` label is backed by a "
+            "rule or the file-op precedence chain (parser-enforced, re-derived "
+            "here)"
+        )
+        if not misdescribed
+        else "misdescribed: " + ", ".join(misdescribed),
+    )
+    check(
+        "no unrecognised content",
+        True,
+        "every key, rule slot and enumerated value (class, detection, matcher) "
+        "in the document is one this baron implements (parser-enforced: unknown "
+        "content is refused, never ignored)",
+    )
+
+    failed = [c for c in checks if not c["ok"]]
+    if json_out:
+        _echo_json(
+            {
+                "source": origin,
+                "ok": not failed,
+                "checks": checks,
+                "label_caveat": rules_mod.LABEL_CAVEAT,
+            }
+        )
+    else:
+        typer.echo(f"source: {origin}")
+        for c in checks:
+            status = "ok    " if c["ok"] else "FAIL  "
+            typer.echo(f"{status}  {c['check']}: {c['detail']}")
+        typer.echo("valid" if not failed else f"{len(failed)} check(s) failed")
+    raise typer.Exit(1 if failed else 0)
+
+
+@rules_app.command("diff")
+def rules_diff(
+    file: Path = typer.Option(
+        ...,
+        "--file",
+        help="Candidate rules document to compare against the packaged artifact.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Diff a candidate rules document against the packaged artifact.
+
+    Joins on rule id. Exit 0 if identical, 1 if they differ, 2 if either side
+    is refused. A candidate carrying a rule or key this baron does not
+    implement is REFUSED (exit 2), not reported as an addition — so `identical`
+    can never be printed over content that was quietly dropped.
+
+    A clean diff is NOT an adoption path: baron still loads only the packaged
+    artifact (ADR-016 §5).
+    """
+    base = _load_rules_or_exit(None)
+    other = _load_rules_or_exit(file)
+
+    base_rules = {rule.id: rule for rule in base.rules}
+    other_rules = {rule.id: rule for rule in other.rules}
+    delta = rules_mod.diff_rules(base, other)
+    header = delta["header"]
+    added = delta["rules_added"]
+    removed = delta["rules_removed"]
+    changed = delta["rules_changed"]
+    verbs_added = delta["verbs_added"]
+    verbs_removed = delta["verbs_removed"]
+    verbs_changed = delta["verbs_changed"]
+
+    payload = {
+        "base": f"packaged {rules_mod.RULES_RESOURCE}",
+        "candidate": file.as_posix(),
+        **delta,
+    }
+    differs = any(delta.values())
+    if json_out:
+        _echo_json({**payload, "identical": not differs})
+    elif not differs:
+        typer.echo("identical to the packaged artifact")
+    else:
+        for line in header:
+            typer.echo(f"~ {line}")
+        for rid in added:
+            typer.echo(f"+ rule {rid} ({other_rules[rid].verb})")
+        for rid in removed:
+            typer.echo(f"- rule {rid} ({base_rules[rid].verb})")
+        for rid in changed:
+            typer.echo(f"~ rule {rid}")
+            typer.echo(f"    base:      {base_rules[rid]}")
+            typer.echo(f"    candidate: {other_rules[rid]}")
+        for verb in verbs_added:
+            typer.echo(f"+ verb {verb}  (NOT in the frozen vocabulary)")
+        for verb in verbs_removed:
+            typer.echo(f"- verb {verb}")
+        for verb in verbs_changed:  # type: ignore[union-attr]
+            typer.echo(f"~ verb {verb}")
+            base_entry = base.verbs[verb]
+            other_entry = other.verbs[verb]
+            for key in sorted(set(base_entry) | set(other_entry)):
+                was, now = base_entry.get(key, "(absent)"), other_entry.get(key, "(absent)")
+                if was == now:
+                    continue
+                # `class` and `detection` change what baron CLAIMS to enforce;
+                # spell the consequence out rather than leaving a reviewer to
+                # re-derive it from the routing rules.
+                was_claim = (base.enforcement(verb), base.label(verb))
+                now_claim = (other.enforcement(verb), other.label(verb))
+                flag = (
+                    f"  [{was_claim[0]}/{was_claim[1]} -> {now_claim[0]}/{now_claim[1]}]"
+                    if key in ("class", "detection") and was_claim != now_claim
+                    else ""
+                )
+                _echo_value_change(key, was, now, flag)
+    raise typer.Exit(1 if differs else 0)
+
+
+@rules_app.command("explain")
+def rules_explain(
+    target: str = typer.Argument(
+        ..., help="A shell command (default), or a file path with --write."
+    ),
+    persona_file: Path = typer.Option(
+        ...,
+        "--persona-file",
+        envvar=guard_mod.PERSONA_ENV,
+        help="The acting persona's persona.yaml (or set BARON_PERSONA_FILE).",
+    ),
+    write: bool = typer.Option(
+        False,
+        "--write",
+        help="Treat TARGET as a write-tool path (Edit/Write/NotebookEdit) instead "
+        "of a shell command.",
+    ),
+    tool: str = typer.Option(
+        "Write", "--tool", help="Write tool name to attribute the call to (with --write)."
+    ),
+    cwd: Path = typer.Option(
+        Path("."),
+        "--cwd",
+        help="Directory the call would run in — branch resolution reads it.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Show what `baron guard` would decide for one call, and why.
+
+    Runs the SAME evaluators the PreToolUse hook runs
+    (`guard.evaluate_bash` / `guard.evaluate_write`) — this is a dry run of the
+    real decision, not a reimplementation, so the two cannot drift.
+
+    Exit 0 = the call would pass, 1 = it would be DENIED, 2 = guard could not
+    evaluate it (which the hook turns into a fail-closed deny).
+
+    Honest limit: `candidate_rules` lists the rules that CAN imply each verb,
+    not the single rule instance that matched — guard reports the concrete
+    inference in `reason` instead (e.g. "force flag `--force`"), and
+    re-deriving it here would mean a second parser that could drift from the
+    first.
+    """
+    loaded = _load_rules_or_exit(None)
+    try:
+        persona = guard_mod.load_persona(persona_file)
+        where = cwd.resolve()
+        if write:
+            decision = guard_mod.evaluate_write(tool, {"file_path": target}, where, persona)
+        else:
+            decision = guard_mod.evaluate_bash(target, where, persona)
+    except guard_mod.GuardError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+    verbs = []
+    for verb in decision.verbs:
+        entry: dict[str, object] = {
+            "verb": verb,
+            "enforcement": loaded.enforcement(verb),
+            "label": loaded.label(verb),
+            "candidate_rules": _rules_for_verb(loaded, verb),
+        }
+        caveat = loaded.caveat(verb)
+        if caveat:
+            entry["caveat"] = caveat
+        verbs.append(entry)
+    if json_out:
+        _echo_json(
+            {
+                "target": target,
+                "mode": "write" if write else "bash",
+                "tool": tool if write else "Bash",
+                "cwd": where.as_posix(),
+                "persona": {
+                    "slug": persona.slug,
+                    "file": persona_file.as_posix(),
+                },
+                "allowed": decision.allowed,
+                "verbs": verbs,
+                "reason": decision.reason,
+            }
+        )
+    else:
+        typer.echo(f"target : {target}")
+        typer.echo(f"persona: {persona.slug or persona_file.name} ({persona_file})")
+        typer.echo(f"verdict: {'ALLOW' if decision.allowed else 'DENY'}")
+        if not verbs:
+            typer.echo("verbs  : (none — guard maps no capability verb to this call)")
+        else:
+            typer.echo("verbs  :")
+        for entry in verbs:
+            rule_ids = ", ".join(entry["candidate_rules"]) or "—"  # type: ignore[arg-type]
+            typer.echo(
+                f"  {entry['verb']:<21}{entry['label']:<11}"
+                f"({entry['enforcement']}; candidate rules: {rule_ids})"
+            )
+        if decision.reason:
+            typer.echo("reason :")
+            for line in decision.reason.splitlines():
+                typer.echo(f"  {line}")
+    raise typer.Exit(0 if decision.allowed else 1)
+# --- doctor: guard wiring self-test -----------------------------------------------------
+
+
+@app.command()
+def doctor(
+    dir_: Path = typer.Option(
+        Path("."),
+        "--dir",
+        help="Project directory the runtime starts in (the one holding .claude/settings.json).",
+    ),
+    persona_file: Optional[Path] = typer.Option(
+        None,
+        "--persona-file",
+        help="Check this persona instead of the one the hook command names.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Self-test the `baron guard` WIRING — and fail loudly when it is missing.
+
+    The badminton-analyzer incident merged 15 PRs under a persona whose
+    `merge_pr` denial was believed enforced; the hook had never been installed,
+    so the denial had silently degraded to persona text. This command is that
+    silence's remedy: it checks that the hook's executable resolves, that a
+    PreToolUse hook in `.claude/settings.json` invokes `baron guard` with a
+    matcher covering every governed tool, that the named persona and the
+    capability-rules artifact load, that a synthetic denial fed to THAT
+    EXECUTABLE really exits 2, that malformed stdin fails closed (ADR-004 §2.3),
+    and that BARON_GUARD_OVERRIDE is not sitting exported. Exit 1 on any FAIL.
+
+    Honesty boundary: doctor verifies WIRING, not invocation. It proves the
+    install CAN enforce; it cannot observe whether Claude Code actually ran the
+    hook on a real tool call. A green doctor means "correctly wired", never
+    "enforcement happened". Two further bounds, both printed: the denial probes
+    spawn the hook's own command (`uv run`-style prefixes included) and fall back
+    to the in-process guard module only when no resolvable executable is named —
+    saying so when they do; and a bare executable name resolves against DOCTOR's
+    PATH, not the runtime's. Project-level settings only — a hook wired in
+    ~/.claude/settings.json is invisible here.
+    """
+    if not dir_.is_dir():
+        typer.echo(f"error: {dir_} is not a directory", err=True)
+        raise typer.Exit(2)
+    report = doctor_mod.run(dir_, persona_file=persona_file)
+    if json_out:
+        _echo_json(report.to_dict())
+    else:
+        typer.echo(doctor_mod.render(report))
+    raise typer.Exit(0 if report.ok else 1)
 
 
 # --- runtime hydrators ----------------------------------------------------------------

@@ -50,8 +50,10 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
   *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
-  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**. Q1/Q3/Q4 still open —
-  pick this up after P2.3 lands.)*
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**.)*
+  **Currency, 2026-08-10: P2.3 has shipped, so the sequencing gate is discharged — what holds
+  this now is Q1 (first-cut scope), Q3 (who may run `reconcile`) and Q4 (retrofit +
+  supersession), which are owner answers, not build work.** No implementation until they land.
 - [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused
@@ -116,11 +118,63 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
   retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
   classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
+  - **PARTIAL, 2026-08-09 ([ADR-015](docs/adr/ADR-015-baron-export.md)):** the *producer* half is
+    built and shipped as **`baron export`** — ADRs/decisions/findings/handoffs walked into flat
+    records that each carry `path + commit_sha`, with sources that cannot honour that citation
+    skipped by name rather than mis-cited. That discharges the "every retrieval result must carry
+    an authoritative source ID/version" requirement independently of which backend wins, since it
+    is a requirement on the corpus walk, not on the store. **Curated status is still not
+    exported** (no schema), and ADRs living in the code repo are out of reach (needs the manifest).
+  - **Still NOT built, deliberately:** the backend contract interface, the `baron.knowledge`
+    entry-point group, and any vendor adapter. Reasons in ADR-015 §4 — 3.4 is gated on 3.3 (which
+    does not exist), and a published entry-point group with no consumer is unretractable public
+    API. Tests assert `baron.forges` is still the only group, that runtime deps are still
+    typer + pyyaml, and that no vendor name appears under `cli/src/baron/`.
+  - **~~BLOCKING OWNER DECISION~~ — RESOLVED 2026-08-10
+    ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)).** The owner
+    took the second branch of the choice below: **invariant #1 is consciously AMENDED**, and the
+    why is recorded. It now reads *git + markdown is the **DEFAULT** substrate; plugins may
+    extend it to other suitable platforms* — **bounded** by *governance state stays complete in
+    git*: "who may do what", "who did what" and "what is true now" must stay answerable from the
+    repository alone, and a plugin may be authoritative for **derived or auxiliary** domains
+    (semantic search, embeddings, cross-project recall) and **never** for authority, evidence or
+    the ledger. **Mode (b) is answered: refused** — "it holds things the repo does not" is
+    authority-bearing by construction. **3.4 is therefore mode (a), a rebuildable projection.**
+    Note what did *not* change: **no adapter is authorised**, 3.4 is still gated on 3.3 (which
+    does not exist), the `baron.knowledge` entry-point group is still **not** published and its
+    test stays green, and nothing about the vendor has been run. The original framing follows.
+    - *(original)* Carried from the 2026-08-04 Codex reconciliation, item C:
+      mode **(b)** "authoritative knowledge source" contradicts the product vision's invariant #1
+      ("the repo is the only source of truth; any hosted surface is a cache, rebuildable from
+      `git clone`; `cat` always works"). Either drop mode (b) and keep the substrate a projection,
+      or consciously amend invariant #1 and record why. **Recommendation: drop (b).** No adapter
+      should be built until this is answered *and* 3.3 exists.
+  - **Nothing about the vendor has been run.** Its public docs were read on 2026-08-09; no
+    ingest, no retrieval, no measurement. Do not let any surface imply otherwise (ADR-015 §6).
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.
+  **Note the precondition moved**: the audit ingester now partitions baron's own evidence out
+  of the activity plane ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)),
+  so a re-run is safe to pair with a baron export — but the **default sink is `null` by
+  signed decision** ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)),
+  so a project produces no `.baron/events/` rows until an operator opts in. Whoever runs this
+  has to turn sinks on in the pilot first, or the fidelity number moves for no measured reason.
 - [ ] Merger precondition verification + guard coverage growth (`docs/BACKLOG.md`).
-- [ ] pydantic-ai adapter field validation.
+- [ ] pydantic-ai adapter field validation. *(The adapter gained an in-process evidence
+  producer in [ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md); that is a second
+  measured producer on the event plane, **not** the ADR-001 acceptance bar. The bar is still
+  a real persona on a real project on this runtime, and it has not been run.)*
+
+## Deferred out of the 2026-08 ops-plane consolidation
+
+Recorded in `docs/DECISIONS-FOR-REVIEW.md` §F and carried in `docs/BACKLOG.md` §
+*Deferred out of the 2026-08 ops-plane consolidation*, not re-listed here: **F1** the
+per-runtime capability matrix (harness already merged; what remains is an output redesign),
+**F2** delivery-verified `instructed` via the ritual-fence technique (needs a live runtime in
+CI and its own vocabulary decision), **F4** an aggregate over `baron.enforcement` in the audit
+skill (un-built, not blocked), and wiring the reserved `events:` manifest node (blocked on
+measuring guard's hot path). None is queued. Promote one into P2/P3 only on the owner's call.
 
 ---
 

@@ -56,6 +56,20 @@ ADR-004 §2.2) — though a denied `run_tests` additionally seeds the Shell capa
 `denied_commands` with common test runners. And the guard only guards agents built through
 `build_agent`: hand-rolling an `Agent` without the guard capability is Tier-1 territory.
 
+**Evidence, on the same plane as Claude Code (ADR-019).** The guard capability is also an
+event *producer*: every adjudicated call emits one `guard.decision` row into
+`.baron/events/` in the same wire shape the Claude Code hook writes, tagged
+`baron.runtime="pydantic-ai"` and `baron.trigger="before_tool_execute"`. `baron.enforcement`
+is read off the guard's own `Decision.adjudicated` (ADR-018) — never re-derived from the
+rules artifact — so a row that says `enforced` means a capability rule matched *and* the
+outcome turned on this persona. Read tools emit nothing, mirroring `Read`/`Grep` under
+PreToolUse. **Nothing is written unless an operator sets `BARON_EVENTS_SINK`** (default
+`null`), and emission is fail-OPEN: a broken sink can never turn a deny into an allow.
+Two honest bounds: there is no in-process `BARON_GUARD_OVERRIDE` path, so this runtime emits
+no `guard.override` rows (zero overrides here means "no mechanism", not "no overrides"), and
+`baron.trigger` values are runtime-native, so cross-runtime aggregation must group by
+`baron.runtime` first.
+
 **Known bypass — command-string wrappers.** The guard's static parser inspects each
 top-level subcommand's tokens; it does NOT recurse into an interpreter invoked with an
 inline program string, so `bash -c '...'`, `sh -c "..."`, and `python3 -c '...'` run their
