@@ -6,14 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Proposed (no code) — [ADR-023](docs/adr/ADR-023-reserved-filenames.md): the emitted config filenames are governed artifact types
+### Added — [ADR-023](docs/adr/ADR-023-reserved-filenames.md): the emitted config filenames are governed artifact types
 
 Third instance of the ADR-002/ADR-008 promotion pattern, and the first to concern
 the framework's **own output** rather than persona behaviour. `baron init` emits a
 fixed set of config filenames — `CONVENTIONS.md`, `COORDINATION.md`, `CLAUDE.md`,
 `BOOTSTRAP*.md`, the entry-point docs — and nothing in the emitted
-`CONVENTIONS.md` tells an agent those names are taken. **Awaiting owner review —
-nothing implemented.**
+`CONVENTIONS.md` told an agent those names are taken. **Accepted 2026-08-12 and
+applied to the emitted template** (both copies; drift guard green).
 
 Field failure (2026-08-12, Irisidian vault): an agent wrote a prose briefing to
 `COORDINATION.md` **at a vault root**. It conformed to no schema, and its position

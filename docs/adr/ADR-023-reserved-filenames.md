@@ -1,7 +1,8 @@
 ---
 created: 2026-08-12
+accepted: 2026-08-12
 type: decision
-status: proposed
+status: accepted
 decided_by: Vikram
 adr: 023
 project: barony
@@ -15,7 +16,7 @@ related:
 
 | Field | Value |
 |---|---|
-| **Status** | **Proposed** — needs owner decision |
+| **Status** | **Accepted** (2026-08-12) |
 | **Date** | 2026-08-12 |
 | **Authors** | Vikram + Iris (Claude) |
 | **Extends** | [ADR-002](ADR-002-ways-of-working-2026-07.md), [ADR-008](ADR-008-ways-of-working-2026-07-31.md) — same promotion mechanism |
@@ -128,9 +129,11 @@ Precedent worth citing in the emitted text: **this repo makes the same choice de
 because Barony does not dogfood its own multi-persona pattern. That is a considered absence, and it
 should read as one.
 
-### §4.3 — Owner decision needed: the precedence orders are inverted
+### §4.3 — The precedence orders are inverted
 
-**This is not a proposal. It is a defect found while drafting, and it needs your call.**
+**A defect found while drafting this ADR, not a proposal. Resolved by owner decision 2026-08-12:
+option (a) refined by (c) — the template's order stands, the Irisidian vault changes to match, and
+both documents gain the constraints/detail axis.**
 
 The two precedence chains currently in use disagree:
 
@@ -241,7 +244,7 @@ the rules file rather than superior to it. The template's order would have conta
 radius; the vault's order is what turned a misplaced file into a governance problem. Weak evidence —
 a single incident, and not the reason to prefer (a) — but it points the same way.
 
-## 5. Scope of the change, if accepted
+## 5. Scope of the change — **accepted and applied 2026-08-12**
 
 Deliberately small. No code, no CLI surface, no schema change.
 
@@ -298,17 +301,19 @@ that is a legitimate owner call, not a failure of the proposal.
 
 ## 8. Open questions
 
-1. **§4.3 — which precedence order is canonical?** Now carries a recommendation: **(a) keep the
-   template's order, change the vault, and add the constraints/detail axis to both.** Still **needs
-   an owner decision** — it changes a live vault rule and adds a paragraph to the emitted template.
-   Note the recommendation **reversed** between rev. 1 and rev. 2 of this ADR; the reversal and its
-   cause are recorded inline at §4.3 rather than quietly edited.
+1. ~~**§4.3 — which precedence order is canonical?**~~ **Resolved 2026-08-12** — (a) refined by (c).
+   Template order stands; the Irisidian vault inverted its chain to
+   `_meta/CONVENTIONS.md` → project `COORDINATION.md` → workspace `CLAUDE.md`, and both documents
+   gained the constraints/detail axis. Applied in the same pass, not deferred.
 
-   Sub-question, unresolved: **should the vault's chain keep `CLAUDE.md` at all?** The template has
-   three tiers (`CONVENTIONS` / `COORDINATION` / `AGENT.md`); the vault has three but a different
-   middle-and-top. If the vault adopts the template's order literally, workspace `CLAUDE.md` maps to
-   `AGENT.md` and moves from first to last — which is the whole point, but it is a bigger behavioural
-   change than "reorder a list" and deserves saying out loud.
+   Recorded for the record: the recommendation **reversed** between rev. 1 and rev. 2 of this ADR.
+   The reversal and its cause are inline at §4.3 rather than quietly edited.
+
+   **Consequence worth restating, because it is bigger than a reordering:** in the Irisidian vault,
+   workspace `CLAUDE.md` moved from **first to last**. Any agent that was relying on its own
+   workspace file to override a vault rule has lost that ability — which is the intent. The survey
+   at §4.3.4 found no such reliance in the collab repos, but it did **not** cover every workspace
+   `CLAUDE.md` on the machine. Residual risk, stated rather than closed.
 2. **Does the claims ladder get promoted in the same pass?** The Irisidian vault adopted
    *"a claim of verification is not verification"* on 2026-08-05, and that convention explicitly
    noted that folding it into the emitted `CONVENTIONS.md` needs its own ADR. It is still unpromoted.
