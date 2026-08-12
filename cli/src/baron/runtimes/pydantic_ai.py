@@ -18,6 +18,14 @@ user-facing contract):
   :mod:`baron.guard`'s evaluators, which consume the versioned
   ``capability-rules.v1.yaml`` artifact (:mod:`baron.rules`) — the SAME rule
   table the Claude Code PreToolUse hook uses, hence identical decisions.
+- **Evidence on the same plane** — that guard capability is also an event
+  PRODUCER (ADR-019): it emits ``guard.decision`` rows through
+  :func:`baron.guard.observe_decision`, the same wire shape and the same
+  ``baron.enforcement`` semantics as the Claude hook, tagged
+  ``baron.runtime="pydantic-ai"`` / ``baron.trigger="before_tool_execute"``.
+  This is the evidence that the observation plane is runtime-neutral rather
+  than Claude-Code-shaped, and it is what ADR-001 asks of an adapter claim:
+  a measurement from a real runtime, not an assertion.
 
 API facts verified against the tested pins — **harness 0.10.0 / pydantic-ai-slim
 2.14.1–2.19.x** (the ``barony[pydantic-ai]`` extra pins harness ``>=0.10,<0.11``
@@ -251,6 +259,28 @@ def compose_instructions(spec: dict[str, Any], persona_file: Path) -> str:
 # --- the in-process guard capability ---------------------------------------------------
 
 
+def _run_session_id(ctx: object) -> str:
+    """The pydantic-ai analogue of Claude Code's ``session_id`` (ADR-019 §5).
+
+    ``conversation_id`` first: a pydantic-ai conversation spans several
+    ``Agent.run`` calls, which is the same granularity as a Claude Code
+    session, so guard-decision rows from one working session correlate into one
+    trace exactly as they do under the hook. ``run_id`` is the fallback for a
+    one-shot run. Neither present → ``""``, and :func:`baron.guard._trace_id`
+    then declines to invent a shared trace (an unattributed row beats a fake
+    correlation). Read defensively: both are pydantic-ai internals, and an
+    unattributed row must never be worth an exception on the veto path.
+    """
+    for attr in ("conversation_id", "run_id"):
+        try:
+            value = getattr(ctx, attr, None)
+        except Exception:  # pragma: no cover - defensive: property may raise
+            value = None
+        if value:
+            return str(value)
+    return ""
+
+
 @dataclass
 class BaronGuardCapability(AbstractCapability):
     """Vetoes tool calls that map to capability verbs the persona lacks.
@@ -261,41 +291,129 @@ class BaronGuardCapability(AbstractCapability):
     this in-process hook. Denials raise ``ModelRetry`` — the documented veto:
     execution is skipped and the reason is fed back to the model, mirroring
     the Claude hook's exit-2 + stderr contract.
+
+    **Also an event-plane PRODUCER (ADR-019).** Every adjudicated call emits one
+    ``guard.decision`` row through :func:`baron.guard.observe_decision`, in the
+    same wire shape and with the same ``baron.enforcement`` semantics as the
+    Claude hook — read off :attr:`~baron.guard.Decision.adjudicated`, never
+    re-derived here. Measured: for one governance fact the two producers' rows
+    differ in exactly four attributes — ``baron.runtime``, ``baron.trigger``,
+    ``tool.name`` (the runtimes name their own tools) and ``session.id``.
+    Verdict, verb, enforcement label, actor, subject and reason are identical.
+
+    Two silences are deliberate, and both mirror the hook:
+
+    - **Out-of-jurisdiction tools emit nothing.** ``read_file`` /
+      ``list_directory`` produce no row, just as ``Read`` / ``Grep`` produce
+      none under PreToolUse. One row per read would bury the verdicts the
+      stream exists to record.
+    - **Emission cannot change the veto.** ``observe_decision`` is fail-OPEN and
+      never raises; the deny path below does not depend on it.
     """
 
     persona: GuardPersona
     root: Path = field(default_factory=Path.cwd)
 
-    def check(self, tool_name: str, args: dict[str, Any]) -> str | None:
-        """Return a denial reason for this tool call, or None to allow.
+    def decide(self, tool_name: str, args: dict[str, Any]) -> guard.Decision | None:
+        """The guard verdict for this tool call, or ``None`` if out of scope.
 
-        Pure decision logic (unit-testable without a run context).
+        ``None`` means "no jurisdiction" — the tool is neither a shell nor a
+        write tool — and is NOT an allow: it is the state the hook path handles
+        by returning early without emitting. Distinguishing the two is what
+        :meth:`check` cannot do, which is why the emitter calls this instead.
         """
         if tool_name in _SHELL_COMMAND_TOOLS:
             command = str(args.get("command") or "")
-            decision = guard.evaluate_bash(command, self.root, self.persona)
-            if not decision.allowed:
-                return decision.reason
-        elif tool_name in _WRITE_TOOLS:
+            return guard.evaluate_bash(command, self.root, self.persona)
+        if tool_name in _WRITE_TOOLS:
             raw = str(args.get("path") or "")
             target = Path(raw)
             if not target.is_absolute():
                 target = self.root / target
-            decision = guard.evaluate_write(
+            return guard.evaluate_write(
                 tool_name, {"file_path": str(target)}, self.root, self.persona
             )
-            if not decision.allowed:
-                return decision.reason
         return None
+
+    def check(self, tool_name: str, args: dict[str, Any]) -> str | None:
+        """Return a denial reason for this tool call, or None to allow.
+
+        Pure decision logic (unit-testable without a run context). Kept as the
+        adapter's narrow public predicate; :meth:`decide` is the full verdict.
+        """
+        decision = self.decide(tool_name, args)
+        if decision is not None and not decision.allowed:
+            return decision.reason
+        return None
+
+    @staticmethod
+    def _subject(tool_name: str, args: dict[str, Any]) -> str:
+        """What the call was ABOUT, mirroring the hook's ``target``."""
+        if tool_name in _SHELL_COMMAND_TOOLS:
+            return str(args.get("command") or "?")
+        return str(args.get("path") or "?")
+
+    def _observe(
+        self,
+        decision: guard.Decision | None,
+        *,
+        tool_name: str,
+        args: dict[str, Any],
+        outcome: str,
+        session_id: str,
+        reason: str = "",
+        error: str = "",
+    ) -> None:
+        guard.observe_decision(
+            decision,
+            runtime=guard.RUNTIME_PYDANTIC_AI,
+            trigger=guard.TRIGGER_BEFORE_TOOL_EXECUTE,
+            tool=tool_name,
+            subject=self._subject(tool_name, args),
+            outcome=outcome,
+            actor=self.persona.slug or "unknown",
+            session_id=session_id,
+            cwd=self.root,
+            reason=reason,
+            error=error,
+        )
 
     async def before_tool_execute(self, ctx, *, call, tool_def, args):  # type: ignore[override]
         tool_args = args if isinstance(args, dict) else {}
-        reason = self.check(call.tool_name, tool_args)
-        if reason is not None:
+        session_id = _run_session_id(ctx)
+        try:
+            decision = self.decide(call.tool_name, tool_args)
+        except guard.GuardError as exc:
+            # A broken rules artifact. The adapter's ERROR POLICY IS UNCHANGED
+            # by ADR-019 — the exception still propagates, which aborts the run
+            # and so does not execute the tool. Only the observation is new,
+            # and it carries no Decision, hence `unevaluated`: guard failed to
+            # evaluate, which is not enforcement (ADR-018 §3).
+            self._observe(
+                None,
+                tool_name=call.tool_name,
+                args=tool_args,
+                outcome="error",
+                session_id=session_id,
+                reason=str(exc),
+                error=str(exc),
+            )
+            raise
+        if decision is None:
+            return args  # out of jurisdiction: no verdict, no row
+        self._observe(
+            decision,
+            tool_name=call.tool_name,
+            args=tool_args,
+            outcome="allow" if decision.allowed else "deny",
+            session_id=session_id,
+            reason=decision.reason,
+        )
+        if not decision.allowed:
             persona_name = self.persona.slug or "persona"
             raise ModelRetry(
                 f"baron guard: DENY {call.tool_name} for persona '{persona_name}'\n"
-                f"  {reason}\n"
+                f"  {decision.reason}\n"
                 "Route the work through a persona that holds the capability, or "
                 "hand off to the owner."
             )

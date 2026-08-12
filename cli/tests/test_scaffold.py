@@ -22,6 +22,23 @@ runner = CliRunner()
 PERSONAS = "dev:carson,dev:terrence,librarian:iris"
 
 
+def pretooluse_block(command: str) -> list:
+    """The generated PreToolUse block EXACTLY as v1.10.0 emitted it.
+
+    Frozen deliberately (ADR-012 §5): this block already exists, byte for byte,
+    in every repo `baron init` has ever generated. ADR-012 adds sibling hook
+    blocks around it; if that edit perturbs this one — matcher, command string,
+    the 15s timeout, or even key order — downstream repos silently diverge from
+    what baron now generates and nothing else would catch it.
+    """
+    return [
+        {
+            "matcher": "Bash|Edit|Write|NotebookEdit",
+            "hooks": [{"type": "command", "command": command, "timeout": 15}],
+        }
+    ]
+
+
 def _init(tmp_path: Path, *extra: str, personas: str = PERSONAS):
     dest = tmp_path / "gardenkit-collab"
     result = runner.invoke(
@@ -149,12 +166,46 @@ def test_librarian_added_when_missing() -> None:
 def test_runtime_kits_per_runtime(tmp_path: Path, fixed_clock: object) -> None:
     # claude (default): Tier-2 CLAUDE.md + the guard hook settings.
     _, dest = _init(tmp_path / "claude")
-    settings = json.loads(
-        (dest / "agents/carson/runtime/.claude/settings.json").read_text(encoding="utf-8")
+    raw = (dest / "agents/carson/runtime/.claude/settings.json").read_text(
+        encoding="utf-8"
     )
+    settings = json.loads(raw)
     command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     assert command.startswith("baron guard --persona-file")
     assert "agents/carson/persona.yaml" in command
+
+    # ENFORCEMENT block: byte-frozen, including key order (ADR-012 §5).
+    assert settings["hooks"]["PreToolUse"] == pretooluse_block(command)
+    assert json.dumps(settings["hooks"]["PreToolUse"], indent=2) == json.dumps(
+        pretooluse_block(command), indent=2
+    )
+    assert raw.index('"PreToolUse"') < raw.index('"PostToolUse"')
+
+    # EVIDENCE blocks (ADR-012): same one command, dispatched inside baron on
+    # hook_event_name. Session events carry no tool name, so no matcher.
+    hooks = settings["hooks"]
+    assert set(hooks) == {
+        "PreToolUse",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "SessionStart",
+        "SessionEnd",
+    }
+    for event in ("PostToolUse", "PostToolUseFailure"):
+        assert hooks[event] == [
+            {
+                "matcher": "Bash|Edit|Write|NotebookEdit",
+                "hooks": [{"type": "command", "command": command, "timeout": 5}],
+            }
+        ], event
+    for event in ("SessionStart", "SessionEnd"):
+        assert hooks[event] == [
+            {"hooks": [{"type": "command", "command": command, "timeout": 5}]}
+        ], event
+        assert "matcher" not in hooks[event][0]
+    # Stop is handled by `baron guard` but deliberately NOT wired: it fires every
+    # turn, and its only distinctive power is blocking, which ADR-012 §3 refuses.
+    assert "Stop" not in hooks
     claude_md = (dest / "agents/carson/runtime/CLAUDE.md").read_text(encoding="utf-8")
     assert "Never merge a pull request." in claude_md
     assert "INSTRUCTED" in claude_md  # honest tier note
@@ -251,10 +302,19 @@ def test_code_repo_recorded_and_ledger_usable(tmp_path: Path, fixed_clock: objec
     assert "role: code" in manifest and "path: ../gardenkit" in manifest
     assert "worktrees_root: ../gardenkit-worktrees" in manifest
     # With a code repo, the claude kit's guard hook points across the sibling layout.
-    command = json.loads(
+    hooks = json.loads(
         (dest / "agents/carson/runtime/.claude/settings.json").read_text(encoding="utf-8")
-    )["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    )["hooks"]
+    command = hooks["PreToolUse"][0]["hooks"][0]["command"]
     assert "../gardenkit-collab/agents/carson/persona.yaml" in command
+    assert hooks["PreToolUse"] == pretooluse_block(command)
+    # ADR-012: every hook block resolves the SAME relative persona path — a
+    # sibling layout that only rewrote the enforcement hook would leave the
+    # evidence hooks pointing at a persona file that does not exist.
+    for blocks in hooks.values():
+        for block in blocks:
+            for entry in block["hooks"]:
+                assert entry["command"] == command
 
     # The generated index headers work with the real ledger allocator.
     n = ledger.add_entry(

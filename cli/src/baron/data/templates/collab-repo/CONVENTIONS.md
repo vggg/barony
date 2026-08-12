@@ -206,11 +206,34 @@ snapshot-restore practice so failover = re-clone + restore state. (ADR-002 §7.)
 
 If two documents in this repo contradict each other, the precedence order is:
 
-1. `CONVENTIONS.md` (this file) — vault mechanics + repo-wide rules
+1. `CONVENTIONS.md` (this file) — repo mechanics + repo-wide rules
 2. `COORDINATION.md` — multi-persona protocol + workflow
 3. Persona `AGENT.md` — persona-specific rules
 
+**Why general beats specific here (ADR-023 §4.3).** This is the opposite of a config cascade, on purpose. Most-specific-wins is right for *configuration*, where a narrower file is better informed. These documents also carry *constraints* — and constraints run the other way, because the narrowest file is the one the persona itself can edit. A persona that could override `CONVENTIONS.md` from its own `AGENT.md` would be granting itself scope, which is the one thing this repo exists to prevent. The rule of thumb:
+
+> **Constraints resolve most-general-wins. Operational detail resolves most-specific-wins.**
+
+Constraints are `What never happens`, the claim/evidence rules, and the review-loop gates: they bind everyone and cannot be overridden locally. Operational detail is which paths you write, which commands you run, which fixtures you use: yours to decide, and your `AGENT.md` wins. Consistent with this, your `AGENT.md` **binds** you — see `What never happens` — rather than empowering you.
+
 If you find a contradiction, drop a `_handoff/` for the owner (`for: {{OWNER_HANDLE}}`) describing the conflict. Don't auto-fix shared config.
+
+### Reserved filenames
+
+These names are **governed artifact types with schemas** — they arrive with the scaffold and mean a specific thing:
+
+| Filename | What it is |
+|---|---|
+| `CONVENTIONS.md` | Repo-wide rules of the road (this file) |
+| `COORDINATION.md` | Multi-persona protocol + workflow |
+| `CLAUDE.md` | Per-workspace agent config |
+| `AGENT.md` | Persona-specific rules, one per `agents/<persona>/` |
+| `BOOTSTRAP.md` / `BOOTSTRAP-ADMIN.md` | Collaborator / owner onboarding |
+| `START.md`, `ORCHESTRATE.md`, `PARTICIPATE.md`, `QUICKSTART.md` | Entry-point docs |
+
+**Before creating a file with one of these names, confirm your content conforms to the schema that name already carries.** If it doesn't, pick a different name and match the genre instead: briefings and onboarding notes belong in a meta location, inter-agent messages in `_handoff/`, working notes in your own area.
+
+**A reserved name is scoped to its location.** `COORDINATION.md` means the collab-repo root copy, or `<vault>/projects/<name>/COORDINATION.md` — not any file bearing the name. In particular, **never create one at a vault root**: a vault root is not a project, so a file there claims authority over every project in the vault by position alone. In a precedence chain, position *is* authority.
 
 ---
 

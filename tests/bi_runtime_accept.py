@@ -36,9 +36,16 @@ ROOT = os.path.dirname(HERE)
 SKILL = os.path.join(ROOT, "skills", "barony")
 ADAPTERS_DIR = os.path.join(SKILL, "assets", "collab-repo", "adapters")
 VOCAB = os.path.join(SKILL, "references", "capability-vocab.v1.md")
+PERSONA_SCHEMA = os.path.join(SKILL, "references", "persona.schema.md")
 ADAPTERS = ["claude", "code-puppy", "generic", "pydantic-ai"]
 TIER3_ADAPTERS = {"claude", "code-puppy", "pydantic-ai"}
 MARKER = "capability-map:v1"
+RITUAL_MARKER = "ritual-map:v1"
+RITUAL_MARKER_END = "/ritual-map:v1"
+# The three adapters that render ritual tokens from PROSE. pydantic-ai renders in
+# code (baron.runtimes.pydantic_ai._RITUAL_LINES) and has no prose surface to parse;
+# cli/tests/test_schemas.py guards that side.
+PROSE_RITUAL_ADAPTERS = ["claude", "code-puppy", "generic"]
 VALID_GRANTS = {"read", "write", "shell"}
 # The five sub-tool verbs the capability-rules artifact defines detection for
 # (cli/src/baron/data/capability-rules.v1.yaml). Only these rows may carry a
@@ -177,6 +184,103 @@ def parse_vocab(path):
                     "sub-tool" if cls.startswith("sub-tool") else cls)
                 verbs[m.group(1)] = cls
     return verbs
+
+
+def parse_ritual_tokens(path):
+    """Ritual tokens from the canon's session-ritual table in persona.schema.md.
+
+    Sourced from the prose spec rather than baron.schemas.RITUAL_TOKENS because this
+    harness is stdlib-only and deliberately runs WITHOUT baron installed (ADR-006 §2).
+    cli/tests/test_schemas.py guards the other direction — baron's constant against the
+    same table — so the two meet in the middle on the canon.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    m = re.search(r"^##+\s*Session-ritual tokens.*?$", text, re.M)
+    if not m:
+        raise ValueError(f"no session-ritual token section in {path}")
+    tokens = set()
+    started = False
+    for ln in text[m.end():].splitlines():
+        row = re.match(r"^\|\s*`([a-z_]+)`\s*\|", ln)
+        if row:
+            started = True
+            tokens.add(row.group(1))
+            continue
+        if started and ln.strip() and not ln.strip().startswith(("|", ">")):
+            break
+    if not tokens:
+        raise ValueError(f"parsed no ritual tokens from {path}")
+    return tokens
+
+
+def parse_ritual_surface(path):
+    """Return the set of ritual tokens declared after the ritual-map:v1 marker.
+
+    Shape-tolerant by design: claude and code-puppy use pipe tables, generic uses a
+    bullet list, and normalising them would be churn for its own sake. An entry must
+    START its line with `|` or `-` followed immediately by the backticked token, so a
+    token merely MENTIONED in surrounding prose is not miscounted as declared.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    # Anchor on the COMMENT OPENER, not the bare string: a stray prose mention of
+    # the marker name above the real fence would otherwise widen the window and
+    # let a prose bullet mask a deleted entry again (the B3 failure, latent form).
+    pos = text.find("<!-- " + RITUAL_MARKER)
+    if pos == -1:
+        raise ValueError(f"no <!-- {RITUAL_MARKER} comment marker in {path}")
+    end = text.find("<!-- " + RITUAL_MARKER_END, pos)
+    if end == -1:
+        raise ValueError(f"no closing <!-- {RITUAL_MARKER_END} --> fence in {path}")
+    # Quoting the closing marker INSIDE the opening comment collapses the window to
+    # zero and would report every token missing — a false result. Caught once during
+    # development; made an explicit error rather than a silent wrong answer.
+    open_comment_end = text.find("-->", pos)
+    if open_comment_end != -1 and end < open_comment_end:
+        raise ValueError(
+            f"{path}: the closing {RITUAL_MARKER_END} fence appears INSIDE the opening "
+            f"comment — reword it (do not quote the closing marker literally there)"
+        )
+    tokens = set()
+    for ln in text[pos:end].splitlines():
+        # Entries are read ONLY inside the fence. An earlier cut scanned forward to
+        # the next heading, which miscounted PROSE bullets after the surface as
+        # declarations — the surface claimed a protection it did not have. The fence
+        # also survives generic's wrapped continuation lines, which broke the cut
+        # before that (it stopped at the first one and reported 4 of 5 missing).
+        m = re.match(r"^\s*[|-]\s*`([a-z_]+)`", ln)
+        if m:
+            tokens.add(m.group(1))
+    return tokens
+
+
+def check_ritual_coverage(ritual_tokens):
+    """(d) every ritual token is declared in every PROSE adapter surface.
+
+    The gap this closes: `check_review_feedback` (ADR-008 §2) shipped to three of four
+    runtimes because each renderer keeps its own surface and nothing cross-checked them.
+    Both renderer styles fail SILENTLY — the code renderers echo the raw token, the prose
+    surfaces simply omit the step — so nothing raised.
+    """
+    before = len(FAILURES)  # report success for THIS check, not the whole run
+    print("(d) ritual-token coverage across the prose adapter surfaces")
+    for adapter in PROSE_RITUAL_ADAPTERS:
+        path = os.path.join(ADAPTERS_DIR, adapter, "HYDRATE.md")
+        try:
+            declared = parse_ritual_surface(path)
+        except ValueError as exc:
+            fail(f"[ritual] {adapter}: {exc}")
+            continue
+        missing = sorted(ritual_tokens - declared)
+        if missing:
+            fail(f"[ritual] {adapter} declares no rendered step for: {missing}")
+        extra = sorted(declared - ritual_tokens)
+        if extra:
+            fail(f"[ritual] {adapter} declares unknown ritual token(s): {extra}")
+    if len(FAILURES) == before:
+        print(f"  all {len(ritual_tokens)} ritual token(s) declared in "
+              f"{len(PROSE_RITUAL_ADAPTERS)} prose adapter(s)")
 
 
 def parse_adapter_map(path):
@@ -344,6 +448,14 @@ def main():
                                  f" {sorted(leaked)}")
             print(f"        {name:10} can_write={c['can_write']} can_shell={c['can_shell']}"
                   f" tools={len(c['tools'])}")
+
+    # --- (d) ritual-token coverage across the prose adapter surfaces ---
+    try:
+        ritual = parse_ritual_tokens(PERSONA_SCHEMA)
+        print(f"ritual tokens: {len(ritual)} — {sorted(ritual)}")
+        check_ritual_coverage(ritual)
+    except ValueError as exc:
+        fail(f"[ritual] {exc}")
 
     print()
     if FAILURES:

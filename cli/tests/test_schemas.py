@@ -12,6 +12,7 @@ VOCAB_MD = (
     REPO_ROOT
     / "skills/barony/references/capability-vocab.v1.md"
 )
+PERSONA_SCHEMA_MD = REPO_ROOT / "skills/barony/references/persona.schema.md"
 
 # Verb table rows look like: | `read_code` | Read the code repo | whole-tool | - |
 _VERB_ROW_RE = re.compile(r"^\|\s*`([a-z_]+)`\s*\|")
@@ -45,6 +46,42 @@ def test_parametric_verbs_are_in_vocabulary() -> None:
     assert PARAMETRIC_VERBS <= set(CAPABILITY_VERBS)
 
 
+def parse_spec_ritual_tokens() -> list[str]:
+    """Ritual tokens from persona.schema.md's session-ritual table."""
+    tokens: list[str] = []
+    in_section = False
+    for line in PERSONA_SCHEMA_MD.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            in_section = line.strip().startswith("## Session-ritual tokens")
+            continue
+        if in_section:
+            m = _VERB_ROW_RE.match(line)
+            if m:
+                tokens.append(m.group(1))
+    return tokens
+
+
+def test_ritual_tokens_match_the_canon() -> None:
+    """THE JOIN between baron's constant and the canon — without it the two ends
+    of the ritual contract are never compared.
+
+    tests/bi_runtime_accept.py checks the ADAPTERS against the canon table, and
+    test_every_ritual_token_renders_on_every_runtime checks the CODE RENDERERS
+    against RITUAL_TOKENS. Those two meet only if RITUAL_TOKENS and the canon
+    table are themselves equal — and until this test existed they were not
+    compared anywhere. Adding a token to RITUAL_TOKENS plus both code renderers,
+    without touching the canon, left all three prose adapters uncovered with every
+    suite green. Caught in review of the change that claimed the gap was closed.
+    """
+    spec_tokens = parse_spec_ritual_tokens()
+    assert spec_tokens, f"no ritual tokens parsed from {PERSONA_SCHEMA_MD} — format changed?"
+    assert set(spec_tokens) == set(RITUAL_TOKENS), (
+        "ritual-token drift between baron.schemas.RITUAL_TOKENS and "
+        f"{PERSONA_SCHEMA_MD} — the adapters are gated against the CANON, so a token "
+        "that exists only in baron reaches no prose adapter and nothing complains"
+    )
+
+
 def test_every_ritual_token_renders_on_every_runtime() -> None:
     """A ritual token with no prose on some runtime silently disappears there.
 
@@ -53,11 +90,10 @@ def test_every_ritual_token_renders_on_every_runtime() -> None:
     is the gap that shipped `check_review_feedback` to three runtimes and not the
     fourth; the vocabulary is the contract, so every renderer must cover it.
 
-    SCOPE — this guards the two CODE renderers only. The claude / code-puppy /
-    generic adapters render ritual tokens from prose surfaces in their HYDRATE.md
-    (two pipe tables and one bullet list) and NOTHING parses them, so a new token
-    can still miss all three silently. See
-    ADR-008 §2 and docs/BACKLOG.md; do not read a green run here as full coverage."""
+    SCOPE — this guards the two CODE renderers. The three prose adapters are
+    guarded separately by tests/bi_runtime_accept.py check (d), and the two halves
+    are joined by test_ritual_tokens_match_the_canon below: without that join,
+    RITUAL_TOKENS and the canon could diverge and each suite would still pass."""
     from baron.runtimes.pydantic_ai import _RITUAL_LINES
     from baron.scaffold import Persona, _ritual_lines
 

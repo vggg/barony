@@ -62,6 +62,9 @@ HANDOFF=$(baron handoff create --for moss --from fern --title "Review the seam")
 baron handoff close "$HANDOFF" --note "Done, see F1."
 baron index               # regenerates _handoff/README.md — commit it
 baron worktree add fern   # worktree of ./gardenkit — ../gardenkit-worktrees/fern
+
+cp -R agents/fern/runtime/.claude ../gardenkit/   # install the guard hook
+baron doctor --dir ../gardenkit                   # prove it — exit 1 if it is missing
 ```
 
 ## Commands
@@ -266,6 +269,54 @@ finding/decision numbering: duplicates are errors (exit 1); gaps and
 out-of-order headings are **report-only** warnings — baron never renumbers
 history.
 
+### `baron export [--kind K]... [--json]` (P3.4 partial, [ADR-015](../docs/adr/ADR-015-baron-export.md))
+
+The governed corpus as **citable records** — one flat record per ADR, decision,
+finding and handoff, walked from the same markdown the personas write:
+
+```bash
+baron export                                                    # table
+baron export --json | jq '.records[] | select(.kind=="decision")'
+baron export --kind adr --kind decision --json                  # subset
+baron export --json | jq -r '.records[] | "\(.id)\t\(.commit_sha)\t\(.path)"'
+```
+
+```json
+{ "id": "D57", "kind": "decision", "title": "RATIFIED: …",
+  "path": "decisions/index.md", "commit_sha": "6bccfba7…", "status": null,
+  "body": "**Owner decision (Vikram), ratified 2026-07-31…",
+  "links": [{"type": "ref", "target": "ADR-0011"}, {"type": "ref", "target": "D56"}],
+  "meta": {"form": "heading"} }
+```
+
+Eight core fields (`id, kind, title, path, commit_sha, status, body, links`) plus
+an open, kind-specific `meta`. Primary key is `(kind, id)`. `path` is
+**repo-root-relative** so the citation below pastes verbatim; the envelope's
+`repo_prefix` recovers the `--collab`-relative form when they differ.
+
+**Every record cites a commit that reproduces it.** A source file that is
+untracked or has uncommitted edits is **skipped and named** in `skipped[]` — never
+emitted with a SHA that resolves but returns different text. So
+`git show <commit_sha>:<path>` always returns the exact bytes the record was
+parsed from. `--allow-dirty` relaxes that for **modified tracked** sources only,
+stamping `meta.dirty` on the affected records; untracked sources stay skipped
+under every flag, because `commit_sha` is never empty and a file with no commit
+has nothing to cite.
+
+Both real ledger entry-forms parse (`### F40 — title (date, author)` blocks and
+bare `| F40 | title |` index rows; the heading wins for the same ID). `status` is
+**null for findings and decisions** — the canon gives ledgers no lifecycle field,
+and guessing one from prose would be an overclaim. Output is byte-stable across
+runs (`age_days` is deliberately dropped). Archived handoffs are **included** by
+default (`--no-archived` to drop them) — unlike `baron handoff list`, this is the
+history, not the work queue. `--adr-dir` retargets the ADR walk (default
+`docs/adr`); ADRs kept in the *code* repo are out of reach for now.
+
+There is **no knowledge backend, no plugin group, and no vendor dependency** here,
+and that is deliberate — see [ADR-015](../docs/adr/ADR-015-baron-export.md) §4 for
+the sequencing argument and the open owner decision. Exit 0; exit 2 if the collab
+path is not a git repo with history (there is no provenance-free mode).
+
 ### `baron guard --persona-file <persona.yaml>` (M4)
 
 Deterministic capability enforcement as a **Claude Code PreToolUse hook**
@@ -313,6 +364,136 @@ overrides are visible in diffs); each override is expected to become a
 `Bash|Edit|Write|NotebookEdit`): the Claude adapter's HYDRATE.md step 3c emits
 it. Without baron installed the hook fails non-blocking and denials degrade to
 instructed — honest degradation, never a bricked session.
+
+### `baron rules list|validate|diff|explain` (ADR-016)
+
+The read-only diagnostic surface over the capability-rules artifact. Nothing
+here changes enforcement; it makes enforcement *inspectable* instead of
+requiring you to read YAML by hand.
+
+```bash
+baron rules list                      # the verb table: class, detection, enforcement, label
+baron rules list --json               # same, machine-readable
+baron rules validate                  # negotiation + integrity checks on the packaged artifact
+baron rules validate --file r.yaml    # ...on a candidate document (see the caveat below)
+baron rules diff --file r.yaml        # join a candidate against the packaged artifact on rule id
+baron rules explain 'git push --force origin main' --persona-file agents/dev/persona.yaml
+baron rules explain agents/other/persona.yaml --write --persona-file agents/dev/persona.yaml
+```
+
+- **`list`** reports enforcement in **three** states, but only one of them is
+  `enforced`: `guard` (guard mechanically checks it → `enforced`),
+  `adapter-dependent` (guard does NOT parse for it; a runtime with a tool
+  allow-list *could* enforce it by omitting the tool, but **baron emits no such
+  mechanism** → `instructed`), `instructed` (nothing checks it — `open_pr`,
+  `run_tests`). `read_code` / `read_collab` are the `adapter-dependent` pair,
+  measured once per shipped adapter (ADR-020): the pydantic-ai adapter builds
+  `FileSystem` unconditionally, so a persona denying `read_code` still gets the
+  read tools (`test_denying_read_code_does_not_omit_read_tools`), and the
+  `claude`, `code-puppy` and `generic` kits emit nothing a runtime reads as a
+  tool allow/deny list (`test_adapter_omission.py`). The bound is exact — baron
+  emits no mechanism, **not** that a runtime cannot enforce these verbs: a
+  hand-written `permissions.deny`, or the Tier-3 subagent the HYDRATE.md recipes
+  describe, does. `--json` carries the qualifier in the payload (`label_caveat`,
+  plus `caveat` per affected verb), not just the table footer.
+- **`validate`** exits 0 clean, 1 if a check fails, **2 if the document is
+  refused outright** — unreadable, not YAML, unknown `rules_version` or
+  `vocabulary`, a rule or key this baron does not implement, an unknown matcher
+  (or one other than the matcher guard implements for that rule), a missing
+  built-in rule, **an unknown `class` or `detection` value, or a `detection`
+  that misdescribes what guard implements** (claiming `command` with no rule
+  behind it, or `none` where a rule does bind the verb). That refusal is the
+  same one guard turns into a fail-closed DENY. Unrecognised content is never
+  dropped silently — and that includes values, not just keys.
+- **`diff`** exits 0 identical / 1 differs / 2 refused. It joins on **rule id
+  and verb id**: `rules_changed` for a rule body, `verbs_changed` for a verb
+  entry (`class` / `detection` / `notes`), with the resulting
+  enforcement/label change spelled out inline. A candidate carrying a rule this
+  baron does not implement is **refused**, not reported as an addition — so
+  `identical` can never be printed over content that was discarded.
+  *Honest limit:* `rules_added` / `rules_removed` cannot fire from a document
+  (the built-in rule set is closed and every slot mandatory); they exist for the
+  deferred loader. See ADR-016 §7.
+- **`explain`** is a **dry run of the real decision**: it calls
+  `guard.evaluate_bash` / `guard.evaluate_write`, not a reimplementation, and a
+  test pins its verdict to the evaluator's `Decision` so the two cannot drift.
+  Exit 0 would-pass / 1 would-be-DENIED / 2 guard could not evaluate. Honest
+  limit: it lists the rules that *can* imply each verb, not the single rule
+  instance that matched — guard's own `reason` names the concrete inference.
+
+> **`--file` validates; it does not activate.** baron loads the **packaged**
+> artifact only. There is no `.baron/rules.yaml` discovery, no merge, no
+> precedence — ADR-016 §5 records why the project-level loader is deferred and
+> which one-way doors it has to settle first (add-only/deny-only, never new
+> verbs, explicit supported ranges on both artifacts, refuse-don't-ignore on a
+> malformed file, cache safety, and the `.baron/` vs root-level convention).
+
+**Representation (ADR-016 §3):** the parsed rules are a *list* of typed rules
+(`CommandRule` / `PathRule`, each with a stable `id`, a `matcher` from a closed
+set, a `verb`, and a `source`), not a flat field-per-rule record — that is what
+makes an additional rule representable at all. Every name `guard.py` grew up
+with survives as a derived property, and `guard.py` is byte-identical across the
+change.
+### `baron doctor [--dir .] [--persona-file F] [--json]` (ADR-017)
+
+The guard **wiring** self-test — and the answer to the badminton-analyzer
+incident, where 15 PRs were merged by a persona denied `merge_pr` because the
+hook had never been installed. Nothing failed; enforcement had degraded to
+persona text, silently. Doctor breaks that silence and **exits 1 on any FAIL**.
+
+Nine checks, each with a remedy line when it fails:
+
+| id | proves |
+|---|---|
+| `cli-on-path` | the executable the hook names resolves and `--version` runs (wrapper prefixes like `uv run` are resolved as the launcher) |
+| `hook-configured` | project `.claude/settings.json` wires a PreToolUse hook invoking `baron guard` |
+| `hook-matcher` | that matcher selects every governed tool (`Bash`, `Edit`, `Write`, `NotebookEdit`) |
+| `persona-file` | the persona the hook names exists and parses |
+| `rules-artifact` | `capability-rules.v1.yaml` loads at a supported `rules_version` |
+| `enforcement-path` | a synthetic denial fed to **the executable the hook names** really returns exit 2 |
+| `fail-closed` | malformed hook stdin also returns exit 2 (ADR-004 §2.3), same executable |
+| `override-env` | `BARON_GUARD_OVERRIDE` is not sitting exported (if it is, every denial is allowed) |
+| `override-log` | the evidence sink is writable and not gitignored — **INFO only, never FAIL** |
+
+```
+$ baron doctor
+baron doctor — guard WIRING self-test
+project dir: /path/to/collab
+guard probe:  subprocess — /usr/local/bin/baron guard
+
+PASS    cli-on-path       baron -> /usr/local/bin/baron — barony 0.8.0 (named by the hook command)
+FAIL    hook-configured   no `baron guard` PreToolUse hook in this project (no project settings file). Capability denials here are INSTRUCTED, not enforced.
+                          -> `baron init` generated the wiring at agents/carson/runtime/.claude/settings.json but nothing copied it into place — ... Copy the runtime kit: cp -R .../runtime/. . (see adapters/claude/HYDRATE.md).
+...
+-- 5 pass, 1 fail, 2 unknown, 1 info
+```
+
+**Honesty boundary — printed on every run, green included.** Doctor verifies
+WIRING, not invocation. It proves this install *can* enforce; it cannot observe
+whether Claude Code actually ran the hook on a real tool call, because nothing
+outside the runtime can. Read a green doctor as "correctly wired", never as
+"enforcement happened" — implying otherwise would manufacture the exact false
+confidence that produced the badminton merges.
+
+**Two further bounds, also printed.** (a) Checks 6–7 spawn the hook's *own*
+command — `<exe> guard --persona-file <synthetic probe>`, `uv run`-style prefixes
+included — rather than calling the `baron` package doctor imported. A project
+wired to a stale or hand-rolled `baron` is exactly the badminton shape and an
+in-process probe cannot see it. Where the hook names no resolvable executable,
+doctor falls back in-process and the detail says so: that PASS is about the
+library, not about the command the hook would run (`probe_mode` in `--json`).
+(b) A *bare* executable name is resolved with `shutil.which` against **doctor's**
+PATH, not the runtime's, so `cli-on-path` for that shape is a property of the
+invoking shell. An absolute path in the hook command removes the ambiguity.
+
+Two scope notes, both deliberate (ADR-017 §3.4–§3.5): the override-log check is
+**INFO whatever it finds**, because enforcement is fail-closed while evidence is
+fail-open, and a broken audit trail must never be reported as broken
+enforcement; and only **project-level** settings are inspected, so a hook wired
+in the machine-global `~/.claude/settings.json` reads as a FAIL (the remedy says
+so). Checking the home directory would make the verdict depend on the developer's
+machine rather than on the repo. Read-only and fully offline — the only write is
+a temp dir for the synthetic probe.
 
 ### `baron lock claim|release|list` (M5)
 
@@ -472,6 +653,47 @@ implementation, GitHub via `gh` subprocess (`github.py`) — first consumed by
 `close_pr`). Other forges are plugins discovered through the `baron.forges`
 entry-point group; GitLab is backlog — design sketch in `../docs/BACKLOG.md`.
 
+## Events and sinks (ADR-013)
+
+`src/baron/events.py` defines one `Event` shape covering guard verdicts, session
+boundaries, ledger writes, decisions and tool outcomes; `src/baron/sinks/` defines
+where they go. **The default is `null` — baron writes nothing unless you ask.**
+
+```bash
+BARON_EVENTS_SINK=disk baron ...   # append-only JSONL under .baron/events/<date>.jsonl
+BARON_EVENTS_DEBUG=1               # print swallowed sink errors while debugging a sink
+```
+
+Three things worth knowing:
+
+- **It observes; it never decides.** Guard is fail-CLOSED (ADR-004 §2.3). Emission is the
+  deliberate opposite — fail-OPEN and silent, so a full disk or a broken sink can never turn
+  "log this" into "deny everything".
+- **`.baron/events/` is gitignored; `.baron/guard-override.log` stays tracked.** Overrides
+  are a handful of deliberate human acts, and belong in the diff. Events are one row per
+  tool call, and belong on local disk. Retention is yours: `find .baron/events -mtime +30 -delete`.
+- **No OpenTelemetry dependency** (ADR-003 holds). The row shape is the flat JSONL that
+  `skills/multi-agent-audit/scripts/ingest_otel.py` already parses, so the audit skill reads
+  baron's own stream with zero new code. **Read that stream with ingester v1.1 or later.**
+  The shared keys `agent.name` / `tool.name` / `session.id` are join keys, and an older
+  ingester reads them as agent activity: it invents a session out of hook timings, publishes
+  its duration as agent working time labelled `measured`, and counts each evaluation as a
+  tool call. v1.1 partitions baron rows out of the activity plane and counts them separately
+  (ADR-021). A live exporter is a plugin in the `baron.sinks` entry-point group, mirroring
+  `baron.forges`:
+
+```toml
+[project.entry-points."baron.sinks"]
+logfire = "barony_logfire:LogfireSink"
+```
+
+The `Sink` Protocol is **final at three members** (`name`, `emit`, `close`). Optional
+capabilities are duck-typed (`flush()`, `bind(cwd)`), never Protocol members — see the
+warning comment in `sinks/base.py` for why.
+
+Only guard's verdict path emits today. Ledger, session and decision have the contract
+available and adopt it on their own schedule.
+
 ## Development
 
 ```bash
@@ -479,16 +701,19 @@ uv run --project cli pytest cli/tests    # from the repo root
 ```
 
 The suite includes the capability-vocabulary drift guard, the ritual-token
-cross-renderer guard (every `RITUAL_TOKENS` entry must render real prose in BOTH
-code renderers — the `baron init` kits and the pydantic-ai hydrator; the three
-adapters' `HYDRATE.md` prose surfaces stay ungated, see `../docs/BACKLOG.md`), a
+cross-renderer guard (every `RITUAL_TOKENS` entry renders real prose in both code
+renderers, `RITUAL_TOKENS` equals the canon's session-ritual table, and
+`tests/bi_runtime_accept.py` gates the three adapters' fenced `ritual-map:v1`
+surfaces against that same canon — no unjoined end), a
 synthetic divergent git topology reproducing the 2026-07-22 triple-stranding
 incident classes, the ledger push-rejection race test, subprocess-driven guard
 hook tests (synthetic PreToolUse JSON on stdin), a recorded fake forge for the
 lock lifecycle, a real two-persona worktree fixture, the waiver
 downgrade/expiry cases, the
 capability-rules artifact tests (packaged + versioned, verb set ≡ the frozen
-vocabulary, guard-consumes-the-data mutation test), and the pydantic-ai
+vocabulary, guard-consumes-the-data mutation test, the ADR-016 legacy-accessor
+pin against hand-transcribed pre-refactor literals, and the `baron rules
+explain` ≡ `guard.evaluate_*` equality pin), and the pydantic-ai
 adapter tests (offline TestModel/FunctionModel: capability omission, write
 scoping, a scripted-and-vetoed `git push origin main`, the clean import-error
 path), the `baron init` acceptance tests (layout + self-validation via the real

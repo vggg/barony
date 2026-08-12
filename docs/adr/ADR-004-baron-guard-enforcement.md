@@ -153,3 +153,22 @@ the harness `FileSystem` has no `readonly` flag — native read-only is expresse
 capability layer (`before_tool_execute`), not inside Shell; and `TestModel` cannot script
 specific tool arguments, so the blocked-push acceptance test drives a real run through
 `FunctionModel` (equally offline) and unit-tests the interceptor directly.
+
+## 5. Extended by ADR-012 (2026-08-09): hook coverage beyond PreToolUse
+
+[ADR-012](ADR-012-hook-coverage-and-evidence-capture.md) widens `baron guard` from *the
+PreToolUse hook* to *the hook*, dispatching internally on `hook_event_name`. Nothing in
+§2 changes:
+
+- **§2.1 is unchanged.** The exit-code form still applies, guard still never emits `allow`,
+  and the enforcement path still reads `tool_name`/`tool_input`/`cwd`. ADR-012 only adds a
+  branch *before* it, on a field ADR-004 did not read.
+- **§2.2 is unchanged.** Still five verbs, still `PreToolUse`-only. The new handlers enforce
+  nothing; `enforced-with-baron (instructed otherwise)` still describes exactly those five.
+- **§2.3 is unchanged and now pinned.** Fail-closed on the enforcement path stands. Empty
+  and malformed stdin both denying was previously an observed consequence of sharing one
+  `JSONDecodeError` path; ADR-012 gives it a test, because §2.3 states it as policy.
+
+The one thing ADR-012 adds that §2.3 does not cover: the **new** evidence paths fail
+**open**, deliberately, because a fail-closed telemetry hook on `SessionStart` bricks a
+session from a place nothing inside the session can reach. That asymmetry is ADR-012 §3.
