@@ -1,0 +1,230 @@
+---
+created: 2026-08-12
+type: decision
+status: proposed
+decided_by: Vikram
+adr: 023
+project: barony
+related:
+  - "[[docs/adr/ADR-002-ways-of-working-2026-07]]"
+  - "[[docs/adr/ADR-008-ways-of-working-2026-07-31]]"
+  - "[[docs/adr/ADR-006-baron-init-template-packaging]]"
+---
+
+# ADR-023: The emitted config filenames are governed artifact types
+
+| Field | Value |
+|---|---|
+| **Status** | **Proposed** — needs owner decision |
+| **Date** | 2026-08-12 |
+| **Authors** | Vikram + Iris (Claude) |
+| **Extends** | [ADR-002](ADR-002-ways-of-working-2026-07.md), [ADR-008](ADR-008-ways-of-working-2026-07-31.md) — same promotion mechanism |
+| **Evidence base** | A single first-party incident in the Irisidian vault, 2026-08-12 (§6) |
+| **Decision owner** | Vikram |
+
+> **Numbering.** 010–022 are claimed on unmerged branches (PRs #29, #32, #35). This record takes
+> **023** and does not reuse a reserved number, per the convention in `docs/adr/README.md`. That
+> README does not exist on `main` — it arrives with PR #35 — so **this ADR adds no index row.**
+> Whoever lands #35 should add one. Flagged rather than silently skipped.
+
+---
+
+## 1. Summary
+
+[ADR-002](ADR-002-ways-of-working-2026-07.md) established the pattern, and
+[ADR-008](ADR-008-ways-of-working-2026-07-31.md) repeated it: when a coordination failure happens in
+the field and the fix is proven there, promote it from a project-local rule to a framework default,
+so the next bootstrapped project starts with it.
+
+This is a third instance, and it differs from the first two in a way worth naming. ADR-002 and
+ADR-008 promoted rules about *how personas behave*. This one promotes a rule about **the framework's
+own output**: `baron init` emits a fixed set of config filenames, and nothing tells an agent that
+those names are taken.
+
+The failure mode is not a persona misreading a rule. It is an agent **creating a file whose name
+already means something**, and thereby acquiring authority it was never granted — because in a
+precedence chain, **position is authority**.
+
+## 2. The failure
+
+On 2026-08-12, an agent (Iris, in the Irisidian vault) was asked to write a briefing document for a
+second assistant joining the machine. It wrote the briefing to **`/COORDINATION.md` at the vault
+root**.
+
+Two things were wrong, and only the second is obvious in hindsight:
+
+1. **The content conformed to no schema.** `COORDINATION.md` is an emit-time template — 213 lines,
+   with a defined shape: cross-agent protocol, hot files, lock mechanics, review-and-merge. The
+   briefing was prose. It shared a filename with fourteen conforming instances across
+   `vanar-collab`, `baddie-analyzer-collab`, `walmart-seller-api-collab`, `projects/GardenTwin`,
+   `barony-demo`, and the vendored copies.
+
+2. **Its position granted it authority.** That vault's `CONVENTIONS.md § Contradictory rules` places
+   `COORDINATION.md` *above* `CONVENTIONS.md` in the precedence chain. A briefing at the root would
+   therefore have been read by any agent resolving a rule conflict as **governing protocol for the
+   whole vault**.
+
+The agent had **flagged the collision in the document's own text** — and shipped it to that path
+anyway. That detail matters for choosing the remedy: this was not a knowledge gap. Naming a risk in
+prose did nothing, because nothing consumed the prose. Which is the same conclusion ADR-004 reached
+about capability denials, and ADR-008 §1 reached about labels.
+
+Caught by the owner, in one sentence. **No mechanism caught it.**
+
+## 3. Why this generalizes past one vault
+
+The obvious objection: one vault, one agent, one bad path — why is this a framework concern?
+
+Because **Barony is what creates the collision surface.** `baron init` emits, into every scaffolded
+project:
+
+```
+CONVENTIONS.md   COORDINATION.md   CLAUDE.md   README.md
+BOOTSTRAP.md     BOOTSTRAP-ADMIN.md   START.md   ORCHESTRATE.md
+PARTICIPATE.md   QUICKSTART.md      manifest.example.yaml
+```
+
+Every adopter inherits that namespace, and the emitted `CONVENTIONS.md` tells personas the
+precedence order without ever telling them **which files are allowed to hold those names**. The rule
+that would have prevented this is *exactly* the kind of rule ADR-002 exists to promote: proven in the
+field, absent from the default.
+
+It compounds in the two-repo layout ADR-001 §4 defines. `COORDINATION.md` legitimately exists at the
+collab-repo root **and** at `<vault>/projects/<name>/`. An agent that has seen one has no way to know
+whether a third location is legitimate or invented.
+
+## 4. Decisions
+
+### §4.1 — Reserved filenames
+
+**Decision.** Add to the emitted `CONVENTIONS.md`: these filenames are **governed artifact types with
+schemas**, not free names.
+
+| Filename | What it is |
+|---|---|
+| `CONVENTIONS.md` | Project-wide rules of the road |
+| `COORDINATION.md` | Multi-persona protocol + workflow |
+| `CLAUDE.md` | Per-workspace agent config |
+| `AGENT.md` | Persona-specific rules (per-persona directory) |
+| `BOOTSTRAP.md` / `BOOTSTRAP-ADMIN.md` | Collaborator / owner onboarding |
+| `START.md`, `ORCHESTRATE.md`, `PARTICIPATE.md`, `QUICKSTART.md` | Entry-point docs |
+
+**Before creating a file with one of these names, confirm it conforms to the template that emitted
+it.** If the content does not fit that schema, it needs a different filename — match the genre
+instead: briefings and onboarding in a meta location, inter-agent messages in `_handoff/`, working
+notes in the project area.
+
+### §4.2 — A reserved name is scoped to its emitted location
+
+**Decision.** State that the precedence chain names the file **at its emitted location**, not any
+file bearing that name. Concretely, for the emitted scaffold:
+
+- `COORDINATION.md` means the collab-repo root copy, or `<vault>/projects/<name>/COORDINATION.md`.
+- **No other `COORDINATION.md` may be created**, and in particular none at a *vault root* — a vault
+  root is not a project, so a file there claims authority over every project in it by position alone.
+
+Precedent worth citing in the emitted text: **this repo makes the same choice deliberately.**
+`CLAUDE.md` states there is no `CONVENTIONS.md` / `COORDINATION.md` / `agents/` at the repo root,
+because Barony does not dogfood its own multi-persona pattern. That is a considered absence, and it
+should read as one.
+
+### §4.3 — Owner decision needed: the precedence orders are inverted
+
+**This is not a proposal. It is a defect found while drafting, and it needs your call.**
+
+The two precedence chains currently in use disagree:
+
+| Source | Order |
+|---|---|
+| **Emitted `CONVENTIONS.md`** (`skills/barony/assets/collab-repo/CONVENTIONS.md § Contradictory rules`) | `CONVENTIONS.md` → `COORDINATION.md` → persona `AGENT.md` |
+| **Irisidian vault** (`_meta/CONVENTIONS.md § Contradictory rules`) | workspace `CLAUDE.md` → `COORDINATION.md` → `CONVENTIONS.md` |
+
+They are **opposite on CONVENTIONS-vs-COORDINATION**. The template says the rules file wins; the
+vault says the coordination file wins. Both are live, and an agent that has read both has no
+consistent answer.
+
+`observed` — I read both files today; this is not inferred.
+
+Three ways out, no recommendation embedded in the ADR text:
+
+- **(a) Template is right** — most-general-wins. `CONVENTIONS.md` is repo-wide, `COORDINATION.md` is
+  protocol, `AGENT.md` is local. Fix the vault to match.
+- **(b) Vault is right** — most-specific-wins, which is what the vault's own sentence says it is
+  doing (*"the more specific file wins"*). Fix the template to match.
+- **(c) They are different chains for different things** and both are correct in context. Then say so
+  explicitly in both, because today neither does.
+
+My read is **(b)**, on the grounds that "the more specific file wins" is the stated principle and the
+template's order does not implement it — but this is a spec question with adopters downstream, and I
+have not surveyed how the emitted order is relied on in the pilot repos. **`inferred`, and offered
+as a starting point rather than a conclusion.**
+
+## 5. Scope of the change, if accepted
+
+Deliberately small. No code, no CLI surface, no schema change.
+
+| Surface | Change |
+|---|---|
+| `skills/barony/assets/collab-repo/CONVENTIONS.md` | New subsection under `§ Contradictory rules`; `Recent changes` entry (3-entry cap) |
+| `cli/src/baron/data/templates/collab-repo/CONVENTIONS.md` | **Identical edit.** The two copies are byte-identical today (`md5 5901c1d3…`, verified) and a CI drift guard enforces it — ADR-006. Editing one and not the other fails CI. |
+| `CHANGELOG.md`, `STATUS.md` | Per the docs-with-code rule in `CONTRIBUTING.md` |
+| Version | Patch or minor — owner's call; it is a new template section, which `CLAUDE.md § versioning` reads as **minor**. |
+
+**Not proposed: lint enforcement.** A test could assert no unexpected `COORDINATION.md` exists in a
+scaffolded tree. It is deliberately left out — same posture the vault's claims ladder took, and for
+the same reason: the cheap first move is to say the rule, and whether saying it changes behaviour is
+the open question. Adding a mechanism now would answer a question nobody has asked yet.
+
+## 6. Evidence
+
+| Claim | Strength | Basis |
+|---|---|---|
+| `COORDINATION.md` is an emit-time template with a fixed schema | `observed` | `skills/barony/assets/collab-repo/COORDINATION.md`, 213 lines |
+| ~14 conforming instances exist on this machine | `observed` | `find` across `/Users/vikram/Workspace` + the vault, excluding `.git` and worktrees |
+| The two template copies are byte-identical and drift-guarded | `observed` | `md5 -q` on both → `5901c1d31193356235769b5bf2b6ceef`; guard per ADR-006 |
+| The precedence orders are inverted (§4.3) | `observed` | Read both `§ Contradictory rules` sections, 2026-08-12 |
+| This repo has no root-level COORDINATION.md by design | `observed` | This repo's `CLAUDE.md`, line 31 |
+| The rule would have prevented the incident | `inferred` | It addresses the stated cause; not tested |
+| Adopters other than this machine have hit this | **not claimed** | No evidence. One incident, first-party. |
+
+The last row is the honest limit of this ADR. **The evidence base is a single incident in one
+vault** — thinner than ADR-002's or ADR-008's, both of which promoted findings from a multi-persona
+pilot under real load. What argues for promoting anyway is not frequency but **structure**: the
+namespace is created by `baron init`, so the exposure is universal even though the observation is
+singular. If that is not enough, the honest alternative is §7's *"wait for a second instance"* — and
+that is a legitimate owner call, not a failure of the proposal.
+
+## 7. Alternatives considered
+
+- **Fix the vault only, promote nothing.** Cheapest, and correct if the collision really is
+  vault-specific. Rejected because the namespace is emitted, not local — but it is the alternative
+  with the strongest claim if you weigh the thin evidence base heavily.
+- **Wait for a second occurrence.** Consistent with not over-fitting to one event. The cost of being
+  wrong is asymmetric though: the rule is three sentences in a template, and the failure it prevents
+  is an agent silently acquiring vault-wide authority.
+- **Enforce in lint instead of stating in prose.** Stronger, and tempting given that the agent *did*
+  name the risk in prose and proceed anyway. Deferred, not rejected — see §5. If §4.1 lands and a
+  second collision still happens, that is the evidence that prose is insufficient, and it becomes its
+  own ADR.
+- **Rename the emitted files to something less collidable** (e.g. `barony-coordination.md`).
+  Rejected: breaks every adopter, and the names are good names. The problem is that they are
+  *undeclared*, not that they are wrong.
+
+## 8. Open questions
+
+1. **§4.3 — which precedence order is canonical?** Blocks nothing in §4.1/§4.2, but leaving it
+   unresolved means agents keep getting two answers. **Needs an owner decision.**
+2. **Does the claims ladder get promoted in the same pass?** The Irisidian vault adopted
+   *"a claim of verification is not verification"* on 2026-08-05, and that convention explicitly
+   noted that folding it into the emitted `CONVENTIONS.md` needs its own ADR. It is still unpromoted.
+   Two pending template promotions now exist. They could land as one `ways-of-working-2026-08` ADR in
+   the ADR-002/008 family. **Deliberately not bundled here** — bundling would be a scope decision
+   made on the owner's behalf, and the claims ladder is the larger of the two.
+3. **Should `AGENTS.md` be on the reserved list?** It is a governed type in the Irisidian vault
+   (`_meta/AGENTS.md`, the agent registry) but is **not** part of the emitted collab-repo scaffold —
+   personas are declared per-directory in `AGENT.md`. Listed here as a question rather than added to
+   §4.1's table, because I could not establish it is a Barony artifact.
+4. **Do existing scaffolded projects need an audit?** Two non-conforming instances are already known
+   in the Irisidian vault (`_meta/archive-jarvis/alfred/`, 26 lines; `work/02 - Projects/
+   multiagent-brownbag/`, 69 lines — both far short of the 213-line template). Neither sits at a root
+   position, so neither is harmful. Not proposed as part of this ADR.

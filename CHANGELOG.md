@@ -6,7 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Proposed (no code) — [ADR-023](docs/adr/ADR-023-reserved-filenames.md): the emitted config filenames are governed artifact types
+
+Third instance of the ADR-002/ADR-008 promotion pattern, and the first to concern
+the framework's **own output** rather than persona behaviour. `baron init` emits a
+fixed set of config filenames — `CONVENTIONS.md`, `COORDINATION.md`, `CLAUDE.md`,
+`BOOTSTRAP*.md`, the entry-point docs — and nothing in the emitted
+`CONVENTIONS.md` tells an agent those names are taken. **Awaiting owner review —
+nothing implemented.**
+
+Field failure (2026-08-12, Irisidian vault): an agent wrote a prose briefing to
+`COORDINATION.md` **at a vault root**. It conformed to no schema, and its position
+placed it *above* `CONVENTIONS.md` in that vault's precedence chain — so a
+briefing would have resolved rule conflicts for the entire vault. In a precedence
+chain, **position is authority**. Caught by the owner; no mechanism caught it. The
+agent had named the collision in the document's own text and shipped to that path
+anyway — which is why §5 declines to add lint enforcement *yet*: prose failing once
+is not yet evidence that prose is the wrong instrument.
+
+Proposes two template additions (§4.1 reserved-name list, §4.2 a reserved name is
+scoped to its emitted location — no vault-root `COORDINATION.md`), and surfaces one
+**defect found while drafting**: §4.3, the emitted precedence order
+(`CONVENTIONS` → `COORDINATION` → `AGENT.md`) is **inverted** relative to the
+Irisidian vault's (`CLAUDE.md` → `COORDINATION` → `CONVENTIONS`). Both are live and
+they disagree on CONVENTIONS-vs-COORDINATION. Needs an owner call; no
+recommendation embedded.
+
+Evidence base is deliberately marked thin — **one first-party incident**, against
+ADR-002's and ADR-008's multi-persona pilot runs. The argument for promoting anyway
+is structural, not statistical: `baron init` creates the namespace, so the exposure
+is universal even where the observation is singular. §7 keeps *"wait for a second
+instance"* as a legitimate owner call.
 
 ## [1.10.0] — 2026-08-04
 

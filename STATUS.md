@@ -59,6 +59,26 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Awaiting owner review — ADR-023 reserved filenames (template promotion)
+
+[ADR-023](docs/adr/ADR-023-reserved-filenames.md) (**proposed**, no code) promotes a rule about
+the framework's own emitted namespace: the config filenames `baron init` writes are governed
+artifact types, and a reserved name is scoped to its emitted location — in particular **no
+vault-root `COORDINATION.md`**. Driver: a 2026-08-12 Irisidian incident where a prose briefing
+at a vault root would have outranked `CONVENTIONS.md` by position alone.
+
+Two owner decisions are in it: (1) accept/decline the promotion on a **single-incident evidence
+base** — thinner than ADR-002's or ADR-008's pilot runs, argued structurally rather than
+statistically; (2) **§4.3, the precedence inversion** — the emitted `CONVENTIONS.md` orders
+`CONVENTIONS → COORDINATION → AGENT.md` while the Irisidian vault orders
+`CLAUDE.md → COORDINATION → CONVENTIONS`. They contradict, both are live, and agents reading
+both get two answers. Lint enforcement is deferred, not rejected (§5).
+
+Related open item: the Irisidian **claims ladder** (2026-08-05) is a *second* convention still
+awaiting template promotion. The two could land as one `ways-of-working-2026-08` ADR in the
+ADR-002/008 family — deliberately not bundled here (ADR-023 §8 Q2), since that is a scope call
+for the owner.
+
 ## Parked after owner review — P2.1 `baron decision` design
 
 [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md) (**proposed**, no code) designs the
