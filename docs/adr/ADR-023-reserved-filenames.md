@@ -184,8 +184,10 @@ edit itself outranks the file holding the `## Never` list and the claims ladder.
 
 That is a self-service escape hatch from governance, and it does not require bad intent: a
 workspace `CLAUDE.md` written for local convenience silently outranks a vault-wide constraint, and
-nothing surfaces the conflict. It is the [Otto incident](ADR-011) shape — an agent operating outside
-governance through a mechanism nobody had closed.
+nothing surfaces the conflict. It is the **Otto incident** shape — an agent operating outside
+governance through a mechanism nobody had closed. (That incident is what put branch protection on
+`main`; the identity work it triggered is ADR-011, reserved on the unmerged `adr-011-agent-identity`
+branch and therefore not linkable from here.)
 
 **4.3.3 — The template's order is considered, not accidental.**
 
