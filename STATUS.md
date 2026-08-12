@@ -74,6 +74,17 @@ statistically; (2) **§4.3, the precedence inversion** — the emitted `CONVENTI
 `CLAUDE.md → COORDINATION → CONVENTIONS`. They contradict, both are live, and agents reading
 both get two answers. Lint enforcement is deferred, not rejected (§5).
 
+**§4.3 now carries a recommendation (rev. 2): keep the template's order, change the vault, and
+state the axis in both** — *constraints resolve most-general-wins; operational detail resolves
+most-specific-wins*. Rationale: the two orders disagree most sharply on the **per-agent file**,
+and every agent's write zone includes its own workspace — so the vault's order lets a file an
+agent edits itself outrank the never-list and the claims ladder. Field survey (2026-08-12):
+both live scaffolded repos carry the template's order verbatim and **no persona `AGENT.md`
+overrides a `CONVENTIONS.md` rule**, so nothing downstream depends on the vault's order.
+**This reverses rev. 1**, which recommended the opposite; the reversal is recorded inline in
+the ADR rather than quietly edited. Scope consequence: §4.3 is now a **template edit too** —
+the order stays, but it gains the sentence saying why.
+
 Related open item: the Irisidian **claims ladder** (2026-08-05) is a *second* convention still
 awaiting template promotion. The two could land as one `ways-of-working-2026-08` ADR in the
 ADR-002/008 family — deliberately not bundled here (ADR-023 §8 Q2), since that is a scope call

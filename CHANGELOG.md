@@ -29,8 +29,29 @@ scoped to its emitted location — no vault-root `COORDINATION.md`), and surface
 **defect found while drafting**: §4.3, the emitted precedence order
 (`CONVENTIONS` → `COORDINATION` → `AGENT.md`) is **inverted** relative to the
 Irisidian vault's (`CLAUDE.md` → `COORDINATION` → `CONVENTIONS`). Both are live and
-they disagree on CONVENTIONS-vs-COORDINATION. Needs an owner call; no
-recommendation embedded.
+they disagree on CONVENTIONS-vs-COORDINATION.
+
+**Rev. 2 recommends keeping the template's order and changing the vault** — and
+records that this **reverses rev. 1**, which recommended the opposite. The reversal
+came from asking *what kind of rule* each chain orders: most-specific-wins is right
+for **configuration**, most-general-wins for **constraints**. The two orders disagree
+most sharply on the per-agent file (`AGENT.md` last vs `CLAUDE.md` first) — and every
+agent's write zone includes its own workspace, so the vault's order lets the file an
+agent edits itself outrank the never-list and the claims ladder. Self-service escape
+hatch from governance, no bad intent required. The template's posture is corroborated
+three ways inside its own text (*"don't auto-fix shared config"*; the never-list binding
+personas to their `AGENT.md` scope; `AGENT.md` edits gated behind a PR).
+
+Field survey settles the open risk from rev. 1: **both live scaffolded repos carry the
+template's order verbatim** (`vanar-collab`, `baddie-analyzer-collab`) and **no persona
+`AGENT.md` overrides a `CONVENTIONS.md` rule** — 17 files grepped, one benign hit. The
+vault is a population of one, so changing it breaks no downstream dependency.
+
+Recommendation is **(a) refined by (c)**: adopt one stated axis in *both* documents —
+**constraints resolve most-general-wins; operational detail resolves
+most-specific-wins.** Neither document says this today, which is what let the orders
+drift apart unnoticed. This makes §4.3 a **template edit as well as a vault fix**,
+larger than rev. 1 scoped.
 
 Evidence base is deliberately marked thin — **one first-party incident**, against
 ADR-002's and ADR-008's multi-persona pilot runs. The argument for promoting anyway

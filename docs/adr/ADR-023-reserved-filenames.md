@@ -145,7 +145,7 @@ consistent answer.
 
 `observed` — I read both files today; this is not inferred.
 
-Three ways out, no recommendation embedded in the ADR text:
+Three ways out:
 
 - **(a) Template is right** — most-general-wins. `CONVENTIONS.md` is repo-wide, `COORDINATION.md` is
   protocol, `AGENT.md` is local. Fix the vault to match.
@@ -154,10 +154,90 @@ Three ways out, no recommendation embedded in the ADR text:
 - **(c) They are different chains for different things** and both are correct in context. Then say so
   explicitly in both, because today neither does.
 
-My read is **(b)**, on the grounds that "the more specific file wins" is the stated principle and the
-template's order does not implement it — but this is a spec question with adopters downstream, and I
-have not surveyed how the emitted order is relied on in the pilot repos. **`inferred`, and offered
-as a starting point rather than a conclusion.**
+#### Recommendation: **(a), refined by (c). Change the vault, not the template.**
+
+> **Reversal, recorded.** Rev. 1 of this ADR recommended **(b)** — on the grounds that *"the more
+> specific file wins"* is the stated principle and the template does not implement it. That was
+> wrong, and it was wrong because I had not asked **what kind of rule** each chain orders. Rev. 2
+> reverses it. The original reasoning survives only in the narrow form kept at §4.3.3.
+
+**4.3.1 — Most-specific-wins is correct for configuration and wrong for constraints.**
+
+The vault's principle is sound in isolation. It is the standard config cascade — CSS specificity,
+`.gitconfig` layering — and it is right whenever narrower scope means *better-informed*.
+
+But these files do not only carry configuration. They carry **constraints**, and constraints cascade
+the other way. A firewall does not let the local process override the org policy. Most-specific-wins
+answers *"which database do I use"*; it is exactly wrong for *"never delete `_handoff/` files."*
+
+**4.3.2 — The two orders disagree most sharply on the one file that makes this dangerous.**
+
+Look at what sits at the ends of each chain:
+
+| | Template | Vault |
+|---|---|---|
+| Per-agent file | persona `AGENT.md` — **bottom, loses** | workspace `CLAUDE.md` — **top, wins** |
+
+Those are the analogous file. And **every agent's declared write zone includes its own workspace**
+(`_meta/AGENTS.md`, seven personas — `observed`). So under the vault's order, *the file an agent can
+edit itself outranks the file holding the `## Never` list and the claims ladder.*
+
+That is a self-service escape hatch from governance, and it does not require bad intent: a
+workspace `CLAUDE.md` written for local convenience silently outranks a vault-wide constraint, and
+nothing surfaces the conflict. It is the [Otto incident](ADR-011) shape — an agent operating outside
+governance through a mechanism nobody had closed.
+
+**4.3.3 — The template's order is considered, not accidental.**
+
+Three independent signals in the emitted `CONVENTIONS.md` itself:
+
+- `§ Contradictory rules` closes with **"Don't auto-fix shared config"** — shared config is
+  explicitly not the persona's to change.
+- The never-list includes **"a persona acting outside the scope declared in its `AGENT.md`"** — the
+  persona file **binds** the persona; it does not empower it. A leash, not a license.
+- `§ _handoff/ lifecycle` gates **`AGENT.md` edits behind a PR** while letting `_handoff/` push
+  direct — the local file is treated as substantive precisely because it is load-bearing.
+
+Every one of those is consistent with `AGENT.md` ranking last. The template implements a coherent
+governance posture; the vault implements a coherent *configuration* posture. Barony is a governance
+framework.
+
+**4.3.4 — The field has already voted, and the vault is the outlier.**
+
+`observed`, 2026-08-12 — surveyed every Barony-scaffolded collab repo on this machine:
+
+| Repo | Order |
+|---|---|
+| `vanar-collab` | `CONVENTIONS` → `COORDINATION` → `AGENT.md` (template order, verbatim) |
+| `baddie-analyzer-collab` | `CONVENTIONS` → `COORDINATION` → `AGENT.md` (template order, verbatim) |
+| `walmart-seller-api-collab` | *no `§ Contradictory rules` section* — predates it |
+| Irisidian vault | **inverted** |
+
+**No live persona `AGENT.md` overrides a `CONVENTIONS.md` rule** in either repo — I grepped all 17
+persona files for override language; the single hit was `yukti/AGENT.md` using "supersedes" about an
+old cron schedule. So **(a) has no downstream dependency to break**, which was the open risk in
+rev. 1. The vault is a population of one.
+
+**4.3.5 — The refinement, and the actual defect.**
+
+Adopting (a) alone would leave the real problem in place: **neither file says what kind of rule it is
+ordering.** That ambiguity is what let the two orders drift apart unnoticed for months. So (a) should
+land with (c)'s explicitness — one axis, stated in both:
+
+> **Constraints resolve most-general-wins. Operational detail resolves most-specific-wins.**
+
+`CONVENTIONS.md`'s never-list and claims ladder bind everyone and cannot be locally overridden.
+Which tools an agent uses, which paths it writes, which database it points at — local, and should
+win locally. Today both documents pretend a single chain covers both kinds, and it does not.
+
+**Consequence for scope:** this makes §4.3 a **template edit too**, not just a vault fix. That is
+larger than rev. 1 contemplated — see §5.
+
+**4.3.6 — A weak but real confirmation.** Under the template's order, `CONVENTIONS.md` outranks
+`COORDINATION.md`, so the misplaced briefing that triggered this ADR would have been *subordinate* to
+the rules file rather than superior to it. The template's order would have contained the blast
+radius; the vault's order is what turned a misplaced file into a governance problem. Weak evidence —
+a single incident, and not the reason to prefer (a) — but it points the same way.
 
 ## 5. Scope of the change, if accepted
 
@@ -165,7 +245,7 @@ Deliberately small. No code, no CLI surface, no schema change.
 
 | Surface | Change |
 |---|---|
-| `skills/barony/assets/collab-repo/CONVENTIONS.md` | New subsection under `§ Contradictory rules`; `Recent changes` entry (3-entry cap) |
+| `skills/barony/assets/collab-repo/CONVENTIONS.md` | New subsection under `§ Contradictory rules`; `Recent changes` entry (3-entry cap). **If §4.3 is accepted:** also rewrite `§ Contradictory rules` itself to state the constraints/detail axis (§4.3.5). The order does not change — the template's order is the one being kept — but it gains the sentence that says *why*. |
 | `cli/src/baron/data/templates/collab-repo/CONVENTIONS.md` | **Identical edit.** The two copies are byte-identical today (`md5 5901c1d3…`, verified) and a CI drift guard enforces it — ADR-006. Editing one and not the other fails CI. |
 | `CHANGELOG.md`, `STATUS.md` | Per the docs-with-code rule in `CONTRIBUTING.md` |
 | Version | Patch or minor — owner's call; it is a new template section, which `CLAUDE.md § versioning` reads as **minor**. |
@@ -183,6 +263,10 @@ the open question. Adding a mechanism now would answer a question nobody has ask
 | ~14 conforming instances exist on this machine | `observed` | `find` across `/Users/vikram/Workspace` + the vault, excluding `.git` and worktrees |
 | The two template copies are byte-identical and drift-guarded | `observed` | `md5 -q` on both → `5901c1d31193356235769b5bf2b6ceef`; guard per ADR-006 |
 | The precedence orders are inverted (§4.3) | `observed` | Read both `§ Contradictory rules` sections, 2026-08-12 |
+| Both live collab repos carry the template's order verbatim | `observed` | `vanar-collab`, `baddie-analyzer-collab`, read 2026-08-12. `walmart-seller-api-collab` has no such section. |
+| No live persona `AGENT.md` overrides a `CONVENTIONS.md` rule | `observed` | Grepped all 17 persona files in both repos for override language; one hit (`yukti`), benign — "supersedes" about a cron schedule |
+| Every agent's write zone includes its own workspace | `observed` | `_meta/AGENTS.md`, seven personas |
+| Most-general-wins is the right posture for constraints (§4.3.1/§4.3.5) | `inferred` | Reasoning about what these documents are *for*. Neither file states this axis today — it is a proposal, not a reading. |
 | This repo has no root-level COORDINATION.md by design | `observed` | This repo's `CLAUDE.md`, line 31 |
 | The rule would have prevented the incident | `inferred` | It addresses the stated cause; not tested |
 | Adopters other than this machine have hit this | **not claimed** | No evidence. One incident, first-party. |
@@ -212,8 +296,17 @@ that is a legitimate owner call, not a failure of the proposal.
 
 ## 8. Open questions
 
-1. **§4.3 — which precedence order is canonical?** Blocks nothing in §4.1/§4.2, but leaving it
-   unresolved means agents keep getting two answers. **Needs an owner decision.**
+1. **§4.3 — which precedence order is canonical?** Now carries a recommendation: **(a) keep the
+   template's order, change the vault, and add the constraints/detail axis to both.** Still **needs
+   an owner decision** — it changes a live vault rule and adds a paragraph to the emitted template.
+   Note the recommendation **reversed** between rev. 1 and rev. 2 of this ADR; the reversal and its
+   cause are recorded inline at §4.3 rather than quietly edited.
+
+   Sub-question, unresolved: **should the vault's chain keep `CLAUDE.md` at all?** The template has
+   three tiers (`CONVENTIONS` / `COORDINATION` / `AGENT.md`); the vault has three but a different
+   middle-and-top. If the vault adopts the template's order literally, workspace `CLAUDE.md` maps to
+   `AGENT.md` and moves from first to last — which is the whole point, but it is a bigger behavioural
+   change than "reorder a list" and deserves saying out loud.
 2. **Does the claims ladder get promoted in the same pass?** The Irisidian vault adopted
    *"a claim of verification is not verification"* on 2026-08-05, and that convention explicitly
    noted that folding it into the emitted `CONVENTIONS.md` needs its own ADR. It is still unpromoted.
