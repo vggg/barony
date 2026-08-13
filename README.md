@@ -3,60 +3,99 @@
 **Git-native governance for teams of AI coding agents: who may do what, who did
 what, what's true now — enforced by mechanism, measured by audit, on any runtime.**
 
-Barony is a spec, a CLI (`baron`), and a set of runtime adapters for running
-several AI coding agents on one long-lived project without the usual decay. Each
-persona is declared once in a runtime-neutral `persona.yaml` and hydrated onto
-whatever runtime you have — Claude Code, code-puppy, pydantic-ai, or anything
-that can read a prompt — at the highest enforcement fidelity that runtime
-supports. The coordination substrate is plain markdown + git: no server, no
-database, nothing you or your agents can't read with `cat`.
+> **New here? Read [`docs/user-guide.md`](docs/user-guide.md).** It takes a
+> first-time user from install to a scaffolded project with the guard wired,
+> proved by `baron doctor`, and a real capability denial on screen — about
+> fifteen minutes of reading. Every command in it was run; every output is real.
 
-> Formerly `agent-project-bootstrap`; renamed at v1.7.0
-> ([ADR-005](docs/adr/ADR-005-naming.md)). Old GitHub URLs redirect.
+## What this is, in 30 seconds
 
-## The 60-second pitch
+Running several AI coding agents on one long-lived project needs three separate
+things, which are routinely confused:
 
-Run several agent sessions on one project for a few weeks and four walls show
-up. Each of these receipts is first-party — from Barony's own pilot projects and
-audits, recorded in the ADRs:
+| Layer | Answers | What you'd use |
+|---|---|---|
+| **Coordination** | Who may do what · who did what · what is true now | **Barony** |
+| **Per-agent runtime** | How one agent thinks and calls tools | Claude Code, code-puppy, a pydantic-ai harness |
+| **Control plane** | Where agents run; routing, deploy, scheduling, secrets | something else |
 
-- **State chaos.** Parallel working copies drift silently. On 2026-07-22 an
-  estate-wide assessment of a pilot project found its two most recent results
-  stranded three different ways at once — commits never pushed, a pushed branch
-  never merged, and the canonical clone never pulled — leaving the status board
-  stale for a week ([ADR-003](docs/adr/ADR-003-baron-cli.md) §1). `baron status`
-  turns each stranding class into a red exit code you can put in CI.
-- **Enforcement theater.** Rules that live in prose decay: a first-party audit
-  of a real multi-agent project measured **operational fidelity 0.53** — roughly
-  half the documented coordination protocol was actually being followed
-  (ADR-003 §1). Barony labels every capability denial honestly as *enforced* or
-  merely *instructed*, and `baron guard` blocks denied actions before the tool
-  runs where the runtime allows it.
-- **Knowledge rot.** On the same pilot, 18 of 40 handoffs sat `status: open` —
-  weeks old, with nothing distinguishing "being worked" from "forgotten" — and
-  finding numbers collided three separate times (F38/F39, F40/F41, F44/F45)
-  because allocation was a rule, not a mechanism
-  ([ADR-002](docs/adr/ADR-002-ways-of-working-2026-07.md) §2, ADR-003 §1).
+Barony is the first row only. It is a spec, a CLI (`baron`), and per-runtime
+adapters. Each persona is declared once in a runtime-neutral `persona.yaml` and
+hydrated onto whatever runtime you have, at the highest enforcement fidelity
+that runtime supports. The default substrate is plain markdown + git, and it is
+the only one `baron` itself uses: no server, no database, nothing you or your
+agents can't read with `cat`.
+
+**It is not** a runtime, a control plane, or an agent framework. There is no
+scheduler, message bus, or agent-to-agent RPC — coordination happens at git
+tempo, which is the point: every coordination event leaves a reviewable record.
+It is also **not an adversarial sandbox**; it stops a cooperating agent from
+doing the wrong thing, not a hostile one with shell access.
+
+**What it costs you:** a second repo (the collab repo) alongside your code repo,
+a `persona.yaml` per agent, and the discipline of routing material work through
+handoffs and ledgers. Plus one hook wired into each working copy, which
+`baron doctor` will nag you about until you do it.
+
+**Skip it if** you run one agent on one-shot tasks with no state that has to
+outlive the session. A plain session is simpler and this is real overhead.
+
+## The four walls it exists for
+
+Run several agent sessions on one project for a few weeks and these show up.
+Each receipt is first-party — from Barony's own pilot projects and audits,
+recorded in the ADRs:
+
+- **State chaos.** On 2026-07-22 an estate-wide assessment of a pilot found its
+  two most recent results stranded three different ways at once — commits never
+  pushed, a pushed branch never merged, and the canonical clone never pulled —
+  leaving the status board stale for a week ([ADR-003](docs/adr/ADR-003-baron-cli.md) §1).
+  `baron status` turns each stranding class into a red exit code you can put in CI.
+- **Enforcement theater.** Rules that live in prose decay: a first-party audit of
+  a real multi-agent project measured **operational fidelity 0.53** — roughly half
+  the documented coordination protocol was actually being followed (ADR-003 §1).
+  Barony labels every capability denial honestly as *enforced* or merely
+  *instructed*, and `baron guard` blocks denied actions before the tool runs
+  where the runtime allows it.
+- **Knowledge rot.** On the same pilot, 18 of 40 handoffs sat `status: open` for
+  weeks, and finding numbers collided three separate times because allocation was
+  a rule, not a mechanism ([ADR-002](docs/adr/ADR-002-ways-of-working-2026-07.md) §2).
   Barony gives ledgers race-safe numbering (git push atomicity is the lock) and
   handoffs an SLA plus an archive-not-delete lifecycle.
 - **Accountability vacuum.** All personas commit under one human GitHub account,
-  so the platform is structurally blind to who did what — every PR shows the
-  same merger, and self-approval is refused outright ("Can not approve your own
-  pull request", verified live; ADR-002 §1/§4). Barony moves accountability into
-  the substrate: persona commit prefixes, SHA-sealed review verdicts (signets),
-  and a read-only audit that measures the intervention tax.
+  so the platform is structurally blind to who did what, and self-approval is
+  refused outright (verified live; ADR-002 §1/§4). Barony moves accountability
+  into the substrate: persona commit prefixes, SHA-sealed review verdicts
+  (signets), and a read-only audit that measures the intervention tax.
 
-If none of those walls are in your future — one-shot tasks, a single agent, no
-persistent memory needed — Barony is overkill, and a plain session is simpler.
+## Enforced vs instructed
 
-## Quickstart — a working project from a bare laptop
+The distinction the whole thing turns on, and the one `baron` prints at you:
 
-Requires Python ≥ 3.10 and git. Every command below is verified as written.
+> **enforced** — baron mechanises it. Something inspects the pending call and
+> refuses it before the tool runs.
+>
+> **instructed** — it is declared in a file the persona reads, and **nothing
+> checks**.
+
+Both are legitimate; only one is a control. Calling an instruction "enforcement"
+is the failure this product exists to catch, so `baron` refuses to round up and
+CI fails an adapter that claims enforcement it cannot deliver. Six of the ten
+capability verbs label `enforced`; the other four are instructions —
+`open_pr` and `run_tests` because guard does not parse for them, `read_code` and
+`read_collab` because **baron emits no mechanism** that would omit the read
+tools, measured once per shipped adapter. `baron rules list` prints the table
+with the measurements attached.
+
+## Quickstart
+
+Requires Python ≥ 3.10 and git. Verified end to end from a clean virtualenv —
+2.4 seconds of machine time, install included.
 
 ```bash
 uv tool install barony                 # or: pip install barony  (live on PyPI)
 
-# The code repo you want to govern (skip these two lines if you already have one):
+# The code repo you want to govern (skip if you already have one):
 mkdir gardenkit && git -C gardenkit init -b main -q && \
   git -C gardenkit commit --allow-empty -m "init" -q
 
@@ -67,6 +106,7 @@ cd gardenkit-collab
 
 baron validate .                       # canonical specs — expect 0 errors
 baron status                           # divergence/staleness — green when fresh
+baron rules list                       # what the guard enforces, honestly labelled
 
 # First coordination moves:
 baron finding new --title "First finding" --author fern --no-push
@@ -76,130 +116,130 @@ baron index                            # regenerates _handoff/README.md — comm
 
 # Per-persona working copies (worktrees of the code repo above):
 baron worktree add fern                # ../gardenkit-worktrees/fern, branch persona/fern
+
+# Install fern's runtime kit where the runtime reads it, then PROVE it:
+cp -R agents/fern/runtime/.claude   ../gardenkit/
+cp    agents/fern/runtime/CLAUDE.md ../gardenkit/
+baron doctor --dir ../gardenkit        # guard wiring self-test — exit 1 if the hook is missing
 ```
 
-Drop `--no-push` once the collab repo has an origin remote. The `worktree` step
-needs the `--code-repo` you passed to `init` (that's what created the code repo
-above). `baron init` also emits each persona's runtime kit under
-`agents/<slug>/runtime/` (`--runtime claude|generic|pydantic-ai|code-puppy`).
-Full command reference: [`cli/README.md`](cli/README.md). The conversational
-setup path (an agent interviews you, then scaffolds) routes through
+Drop `--no-push` once the collab repo has an origin remote. **Generating a
+runtime kit is not installing it** — skipping the `cp` is how the
+badminton-analyzer incident merged 15 PRs under a persona that was denied
+`merge_pr`, silently. `baron doctor` exists so that skipping it is loud; it
+verifies **wiring, not invocation** (ADR-017), and a green doctor means
+"correctly wired", never "enforcement happened".
+
+The [user guide](docs/user-guide.md) walks all of that with real output,
+including a live guard denial and the failure modes. Full command reference:
+[`cli/README.md`](cli/README.md). The conversational setup path (an agent
+interviews you, then scaffolds) routes through
 `skills/barony/assets/collab-repo/START.md` — see
 [docs/concepts.md](docs/concepts.md).
 
-**See a real one:** [`vggg/barony-demo`](https://github.com/vggg/barony-demo)
-is a seeded example — a week of a fictional project's findings, decisions,
-handoffs (closed and open), a waiver, and a captured live guard refusal. The
-project is fictional; every artifact was produced by the real tools.
-
-## Core concepts
-
-Longer-form explanations, the emitted repo layout, and the adapter mechanics
-live in [docs/concepts.md](docs/concepts.md). The short version:
-
-- **Personas & the 10-verb capability vocabulary.** A persona is one
-  `persona.yaml`: identity, scope, session ritual, and capabilities drawn from a
-  frozen vocabulary of ten intent-level verbs (`read_code`, `write_path`,
-  `merge_pr`, `push_main`, …). The canon says *what* a persona may do; each
-  runtime's adapter decides *how* that maps to real tools. Every verb exists
-  because a real persona on a real task needed it — no speculative vocabulary.
-- **The enforced-vs-instructed honesty ladder.** Every denial is classed
-  honestly: *enforced* (the runtime makes the action impossible) or *instructed*
-  (the persona is told not to). Whole-tool denials are enforceable by omitting
-  the tool; sub-tool denials (e.g. "may push, but never to main") need a
-  mechanism like `baron guard` or in-process interception. Adapters are
-  forbidden to oversell — the claim is machine-checked in CI.
-- **Ledgers (findings / decisions).** Investigation outputs and decisions are
-  numbered entries in plain markdown indexes, allocated race-safely: append,
-  commit, push; on push rejection, rebase, renumber, retry. Duplicates are
-  errors; historical gaps are reported but never rewritten.
-- **Handoffs.** Every material finding, decision, and correction crosses
-  personas as a `_handoff/` file with `status: open|done` frontmatter — a PR
-  description is not a substitute. Closing a handoff archives it
-  (`_handoff/archive/YYYY/`), never deletes it. `baron index` keeps a generated
-  summary table without eating prose.
-- **The divergence radar.** `baron status` reports every working copy's
-  ahead/behind/dirty state, unmerged branches with age, overdue handoffs, and
-  ledger/wiki staleness — exit 1 on any red. Deliberately-parked reds get
-  waivers with a mandatory reason and expiry; an expired waiver resurfaces the
-  red on its own.
-- **PR-locks.** A hot-file lock is an open draft PR labeled `lock:<path>` — the
-  forge's PR state is the only lock state, and a CI guard fails any other PR
-  touching a locked path. No lock files, no lock service, no grep races.
-- **Worktree topology.** Each persona works on branch `persona/<slug>` in its
-  own git worktree over one shared object store — parallel working copies
-  without per-clone drift. `baron worktree add|list|remove` manages it;
-  `remove` never deletes the branch.
-- **Audit, intervention tax, and signets.** The sister skill
-  [`multi-agent-audit`](skills/multi-agent-audit/) grades any multi-agent
-  project (not just Barony) read-only, with evidence: the headline metric is the
-  **intervention tax** — human touches per autonomous task. Review verdicts are
-  **signets**: a reviewer's PASS/FAIL comment sealed to the exact head SHA it
-  judged, so a new push makes the verdict visibly stale.
+**See a real one:** [`vggg/barony-demo`](https://github.com/vggg/barony-demo) is
+a seeded example — a week of a fictional project's findings, decisions, handoffs
+(closed and open), a waiver, and a captured live guard refusal. The project is
+fictional; every artifact was produced by the real tools.
 
 ## Runtime matrix
 
-One `persona.yaml`, four adapters. Enforcement per adapter, as claimed by each
-adapter's machine-readable capability map (checked in CI by
-`tests/bi_runtime_accept.py`):
+One `persona.yaml`, four adapters, as claimed by each adapter's machine-readable
+capability map (checked in CI by `tests/bi_runtime_accept.py`):
 
-| Runtime | Tier | Whole-tool denials | Guard-covered sub-tool denials¹ | `open_pr` / `run_tests` denials |
+| Runtime | Tier | Whole-tool denials³ | Guard-covered sub-tool denials¹ | `open_pr` / `run_tests` |
 |---|---|---|---|---|
-| Claude Code | 3 (native subagents) or 2 (`CLAUDE.md`) | enforced at Tier 3 (tool allow-list); instructed at Tier 2 | enforced-with-baron (instructed otherwise) | instructed |
-| pydantic-ai | 3 (in-process hydration) | enforced (capability omission) | enforced (in-process interception — the hook cannot be absent) | instructed |
-| code-puppy | 2.75 (native JSON agents)² | enforced (tool allow-list) | instructed | instructed |
+| Claude Code | 3 (native subagents) or 2 (`CLAUDE.md`) | `write_code` enforced-with-baron; read verbs instructed as shipped, enforced at Tier 3 | enforced-with-baron (instructed otherwise) | instructed |
+| pydantic-ai | 3 (in-process hydration) | `write_code` enforced (in-process guard); read verbs **instructed — measured** | enforced (in-process interception — the hook cannot be absent) | instructed |
+| code-puppy | 2.75 (native JSON agents)² | instructed as shipped; enforced at Tier 3, which is hand-authored | instructed (guard does not run here) | instructed |
 | generic (any runtime) | 1 (in-prompt + `AGENTS.md`) | instructed | instructed | instructed |
 
-¹ The five sub-tool denials the shared rules artifact
-(`capability-rules.v1.yaml`) covers: `push_main`, `force_push`, `merge_pr`,
-`write_path` scoping, `edit_other_personas`. Every enforcing consumer loads the
-same artifact, so decisions are identical across runtimes. A persona always runs
-at the highest tier its runtime supports and degrades gracefully — with the
-honesty label degrading alongside it.
+¹ The five denials the shared rules artifact (`capability-rules.v1.yaml`)
+covers: `push_main`, `force_push`, `merge_pr`, `write_path` scoping,
+`edit_other_personas`. Every enforcing consumer loads that same artifact, so
+`git push origin main` is judged identically across runtimes. A persona runs at
+the highest tier its runtime supports and degrades gracefully, with the honesty
+label degrading alongside. **Note `baron init` does not reach Tier 3 on any
+runtime** — it emits Tier 2 on Claude and Tier 1 elsewhere; Tier 3 needs the
+in-session recipe in `adapters/<runtime>/HYDRATE.md`.
 
 ² code-puppy enforces whole-tool denials natively (JSON agent allow-list) but
 its sub-tool denials stay instruction-only — a partial Tier 3, which its own
-adapter labels "2.75" rather than round up.
+adapter labels "2.75" rather than round up. The allow-list is the *runtime's*
+capability, not baron's output: `baron init --runtime code-puppy` emits a Tier-1
+`AGENTS.md` that says of itself "nothing is enforced", and `baron guard` never
+runs on code-puppy — it has no pre-tool seam and is deliberately absent from
+`guard.KNOWN_RUNTIMES`. See
+[`USING-WITH-CODE-PUPPY.md`](USING-WITH-CODE-PUPPY.md).
 
-## What Barony is NOT
+³ The whole-tool class is `read_code`, `read_collab` and `write_code`. They do
+not share a fate, so the cells name them separately. `write_code` has file-op
+detection and is adjudicated by `baron guard` wherever guard runs. The two read
+verbs are the honest bound: **baron emits no mechanism capable of omitting the
+read tools** — measured once per shipped adapter, including a live test that a
+persona *denying* `read_code` keeps its read tools under the emitted pydantic-ai
+bootstrap, which builds `FileSystem` unconditionally
+([ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md)).
+The bound is exact: baron emits no mechanism, **not** that a runtime cannot
+enforce these verbs — a hand-authored Tier-3 allow-list does. That is why the
+`claude` and `code-puppy` `HYDRATE.md` tables print `enforced` for the read
+verbs while `baron rules list` prints `instructed`: they describe a
+hand-authored artifact, `rules list` describes what baron ships. The divergence
+is recorded, not rounded away (ADR-020 §7).
 
-- **Not an adversarial sandbox.** The guard stops a cooperating persona from
-  doing the wrong thing before the tool runs; it does not contain a hostile
-  agent that has shell access. Overrides exist and are allowed-but-logged to a
-  tracked file — visible in diffs, not silently possible.
-- **Not a machine-tempo orchestrator.** There is no scheduler, message bus, or
-  agent-to-agent RPC. Coordination happens at git tempo — commits, handoffs,
-  PRs — which is the point: every coordination event leaves a reviewable record.
-- **Not a server.** Nothing runs. The markdown/git substrate is the only
-  database; `baron` is a disciplined reader/writer over files you can edit by
-  hand, and structured output (`--json`) is a view, never a second store.
+## Honest limits
 
-These are design choices, not roadmap gaps — see
-[ADR-003](docs/adr/ADR-003-baron-cli.md) §2.2.
+Full list with what each means for you:
+[user guide §9](docs/user-guide.md#9-honest-limits), drawn from
+[`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md) §E. The headline
+five:
+
+- **No test drives a real Claude Code process against a scaffolded repo.**
+  Enforcement is proven by wiring, not by invocation.
+- **The `bash -c '…'` guard bypass stands** and is documented on purpose. Static
+  parsing does not recurse into an inline program string.
+- **`.baron/rules.yaml` is parsed but never activated.** `baron rules validate
+  --file` checks a candidate; baron still loads only the packaged artifact.
+- **`baron doctor` reads project-level settings only.** A hook in
+  `~/.claude/settings.json` is invisible to it.
+- **Runtime neutrality is proved with two producers, not three.** Claude Code
+  and pydantic-ai emit into the same plane in the same wire shape. That
+  falsifies "the plane is Claude-Code-shaped"; it is not proof the shape fits
+  every runtime. code-puppy has no pre-tool seam and emits nothing.
 
 ## Status, versioning, links
 
-Current release: **v1.8.0** (semver; version lives in
-`.claude-plugin/plugin.json` + the skill frontmatter, sync enforced by lint).
-Active development — see [`STATUS.md`](STATUS.md) for progress and
-[`CHANGELOG.md`](CHANGELOG.md) for release history.
+Active development, not a finished product. Two version numbers, on purpose:
+the **plugin/skill** version lives in `.claude-plugin/plugin.json` and the skill
+frontmatter (currently **1.10.0**, sync enforced by lint); the **CLI package**
+version is separate (`baron --version`). See [`STATUS.md`](STATUS.md) for
+progress and [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
-- [docs/concepts.md](docs/concepts.md) — the concepts, longer-form: front door,
-  emitted layout, capability ladder, adapters, the `baron` CLI surface.
-- [docs/history.md](docs/history.md) — how a Claude-Code-only scaffolding skill
-  became runtime-agnostic governance (v0.3 → v1.8).
-- [docs/adr/](docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md) —
-  ADR-001 (runtime-agnostic architecture) through
-  [ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md) (`baron init`).
+- [docs/user-guide.md](docs/user-guide.md) — **start here.**
+- [docs/concepts.md](docs/concepts.md) — every concept at paragraph length:
+  emitted layout, capability + honesty ladders, adapters, PR-locks, signets,
+  worktree topology, the `baron` surface.
+- [docs/adr/](docs/adr/) — why, argued rather than asserted. ADR-001
+  (runtime-agnostic architecture) through
+  [ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)
+  (what a plugin may and may not be authoritative for).
+- [docs/DECISIONS-FOR-REVIEW.md](docs/DECISIONS-FOR-REVIEW.md) — the current
+  consolidation: decisions, §E honest bounds, §F deliberate non-goals.
 - [`cli/README.md`](cli/README.md) — full `baron` command reference.
-- [`skills/multi-agent-audit/`](skills/multi-agent-audit/) — the read-only audit
-  sister skill.
+- [`skills/multi-agent-audit/`](skills/multi-agent-audit/) — the read-only
+  sister skill that *grades* any multi-agent project (not just Barony).
+  Headline metric: the **intervention tax**, human touches per autonomous task.
+- [docs/history.md](docs/history.md) — how a Claude-Code-only scaffolding skill
+  became runtime-agnostic governance.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — PR conventions, including the
   docs-land-with-code rule.
 - Installing as a Claude Code plugin:
   `/plugin install https://github.com/vggg/barony` (or a local clone path). On
   code-puppy, invoke the neutral files by path — see
   [`USING-WITH-CODE-PUPPY.md`](USING-WITH-CODE-PUPPY.md).
+
+> Formerly `agent-project-bootstrap`; renamed at v1.7.0
+> ([ADR-005](docs/adr/ADR-005-naming.md)). Old GitHub URLs redirect.
 
 ---
 

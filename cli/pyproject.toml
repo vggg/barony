@@ -52,6 +52,16 @@ barony = "baron.cli:app"
 [project.entry-points."baron.forges"]
 github = "baron.forge.github:GitHubForge"
 
+# Event sinks are discoverable plugins on the same pattern (ADR-013). Both
+# built-ins are declared here so `get_sink` and the entry-point route stay
+# provably equivalent; a third-party sink (Logfire, Phoenix, an internal
+# collector) registers from its own distribution, e.g.:
+#   logfire = "barony_logfire:LogfireSink"
+# That is the seam that keeps opentelemetry OUT of baron core (ADR-003).
+[project.entry-points."baron.sinks"]
+null = "baron.sinks.null:NullSink"
+disk = "baron.sinks.disk:DiskSink"
+
 [dependency-groups]
 # dev repeats the pydantic-ai extra's pins so `uv run --project cli pytest`
 # exercises the real adapter (the extra itself stays optional for users).

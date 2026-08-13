@@ -70,6 +70,16 @@ mechanical. Structured output is a *view* (`--json`), never a second source of t
 Machine-owned regions inside human files are explicitly marker-delimited
 (`BEGIN/END BARON INDEX` in `_handoff/README.md`) so generation never eats prose.
 
+> **SCOPED 2026-08-10 by [ADR-022](ADR-022-substrate-invariant-amended-default-not-only.md).**
+> Product-vision invariant #1 now reads *git + markdown is the **DEFAULT** substrate; plugins
+> may extend it to other suitable platforms* — bounded by **governance state stays complete in
+> git**. This section is unchanged as it applies to `baron` itself: baron introduces no second
+> store, and every governance fact stays answerable from the repo alone. What the amendment
+> opens is an **out-of-tree plugin** authoritative for **derived or auxiliary** domains
+> (semantic search, embeddings, cross-project recall) — never for authority, evidence, or the
+> ledger. "It never introduces another store" above is a rule about **baron core**, and it
+> still holds without qualification.
+
 ### §2.3 — Dependency policy: typer + pyyaml, nothing else
 
 Runtime deps are **typer** (CLI surface) and **pyyaml** (the canon is YAML) only. No `rich`

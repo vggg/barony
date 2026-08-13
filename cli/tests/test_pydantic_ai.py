@@ -144,6 +144,69 @@ def test_no_write_verbs_yields_natively_readonly_filesystem(tmp_path: Path) -> N
         assert pattern in protected
 
 
+DENIES_READS_PERSONA = """\
+persona: Blinkered
+slug: blinkered
+archetype: dev
+identity:
+  git_name: Blinkered
+  git_email: blinkered@example.invalid
+  commit_prefix: "blinkered:"
+  routing_label: agent-blinkered
+capabilities:
+  allow:
+    - write_code
+  deny:
+    - read_code
+    - read_collab
+    - open_pr
+    - run_tests
+    - merge_pr
+    - push_main
+    - force_push
+    - edit_other_personas
+"""
+
+
+@needs_extra
+def test_denying_read_code_does_not_omit_read_tools(tmp_path: Path) -> None:
+    """MEASURED: the shipped adapter does NOT enforce read_code by tool omission.
+
+    This test GATES the enforcement label. `read_code` / `read_collab` are
+    whole-tool verbs with no guard detection, so it is tempting to call them
+    "enforced by tool omission". They are not, on the one adapter baron ships:
+    `plan()` constructs FileSystem unconditionally ("FileSystem: always present
+    (reads)") and `BaronGuardCapability.check` returns None for every read tool.
+
+    So `rules.label("read_code")` must be `instructed`. If an adapter ever does
+    omit the read tools, THIS assertion is what fails first — flip it, then the
+    label, in that order. Never the other way round.
+    """
+    from baron import rules
+    from baron.runtimes.pydantic_ai import plan
+
+    persona = tmp_path / "persona.yaml"
+    persona.write_text(DENIES_READS_PERSONA, encoding="utf-8")
+    p = plan(persona, collab_root=tmp_path)
+
+    # 1. The read tools are still registered on the hydrated toolset.
+    tools = set(p.filesystem.get_toolset().tools)
+    assert {"read_file", "list_directory", "search_files"} <= tools, tools
+
+    # 2. The in-process guard does not veto them either.
+    for tool in ("read_file", "list_directory", "search_files"):
+        assert p.guard_capability.check(tool, {"path": str(tmp_path / "x.py")}) is None
+
+    # 3. Therefore the label may not claim enforcement.
+    loaded = rules.load_rules()
+    for verb in ("read_code", "read_collab"):
+        assert loaded.enforcement(verb) == rules.ENFORCEMENT_ADAPTER_DEPENDENT
+        assert loaded.label(verb) == "instructed", (
+            f"{verb} is labelled enforced, but the shipped adapter leaves "
+            f"{sorted(tools)} available to a persona that denies it"
+        )
+
+
 @needs_extra
 def test_denied_run_tests_seeds_shell_denied_commands(tmp_path: Path) -> None:
     from baron.runtimes.pydantic_ai import plan

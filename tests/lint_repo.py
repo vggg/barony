@@ -146,11 +146,38 @@ def check_versions():
         print(f"  version {plugin_version} consistent")
 
 
+# --- (e) unresolved merge-conflict markers -------------------------------------------
+def check_conflict_markers():
+    """A leftover `<<<<<<< HEAD` shipped through this lint once (2026-08-09).
+
+    Every other check here was green with a conflict marker sitting in
+    DECISIONS-FOR-REVIEW.md, because a stray marker is valid prose to a link
+    checker and valid text to a placeholder scan. This is a nine-branch
+    consolidation; the failure mode is cheap to detect and embarrassing to
+    publish, so it is detected.
+
+    Only the opening and closing markers are matched. A bare `=======` is a
+    legitimate setext heading underline in markdown and is deliberately NOT
+    treated as a finding — refusing to guess beats a false positive that
+    trains people to ignore this lint.
+    """
+    print("(e) unresolved merge-conflict markers")
+    marker_re = re.compile(r"^(<{7}|>{7})(\s|$)")
+    for path in walk((".md", ".py", ".yaml", ".yml", ".json", ".toml")):
+        if rel(path) == "tests/lint_repo.py":
+            continue  # this file names the markers it hunts for
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for lineno, line in enumerate(f, 1):
+                if marker_re.match(line):
+                    fail(f"[conflict] {rel(path)}:{lineno}: {line.rstrip()[:40]}")
+
+
 def main():
     check_placeholders()
     check_links()
     check_fixture_leaks()
     check_versions()
+    check_conflict_markers()
     print()
     if FAILURES:
         print(f"REPO LINT: FAIL ({len(FAILURES)} finding(s))")

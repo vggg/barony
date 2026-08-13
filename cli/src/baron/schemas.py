@@ -169,6 +169,17 @@ MANIFEST_SPEC: Node = _map(
             item=_map({"slug": Node("str"), "spec": Node("str")}),
         ),
         "adapters": _map({}, required=False, opaque=True),
+        # Observation plane (ADR-013). Declared so a manifest can carry the
+        # intent without `baron validate` emitting unknown-field warnings.
+        # HONEST BOUND: nothing reads this yet — BARON_EVENTS_SINK is the only
+        # live selector in v1 (ADR-013 §7). `options` is opaque: sink-owned.
+        "events": _map(
+            {
+                "sink": Node("str", required=False),
+                "options": _map({}, required=False, opaque=True),
+            },
+            required=False,
+        ),
         # v1.2 optional additions (see manifest.schema.md): where persona working
         # copies live locally, so `baron status` can sweep them for divergence.
         "workspace": _map(

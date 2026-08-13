@@ -72,6 +72,618 @@ any third-party `baron.forges` plugin the same way. Optional capabilities now li
 `forge.base.supports()`, degrading to `unverifiable`. A regression test pins it.
 
 ### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
+### Accepted design (no code yet) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
+
+Design for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a verdict or
+handoff lands nothing wakes the responsible persona and a human ends up being the
+message bus. **Accepted with changes (Vikram, 2026-08-02) — all eight §8 questions
+answered; implementation unblocked but not yet started.** Owner's substantive
+departures from the draft: the poll cron drops to a **slow backstop** rather than
+being retired, and a **manifest allowlist** gates who may fire a wake.
+
+The survey settles the landscape: **no agent framework wakes a cold headless
+agent** — LangGraph resumes a checkpointed graph, Temporal signals a hosted
+workflow, A2A notifies the dispatching orchestrator and presumes a long-running
+worker. Cold-starting an ephemeral CLI agent from an event belongs to the
+*platform* (GitHub Actions), not to agent frameworks.
+
+**The design departs from its own research on one point:** the research proposed a
+new `_mailbox/<persona>/` delivery surface. This ADR drops it — `_handoff/` is
+already ordered, addressed, durable and swept at session start, and sweep order is
+already expressible (ADR-008 §2). A second inbox would be two surfaces restating
+one contract, and would need ADR-002 §2's "no exceptions" rule to grow an exception
+on day one. So `baron notify` = an ordinary handoff **plus** a
+`repository_dispatch`, with **delivery independent of wake**: if the dispatch
+fails, the message is still a committed file and arrives on the next spawn.
+
+ADR-007 holds — baron writes the file and fires the event; the *spawn* lives in a
+project-owned workflow slot, never in baron.
+
+**Rev. 2 after adversarial design review**, which upheld the mailbox call (and
+supplied a better argument for it: `_handoff/` already carries `priority:`) but
+found four false claims asserted as decided. The material one: **"delivery is
+independent of wake" was false** — `handoff.create` commits but never pushes, so
+the dispatch would reach GitHub before the message and a cloud runner would clone
+and find nothing. Notify must push before dispatching, and must not dispatch if the
+push fails. Loop safety was rebuilt rather than restated: the depth counter had no
+propagation channel (each spawned agent re-invokes fresh; ADR-003 §2.2 forbids
+sidecar state) so depth now rides in the **handoff frontmatter**; the concurrency
+group bounds parallelism, not recursion, and no longer claims otherwise; and the
+real backstop turns out to be that `GITHUB_TOKEN` cannot chain dispatch-driven
+workflows — simultaneously the strongest guard and a silent failure, neither
+previously mentioned. FM5 was overclaimed (it needs the reviewer's same-SHA
+idempotency carve-out too). §8 now lists eight blocking questions.
+Nine parallel hardening workstreams, consolidated onto one branch. Baron gains an event
+stream, a wiring self-test, an inspection surface over its own capability rules, and an
+export of the governed corpus. It also reports **less** enforcement than it used to — on the
+event stream and on `baron rules list` — because what it printed was wider than the evidence
+behind it. That is the part to read first, and it is under *Breaking* below.
+
+**Reviewers start at [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md).** All
+five owner decisions are signed. Its **§E — what is NOT verified** is not an appendix: a
+green suite invites the wrong inference, and the short version is that nothing here drives a
+real Claude Code process, `.baron/rules.yaml` is parsed but never activated, `baron doctor`
+reads project-level settings only, the `bash -c '…'` guard bypass is unchanged, and runtime
+neutrality rests on two producers rather than three.
+
+cli `pytest` **148 → 424**. The audit skill's suite is **265 checks** and is in CI for the
+first time. `tests/lint_repo.py` and `tests/bi_runtime_accept.py` PASS. No test was deleted
+at any merge in this pass; four were corrected, and one was **flipped** — the check that
+asserted the pre-ADR-018 enforcement defect as current truth now asserts the fix.
+
+**ADR numbering.** Three workstreams independently wrote an `ADR-018`. The number stayed
+with the adjudicated-enforcement decision, which ADR-019 already cited by number; the
+read-verb posture ADR became **ADR-020** and the audit-ingester ADR became **ADR-021**. Only
+identifiers changed. [ADR-014](docs/adr/ADR-014-guard-telemetry.md) in `docs/adr/` is a
+**status record on a reserved number, not the ADR** — see *Retired*, below.
+
+### Versioning — two independent tracks, and a recommendation. Nothing is bumped here.
+
+This repository carries **two** version numbers that are easy to conflate and mean different
+things. Both appear in this file; only one of them ever gets a `## [X.Y.Z]` heading.
+
+| Track | Where it lives | Released as | Now at |
+|---|---|---|---|
+| **Spec / plugin release line** | `.claude-plugin/plugin.json` and each `skills/*/SKILL.md` (lint-enforced to move together) | git tag `vX.Y.Z`; the `## [X.Y.Z]` headings in this file | **1.10.0** (`v1.10.0` is on `origin`) |
+| **CLI distribution** | `cli/pyproject.toml` | PyPI package `barony`, command `baron` | **0.7.0** |
+
+The CLI track is versioned **independently** and has never had its own heading here; it
+appears as a sub-heading *inside* a spec release (`### Added — barony 0.7.0: …`). The
+precedent is consistent: 1.7.0 carried CLI 0.3.0 → 0.4.0, 1.8.0 carried 0.4.0 → 0.5.0, and
+1.9.0 bundled 0.5.1 through 0.7.0 while stating the tracks move independently. Reading
+`[1.10.0]` as a CLI version, or `0.7.0` as a release, is a real error in both directions.
+
+A third family of numbers appears throughout and is **not** a release version of anything:
+artifact and schema versions (`rules_version: 1`, `EVENTS_VERSION = 1`, manifest schema v1.3,
+persona schema v1.2) and the audit skill's `INGESTER_VERSION` (1.0 → **1.1** here). They
+version a *document format* or a *script's output*, and they are pinned by tests that fail on
+drift.
+
+**Recommendation, for the owner to take or refuse — no file in this branch bumps anything:**
+
+- **CLI `0.7.0` → `0.8.0`.** Minor, not patch: three new command surfaces (`baron doctor`,
+  `baron rules` with four subcommands, `baron export`), a new public `baron.sinks`
+  entry-point group, and two breaking changes to the event wire.
+- **Not `1.0.0`.** Under 0.x the minor slot is where a break goes, which is exactly what this
+  release needs. More to the point, 1.0.0 is a stability claim, and §E items 1, 5, 6 and 7
+  are the reasons this codebase has not earned one yet.
+- **Spec / plugin `1.10.0` → `1.11.0`.** Minor: skill assets changed materially — two
+  `HYDRATE.md` surfaces, `capability-rules.md`, `manifest.schema.md`, and the whole
+  `multi-agent-audit` ingester — and the manifest schema gained an **additive** `events:`
+  block. Nothing was removed from the skill surface and the persona schema is untouched, so
+  a major bump would overstate it.
+- **One collision to settle before tagging.** The unmerged `p2-1-baron-decision` branch
+  already sets `cli/pyproject.toml` to **0.8.0** for `baron decision`. Two branches cannot
+  both ship 0.8.0. Whichever lands second takes 0.9.0; if a number is burned rather than
+  reused, this file's own **0.5.4 precedent** applies — the skipped version stays documented
+  and is not back-published.
+
+---
+
+### Breaking — read this section before upgrading
+
+Four user-visible changes. Three narrow a claim baron was making; one invalidates documents
+that used to parse.
+
+**1. The `baron.enforcement` event attribute has a new, smaller vocabulary**
+([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md)).
+
+It is now exactly `enforced` | `unevaluated` | `unknown`. **`not-applicable` is gone**
+(subsumed by `unevaluated`) and **`instructed` is gone from the event path entirely** — it is
+a static posture property of a (persona, verb, runtime) triple and asserts a control a
+PreToolUse hook cannot measure.
+
+The attribute used to derive its value from the rules artifact's `detection` field, which is
+a static property of a **verb** answering a **per-call** question. Measured against merged
+code, it was wrong in both directions: `Write ../../../outside.md` emitted `enforced` for a
+structural refusal every persona is denied identically, while `Write src/x.py` by a persona
+holding `write_code` — a real, persona-dependent adjudication — emitted `not-applicable`. An
+enforcement counter that inflates itself by construction is the failure this project exists
+to catch. `enforced` now requires **both** halves: a capability rule matched **and** the
+outcome turned on the acting persona.
+
+- **Consumer caveat, stated in `events.py`, ADR-018 §5 and a test:**
+  `baron.capability.verb` **can be non-empty on an `unevaluated` row**. Any verb-level
+  aggregation must filter on `baron.enforcement == "enforced"` **first**.
+- A fail-closed deny is `unevaluated`, not `enforced` — guard blocked *because it could not
+  evaluate*. `unknown` is kept for the one case it means something: an unreadable rules
+  artifact.
+- `instructed` is **unchanged** on the posture surface (`baron rules list`,
+  `CapabilityRules.label`), where `open_pr` and `run_tests` still carry it.
+
+**2. `baron.hook_event` is renamed to `baron.trigger`, with no alias**
+([ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md)).
+
+The key is now runtime-neutral; the **value stays the runtime's own seam name**
+(`PreToolUse`, `before_tool_execute`), because normalising values would put an unverifiable
+translation between the reader and the name the runtime uses in its own docs. Only meaningful
+read together with the new `baron.runtime`.
+
+Both of these breaks were taken now because **the default sink is `null` and nothing is
+emitting yet** — the last moment a clean rename beats an alias. That argument expires the
+moment the sink default flips.
+
+**3. `baron rules list` prints `instructed`, not `enforced`, for `read_code` and
+`read_collab`** (ADR-016 §8 D-1, decided 2026-08-09;
+basis [ADR-020](docs/adr/ADR-020-read-verb-posture-measured-on-four-adapters.md)).
+
+Baron reports less enforcement than it did. Nothing got weaker — the label was wrong.
+`list` now reports three states and only one of them is `enforced`: `guard` (guard
+mechanically checks it), `adapter-dependent` (guard does **not** parse for it; a runtime with
+a tool allow-list *could* enforce it, and the adapters baron ships do not), and `instructed`
+(nothing checks it). `label` says `enforced` only for `guard`.
+
+The published bound travels with the label, in `--json` and in the table footer: the measured
+claim is *baron emits no mechanism capable of omitting the read tools*, **not** *the runtime
+cannot enforce them*. A hand-written `permissions.deny`, or the Tier-3 subagent the `claude`
+and `code-puppy` HYDRATE.md recipes describe, does enforce them — and is outside what
+`baron rules list` speaks for. Those HYDRATE tables still print `enforced` for the read verbs
+and are not wrong; the divergence is recorded in ADR-020 §7 rather than papered over by
+editing one table to match the other.
+
+**4. `capability-rules.v1.yaml` now requires `class` and `detection` on every verb entry, and
+both are closed sets** ([ADR-016](docs/adr/ADR-016-externalizable-capability-rules.md)).
+
+A document that omitted them, or carried a value outside the set, used to parse. It is now
+refused, and guard turns every parse refusal into an exit-2 DENY — so **a forked or vendored
+copy of the artifact that is missing these keys will fail closed on upgrade**, loudly, at the
+first guarded tool call. The packaged artifact is compliant; only a hand-edited copy or a
+candidate fed to `baron rules validate --file` is affected, and no project-level artifact is
+loaded by an enforcer at all (see *Not shipped*).
+
+Defaulting an enforcement decision is a guess, and the measured cost of allowing it was
+concrete: `detection: banana` passed validation; `class: banana` passed and silently
+re-routed `enforcement()`; and `read_code` declared `detection: command` with no rule behind
+it passed **and made `baron rules list` print `LABEL=enforced` for a verb nothing checks** — a
+false enforcement claim from a one-word document edit.
+
+---
+
+### Added
+
+- **`baron doctor [--dir .] [--persona-file F] [--json]` — the guard wiring self-test**
+  ([ADR-017](docs/adr/ADR-017-baron-doctor-wiring-selftest.md)). Nine read-only checks, each
+  with a remedy line, exit 1 on any FAIL: the hook's executable resolves and runs; project
+  `.claude/settings.json` wires a `baron guard` PreToolUse hook; its matcher covers every
+  governed tool; the named persona parses; the rules artifact loads at a supported version;
+  **a synthetic denial fed to the executable the hook actually names really returns exit 2**;
+  malformed stdin also returns exit 2; `BARON_GUARD_OVERRIDE` is not sitting exported; and
+  the override log is writable.
+  - **The caveat ships with the command, not just the docs.** Doctor verifies WIRING, not
+    invocation — it proves the install *can* enforce and cannot observe whether the runtime
+    ever ran the hook. That sentence prints on every run including green ones, is a field in
+    `--json`, and is grep-asserted by a test.
+  - It exists because of a real incident: 15 PRs merged under a persona denied `merge_pr`,
+    and nothing had failed — `baron guard` had never been wired in, so the denial degraded to
+    persona text exactly as designed, and **silently**. An absent guard and a guard that
+    never had to fire produce identical evidence: nothing.
+  - Evidence checks are INFO, never FAIL. Enforcement is fail-closed; evidence is fail-open.
+    A broken audit sink reported as broken enforcement teaches people to ignore the exit code.
+  - `baron init`'s next-steps and both READMEs' quickstarts now have an explicit
+    install-the-kit step followed by `baron doctor`.
+
+- **`baron rules list|validate|diff|explain` — the read-only audit surface over the
+  capability rules** (ADR-016). Until now the only way to ask baron what it enforces was to
+  read the YAML by hand. All four take `--json`.
+  - `explain` is a **dry run of the real decision** — it calls `guard.evaluate_bash` /
+    `guard.evaluate_write`, and a test pins its JSON verdict to the evaluator's `Decision`
+    for the same input, so a second implementation cannot creep in. Exit 0 would-pass /
+    1 would-be-DENIED / 2 could not evaluate. Honest limit, in `--help`: it lists the rules
+    that *can* imply each verb, not the single rule instance that matched.
+  - Underneath, `CapabilityRules` became a rule **list** (`command_rules`, `path_rules`) with
+    stable ids, a matcher from a **closed** set, and a `source` provenance tag. The old shape
+    had one field per built-in rule, and a structure with a fixed field per rule cannot hold
+    an additional rule. `guard.py` and `runtimes/pydantic_ai.py` are **byte-identical** across
+    the change; all fifteen pre-existing accessors survive as derived properties, pinned
+    against hand-transcribed pre-refactor literals.
+  - **Unrecognised content is refused, never ignored** — at the top level, in `verbs.<verb>`,
+    throughout `commands.*`, and in `file_ops`. Silently dropping an unrecognised rule is the
+    worst failure mode an enforcement artifact has: the document says a thing is blocked and
+    nothing blocks it.
+
+- **`baron export [--kind …] [--json]` — the governed corpus as citable records**
+  ([ADR-015](docs/adr/ADR-015-baron-export.md)). Walks `docs/adr/*.md`, `decisions/index.md`,
+  `findings/index.md` and `_handoff/**.md` into one flat record per artifact —
+  `{id, kind, title, path, commit_sha, status, body, links}` plus an open `meta` bag. No new
+  dependency, no network, no plugin seam.
+  - **The citation gate is the point.** A record is emitted only if its source is tracked and
+    unmodified, so `git show <commit_sha>:<path>` reproduces the parsed bytes exactly.
+    Failures are **skipped and named** in `skipped[]` with a reason and a lost-record count,
+    never emitted with a SHA that resolves but returns different text. `--allow-dirty` relaxes
+    it for **modified tracked** sources only, stamping `meta.dirty` so the caveat travels with
+    the data rather than with the invocation.
+  - Output is byte-stable across runs (sorted, ISO-coerced dates, `age_days` deliberately
+    dropped), locked by a test — without it nothing downstream can sync incrementally.
+  - Measured on a real repo: 284 records (62 decisions / 62 findings / 160 handoffs), all 284
+    citations verified by **byte-equality** rather than mere resolvability.
+  - `status` is null for findings and decisions on purpose: the canon gives ledgers no
+    lifecycle field, and a regex producing `"superseded"` would be the enforced-vs-instructed
+    overclaim ADR-002 bans.
+
+- **The observation plane: one event shape, pluggable sinks**
+  ([ADR-013](docs/adr/ADR-013-observation-plane-events-and-sinks.md)). Baron had no event
+  stream — six unrelated per-command emissions, most of them printed and discarded.
+  - **`baron.events`** — `EVENTS_VERSION = 1`, a frozen
+    `Event(kind, actor, subject, outcome, attributes, ts, trace_id, span_id)`, and `to_row()`
+    producing one flat JSON object per line. Timestamps come from `clock.now()`, so the
+    `BARON_NOW` backfill hatch reaches events.
+  - **`baron.sinks`** — a `@runtime_checkable` `Sink` protocol, `get_sink()` structurally
+    identical to `get_forge()`, plus `disk` (append-only JSONL, date-rotated, stdlib `json`
+    only) and `null`. A **`baron.sinks` entry-point group** in `cli/pyproject.toml` mirrors
+    `baron.forges`; a test loads both built-ins through real `importlib.metadata` discovery.
+  - **`null` is the shipped default** and stays that way — see *Decided*, below. A downstream
+    repo does not begin writing to disk because it upgraded.
+  - **Guard's verdict path emits, and only guard's.** The tab-separated **tracked**
+    `.baron/guard-override.log` is byte-for-byte unchanged; events are additive, and all 24
+    pre-existing guard tests pass unmodified.
+  - **The event stream is gitignored; the override log stays tracked.** The `.gitignore` the
+    disk sink writes lives *inside* `.baron/events/`, deliberately not at `.baron/` level —
+    an ignore there would silently un-track `guard-override.log` in every downstream repo.
+  - **No OpenTelemetry dependency, ever.** ADR-003 holds; runtime deps are still exactly
+    `["typer", "pyyaml"]`. The five top-level row keys are each the first entry of the audit
+    skill's flat key lists, so the ingester reads baron's stream with zero new code, and a
+    test re-derives those keys from the script and fails if either side drifts.
+  - An `events:` manifest block was added to `MANIFEST_SPEC` and `manifest.schema.md` (v1.3)
+    so a manifest can carry the config without tripping `baron validate`. **Reserved, not
+    read** — `BARON_EVENTS_SINK` is the only live selector, and it is labelled as such in the
+    schema, the canon and ADR-013 §7 rather than quietly implied.
+
+- **`baron guard` taps the wider Claude Code hook surface**
+  ([ADR-012](docs/adr/ADR-012-hook-coverage-and-evidence-capture.md)). Guard was wired to
+  exactly one hook event and shaped to match, so a `SessionStart` payload returned 0 not
+  because guard decided anything but because `"SessionStart"` is not `"Bash"`.
+  - **`hook_event_name` dispatch.** Absent or `PreToolUse` → the ADR-004 enforcement path,
+    byte-unchanged. Five events get evidence handlers (`SessionStart` → `session.start`,
+    `SessionEnd`/`Stop` → `session.end`, `PostToolUse` → `tool.post`, `PostToolUseFailure` →
+    `tool.failure`). **Everything else exits 0 immediately.**
+  - **The hook surface is bigger than the docs say** — a list of 9 became 14 by survey and
+    **31** by reading Claude Code 2.1.226's own event enum. `guard.KNOWN_HOOK_EVENTS` records
+    them and is deliberately **inert**: a name in it without a handler behaves exactly like a
+    name invented tomorrow. The surface grows, so unknown must be normal.
+  - **Hard invariant: only `PreToolUse` may exit 2.** `Stop`/`SubagentStop` blocking is a real
+    capability and exactly the trap to avoid — a blocked `SessionStart` cannot be un-blocked
+    from inside the session. `test_only_pretooluse_can_block` drives all 30 non-`PreToolUse`
+    events with one payload carrying a force-push to main, a write to `/etc/passwd` and a `..`
+    escape simultaneously, asserting exit 0 for every one.
+  - Evidence handlers record the *presence* of `tool_response`, never its content: responses
+    carry file bodies and stdout, and a stream that accumulates them is an exfiltration
+    surface, not telemetry.
+  - **Generated wiring** — `baron init`'s Claude kit and both copies of
+    `adapters/claude/HYDRATE.md` (step 3d) emit four evidence hook blocks alongside the
+    enforcement one. Session events get **no matcher** (they carry no tool name, so a matcher
+    would silently never fire). The `PreToolUse` block is **byte-frozen** and pinned by test,
+    because it already exists verbatim in every repo `baron init` has ever generated. Because
+    the default sink is null, a freshly scaffolded repo with these hooks behaves identically
+    to one without them.
+  - Session correlation: `trace_id = sha256(session_id)[:32]` — deterministic, no producer
+    state. Nothing consumed `session_id` before.
+
+- **`baron.runtime`, `guard.observe_decision()`, and a second producer** (ADR-019). The plane
+  *looked* neutral, but exactly one producer had ever written a row and one attribute carried
+  Claude Code's vocabulary onto the shared wire. Nothing distinguished "this plane is
+  runtime-neutral" from "this plane has one producer and it is Claude Code".
+  - **`baron.runtime` on every guard-sourced row** — `claude-code`, `pydantic-ai` or
+    `unknown`, pinned as `guard.KNOWN_RUNTIMES`. Without it a merged stream is unpartitionable
+    and a consumer cannot tell *"pydantic-ai never denied anything"* from *"pydantic-ai never
+    ran"*. It defaults to `unknown`, never `claude-code`: a producer that forgets is
+    unattributed, never mis-attributed.
+  - **`guard.observe_decision(...)` is the public producer seam.** It takes a `Decision`, has
+    **no `enforcement=` argument**, and infers nothing from `outcome`/`verbs`/`subject`, so
+    ADR-018's "read the label off `Decision.adjudicated` and nothing else" survives exposure
+    as public API.
+  - **pydantic-ai is now a real second producer.** `BaronGuardCapability.before_tool_execute`
+    emits into the same plane; `check()` gained a sibling `decide() -> Decision | None`
+    because `str | None` collapsed "allowed" and "no jurisdiction". A broken sink still cannot
+    stop the veto.
+  - **The evidence is measured, not asserted:** driven with the same persona and the same
+    command, both producers append to the **same** `.baron/events/` file and the two rows
+    differ in **exactly four** attributes — `baron.runtime`, `baron.trigger`, `tool.name` and
+    `session.id`. Verdict, verb, enforcement label, actor, subject and reason are
+    byte-identical, and the difference set is asserted exactly. The headline test drives a
+    real `Agent.run_sync` and reads what the real `DiskSink` wrote.
+
+- **Audit skill: baron rows are partitioned out of agent activity**
+  ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)) — see *Fixed*
+  for why. New surface: `ingest_otel.partition_guard_records`, two new aggregate keys
+  (`guard_decisions` and `baron_events_by_kind`, both direct counts, both folded through
+  `merge_telemetry.TELEMETRY_KEYS`), and `INGESTER_VERSION` 1.0 → **1.1**. **The audit
+  skill's tests are now in CI** — they shipped in v1.6.0 and were never wired up, so nothing
+  caught drift between baron's emitted shape and the ingester that reads it.
+
+---
+
+### Changed
+
+- **Product-vision invariant #1 is amended: git + markdown is the DEFAULT substrate, not the
+  only one**
+  ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md), owner decision
+  D2). Plugins may extend it to other suitable platforms. **No code change**, and it is the
+  most consequential item of the 2026-08-10 decision pass.
+  - **The bound is the load-bearing half and it is normative.** Governance state stays
+    **complete in git**: *who may do what*, *who did what* and *what is true now* must remain
+    answerable from the repository **alone** — no credentials, no running service, no index. A
+    plugin may be authoritative for **derived or auxiliary** domains and **never** for
+    authority, evidence, or the ledger.
+  - **The deletion test** makes that checkable rather than interpretable: delete every plugin,
+    clone fresh, ask the three questions. Answer lost, or now needing a second system →
+    forbidden. Only *speed of finding it* lost → permitted.
+  - The argument, not just the conclusion (ADR-022 §3): under an authoritative plugin a
+    capability grant stops appearing in a PR, the auditor needs a vendor's cooperation rather
+    than a `git clone`, and the failure is silent — a stale index does not announce itself.
+    The claim degrades from *read the diff* to *trust the index*.
+  - **Nothing is authorised and nothing is un-cut.** No `baron.knowledge` entry-point group,
+    no adapter, nothing about any candidate vendor has been run, and `docs/BACKLOG.md`'s five
+    prior cuts of the cross-project-memory surface **stand**. This changes the answer to *"may
+    we ever?"*, not to *"may we now?"*.
+  - Updated to match, found by grep rather than memory: ADR-015 §4.1/§8 and its status header
+    and `Blocking question` field, ADR-003 §2.2, `README.md`, `AGENT-TASKS.md` 3.4,
+    `STATUS.md`, `docs/BACKLOG.md`, `docs/DECISIONS-FOR-REVIEW.md`. `docs/history.md`'s "the
+    substrate never changed" is **deliberately left alone** — it is true about the period it
+    narrates, and editing history to match a later decision is what this project's ledger
+    conventions exist to prevent.
+
+- **Decided — the shipped sink default stays OFF.** `BARON_EVENTS_SINK=null` remains the
+  default ([ADR-013](docs/adr/ADR-013-observation-plane-events-and-sinks.md) §7.1, owner
+  decision D4). **This is a decision, not a deferral, and there is no code change** — the
+  default was already correct, so the signature is the whole of it. Recorded explicitly
+  because a default nobody signed and a default somebody signed look identical in a diff.
+  - **The cost is not buried:** the **0.53 operational-fidelity measurement that motivated
+    this entire plane still has no data**, and will keep having none until someone sets the
+    variable. That cost is *accepted* by this decision, not reduced by it.
+
+- **Retired — ADR-014's producer transport** ([ADR-014](docs/adr/ADR-014-guard-telemetry.md),
+  owner decision F3). `baron.telemetry` is retired: `telemetry.py`, `test_telemetry.py`,
+  `BARON_TELEMETRY`, `.baron/telemetry/`, and that branch's separate `baron.sinks`
+  declaration.
+  - **A recording action, not a deletion.** None of it was ever merged, so there is no revert
+    and nothing is removed. The `harden/otel` branch is **not deleted** (3 commits, tip
+    `3b9a4d8`), nothing further is merged from it, and the 435-line original ADR still lives
+    only there. The suite is unchanged at 424.
+  - **Adopted in part, and NOT recorded as rejected.** §4.2's `Decision.adjudicated` and the
+    `enforced`/`unevaluated` vocabulary became **ADR-018**, which cites ADR-014 as *"the
+    correct basis"*; §9.1's guard/activity partition became **ADR-021**; §3's *no
+    `opentelemetry-api` in core, ever* **stands**. ADR-014 §12.2 had itself named this
+    outcome as the correct resolution.
+  - **Forward path:** a live OTel exporter belongs **out-of-tree**, registered over the
+    **existing** `baron.sinks` group — no new group needed, and the plugin carries its own
+    dependency. Nothing is authorised or planned.
+
+---
+
+### Fixed
+
+- **Baron's own evidence was being counted as agent activity** (ADR-021). ADR-013 §6 chose a
+  wire shape the audit ingester reads "with zero new code", and verified it. That worked, and
+  it was the defect: `agent.name`, `tool.name` and `session.id` are join keys on every baron
+  row *and* how `ingest_otel.py` decides a row describes an agent working. A
+  `.baron/events/*.jsonl` file handed to the ingester was read as an agent session.
+  - Measured on the committed fixtures, every value labelled `measured`: paired with a real
+    spans file, nine activity metrics moved — `session_count` 1 → 2, `session_duration_p50_s`
+    **600.0 → 300.444**, `tool_calls_total` 1 → 12, `tool_error_rate` 1.0 → 0.0833 — and
+    `human_turns_total` was silently **downgraded from `measured` to `inferred`** by the
+    arrival of evidence. Publishing instrumentation overhead as agent working time under a
+    `measured` label is the 0.53 failure mode with the sign flipped, so the numbers are
+    recorded in ADR-021 §2 rather than quietly corrected.
+  - `partition_guard_records` splits every row carrying `baron.outcome` out **before**
+    `build_sessions` — keyed on the attribute, not a span-name allowlist, because ADR-013
+    deliberately leaves `kind` open. All six kinds are partitioned, not only the guard ones:
+    `tool.post` carries `tool.name` and would otherwise be counted as a tool call.
+  - `any_spans` now counts activity spans, so a baron-only file is not mistaken for a spans
+    stream — a `measured` zero tool calls would read as "the agents made none". Absence notes
+    now say *why*, pointing at the axis where the rows **are** counted.
+  - `test_no_contamination_from_paired_export` is the lock that can actually fail, verified by
+    reverting the fix: `return records, baron` fails 34 of that test's own checks and 45
+    across the suite. Its companion `test_additivity_lock` only reads guard-free fixtures and
+    therefore proves nothing about contamination; its own docstring now says so.
+  - **Cross-version hazard, stated not papered over:** a pre-1.1 ingester reproduces every
+    number above. Snapshots carry `telemetry_metrics_version`.
+
+- **The audit fixture was a fossil of the pre-ADR-018 producer** (found at consolidation).
+  `baron_events.jsonl` is documented as the verbatim output of a real `baron guard` run, and
+  its whole purpose is to prove the wire shape baron **emits** is the shape the ingester
+  **parses**. It predated ADR-018/ADR-019, so it still carried four `not-applicable` rows and
+  none of the `baron.runtime` / `baron.trigger` attributes the merged producer stamps — a
+  fixture from a producer that no longer exists, which would have defeated the CI step this
+  same workstream added to catch exactly that drift.
+  - Regenerated against the merged producer; the ingester parsed the new attributes with **no
+    code change**, which is an independent check on ADR-019's wire-shape claim.
+  - `test_baron_guard_metrics` now asserts the fix rather than the defect: the previous round
+    left a check asserting the structural-refusal row was *wrongly* labelled `enforced`.
+  - Three published `session_duration_*` figures moved and were re-pinned in the four
+    documents `test_adr021_published_figures_reproduce` names. These are hook wall-clock on
+    the generating machine and **move on every regeneration by design**;
+    `gen_baron_events.py` now says so.
+  - **Four passages describing `baron.enforcement` as "under correction" were stale** once
+    ADR-018 merged, and are corrected in `SKILL.md`, `ingest_otel.py`, ADR-021 §5 and
+    `gen_baron_events.py`. The enforcement axis is still unpublished, but the honest reason
+    changed from "the field is wrong in both directions" to "an honest aggregate must filter
+    on `enforcement == "enforced"` before grouping, and that filter is un-built" — a gap, not
+    a blocker.
+
+- **`baron export`'s citation gate failed open on quoted paths** (ADR-015 §3.2). Plain
+  `git status --porcelain` C-quotes non-ASCII and spaced paths, so the dirty check silently
+  passed them. Now `-z`, regression-tested with a literal non-ASCII filename.
+
+- **`baron rules validate` checked keys but never values** (ADR-016, round 3). Every refusal
+  shipped in rounds 1–2 targeted a *key* or a *rule slot*. `rules._check_detection_consistency`
+  now cross-checks `detection` against the rules that actually bind each verb,
+  **symmetrically** — over-claiming (`command`, no rule) and under-declaring (a rule binds it,
+  entry says `none`) are both refused. That check previously existed only as an assertion in
+  `test_rules.py` against the packaged artifact, where no document input could ever reach it.
+
+- **`baron rules diff` was blind to verb entries** (ADR-016, round 3). A candidate that
+  rewrote `detection`, `class` or `notes` on an existing verb printed `identical to the
+  packaged artifact` and exited 0 — reproduced three ways. Those are the fields that decide
+  whether baron prints `enforced`, so the edit most worth reviewing was the one the review
+  surface could not see. `diff` now joins on verb id (`verbs_changed`), names the resulting
+  `enforcement`/`label` transition inline, and prints values in full — a first draft truncated
+  to a fixed prefix, making two different `notes` blocks look identical.
+
+- **`validate`'s "no unrecognised content" check overstated itself** (ADR-016, round 3). It
+  was hardcoded `True` behind text claiming "every key and rule in the document is one this
+  baron implements", and printed `ok` over a document containing `detection: banana`. Its text
+  now names exactly what is covered, and a new **computed** check re-derives the
+  enforced/backed relationship from the parsed table instead of asserting it.
+
+- **A circular label test was replaced** (ADR-016, round 3).
+  `test_only_guard_checked_verbs_are_labelled_enforced` derived its expectation from
+  `detection` — the field under test — and so restated the document back to itself, which
+  green-lit the `detection: command` hole. Replaced by a **literal** `EXPECTED_CLAIMS` table
+  for all ten verbs plus a test asking whether a rule could actually fire.
+
+- **`baron doctor` probed the wrong binary** (ADR-017). Checks 6 and 7 now spawn the hook's
+  own command — wrapper prefixes such as `uv run` included — not the `baron` package that
+  happens to be importable in doctor's interpreter. A project wired to a stale, shadowed or
+  hand-rolled `baron` *is* the incident shape, and an in-process probe is structurally blind
+  to it. Where the hook names no resolvable executable, doctor falls back in-process and says
+  so in those words. Relatedly, `uv run baron guard …` used to produce a **false FAIL** on a
+  correctly-wired project by resolving the bare `baron` token instead of the launcher; a
+  resolvable launcher that will not answer `--version` is now UNKNOWN, not FAIL.
+
+- **Guard's read-verb posture caveat was scoped to what was measured, then measured properly**
+  (ADR-016 round 3, superseded by ADR-020). `LABEL_CAVEAT` stated "no adapter baron ships
+  does" omit read tools as fact for all four adapters on the strength of one instrumented
+  test. Round 3 narrowed it to "unmeasured"; ADR-020 then measured the other three statically
+  and retired the scoping. `rules.READ_VERB_MEASUREMENTS` now carries one entry per shipped
+  adapter naming the evidence and the test behind it, `LABEL_CAVEAT` is built **from** it so
+  the published caveat cannot drift from the measurements, and a test asserts its keys equal
+  `scaffold.ADAPTERS` — **a fifth adapter breaks the label's basis until it is measured.**
+
+---
+
+### Documented — two evaluation gaps that were already decided
+
+From the 2026-08-08 Barony/Nasiko evaluation. Recording the existing decision honestly *is*
+the deliverable; re-deriving a settled decision as a fresh proposal is the documented failure
+mode of that note.
+
+- **Fail-open vs fail-closed on hook failure — settled since ADR-004 §2.3, now also measured
+  and pinned.** No new ADR: the policy was decided, implemented and documented on day one.
+  `test_doctor.py::test_fail_closed_policy_is_pinned_adr_004_s2_3` and doctor's own
+  `fail-closed` check now assert it per-install.
+- **`open_pr` / `run_tests` denial parsing stays DEFERRED**, with the date and the reason: no
+  observed-need evidence exists anywhere in the repo or the evaluation, and the vocabulary's
+  design rule 4 / ADR-004 §2.2 make observed need the trigger. `capability-rules.v1.yaml` is
+  unchanged and `rules_version` stays 1.
+
+---
+
+### Not shipped, deliberately
+
+Named here so they are choices on the record rather than things nobody noticed.
+
+- **The knowledge-substrate adapter** (`AGENT-TASKS.md` 3.4). No `baron.knowledge`
+  entry-point group, no semantic-memory adapter, and **no vendor named anywhere under
+  `cli/src/baron/`** — asserted by test. 3.4 is gated on **3.3**, the governed-memory
+  evaluation harness, which does not exist; building the adapter first inverts the project's
+  own measure-first rule on the exact task where that rule is written down. Two further tests
+  pin the boundary: runtime dependencies are still exactly `["typer", "pyyaml"]`, and
+  `baron.forges` is still the only entry-point group. ADR-022 does not change this — it
+  answers *may we ever*, not *may we now*.
+- **The project-level rules loader.** `baron rules validate --file` / `diff --file` parse a
+  candidate document, but **validating a file does not activate it**. Every enforcer still
+  loads the PACKAGED artifact only — no `.baron/rules.yaml` discovery, no merge, no
+  precedence — pinned by `test_guard_reads_packaged_data_only`. ADR-016 §5 records the
+  one-way doors that need their own ADR first: add-only/deny-only, explicit supported version
+  ranges on *both* artifacts, refuse-don't-ignore on a malformed project file, `load_rules()`
+  cache safety once it is path-dependent, and the `.baron/` (machine state) vs root-level
+  `.baron-waivers.yaml` (human config) convention collision. **Project-defined verbs are a
+  separate, unmade decision** (§6.1).
+- **An aggregate over `baron.enforcement` in the audit skill.** `harden/otel` had one; it is
+  not ported. It needs the `enforcement == "enforced"` filter applied before grouping, and no
+  consumer has asked. ADR-021 §5.
+- **A code-puppy event producer.** It has no PreToolUse equivalent, so it is deliberately
+  absent from `guard.KNOWN_RUNTIMES` and this change does not invent one — emitting from a
+  post-hoc log would imply an adjudication that never happened. Pinned by a test so the tuple
+  grows with a landed adapter and never with an intention.
+- **The per-runtime capability matrix** (DECISIONS-FOR-REVIEW §F1). `baron rules list` prints
+  one label per verb; the honest answer is a 4 adapters × 10 verbs grid. The harness ADR-020
+  needed (`cli/tests/omission.py`) is keyed on the `(adapter, verb)` pair for exactly this
+  reason and is already shaped for it. Deferred because it is a user-visible output redesign,
+  not a measurement gap, and doing it inside a consolidation pass would smuggle a product
+  decision through a merge.
+- **Delivery-verified `instructed`** (§F2). Today `instructed` means baron emitted the
+  sentence into the kit — verified at *emission*, never at *receipt*. A silently-ignored
+  `AGENTS.md` is indistinguishable from a heeded one. Upgrading it needs a live runtime in CI
+  and is a **new claim class** deserving its own ADR, not a quiet third value. This is the
+  honest ceiling on the `instructed` label, and the 0.53 fidelity number lives here.
+
+### Added — [ADR-023](docs/adr/ADR-023-reserved-filenames.md): the emitted config filenames are governed artifact types
+
+Third instance of the ADR-002/ADR-008 promotion pattern, and the first to concern
+the framework's **own output** rather than persona behaviour. `baron init` emits a
+fixed set of config filenames — `CONVENTIONS.md`, `COORDINATION.md`, `CLAUDE.md`,
+`BOOTSTRAP*.md`, the entry-point docs — and nothing in the emitted
+`CONVENTIONS.md` told an agent those names are taken. **Accepted 2026-08-12 and
+applied to the emitted template** (both copies; drift guard green).
+
+Field failure (2026-08-12, Irisidian vault): an agent wrote a prose briefing to
+`COORDINATION.md` **at a vault root**. It conformed to no schema, and its position
+placed it *above* `CONVENTIONS.md` in that vault's precedence chain — so a
+briefing would have resolved rule conflicts for the entire vault. In a precedence
+chain, **position is authority**. Caught by the owner; no mechanism caught it. The
+agent had named the collision in the document's own text and shipped to that path
+anyway — which is why §5 declines to add lint enforcement *yet*: prose failing once
+is not yet evidence that prose is the wrong instrument.
+
+Proposes two template additions (§4.1 reserved-name list, §4.2 a reserved name is
+scoped to its emitted location — no vault-root `COORDINATION.md`), and surfaces one
+**defect found while drafting**: §4.3, the emitted precedence order
+(`CONVENTIONS` → `COORDINATION` → `AGENT.md`) is **inverted** relative to the
+Irisidian vault's (`CLAUDE.md` → `COORDINATION` → `CONVENTIONS`). Both are live and
+they disagree on CONVENTIONS-vs-COORDINATION.
+
+**Rev. 2 recommends keeping the template's order and changing the vault** — and
+records that this **reverses rev. 1**, which recommended the opposite. The reversal
+came from asking *what kind of rule* each chain orders: most-specific-wins is right
+for **configuration**, most-general-wins for **constraints**. The two orders disagree
+most sharply on the per-agent file (`AGENT.md` last vs `CLAUDE.md` first) — and every
+agent's write zone includes its own workspace, so the vault's order lets the file an
+agent edits itself outrank the never-list and the claims ladder. Self-service escape
+hatch from governance, no bad intent required. The template's posture is corroborated
+three ways inside its own text (*"don't auto-fix shared config"*; the never-list binding
+personas to their `AGENT.md` scope; `AGENT.md` edits gated behind a PR).
+
+Field survey settles the open risk from rev. 1: **both live scaffolded repos carry the
+template's order verbatim** (`vanar-collab`, `baddie-analyzer-collab`) and **no persona
+`AGENT.md` overrides a `CONVENTIONS.md` rule** — 17 files grepped, one benign hit. The
+vault is a population of one, so changing it breaks no downstream dependency.
+
+Recommendation is **(a) refined by (c)**: adopt one stated axis in *both* documents —
+**constraints resolve most-general-wins; operational detail resolves
+most-specific-wins.** Neither document says this today, which is what let the orders
+drift apart unnoticed. This makes §4.3 a **template edit as well as a vault fix**,
+larger than rev. 1 scoped.
+
+Evidence base is deliberately marked thin — **one first-party incident**, against
+ADR-002's and ADR-008's multi-persona pilot runs. The argument for promoting anyway
+is structural, not statistical: `baron init` creates the namespace, so the exposure
+is universal even where the observation is singular. §7 keeps *"wait for a second
+instance"* as a legitimate owner call.
+
+## [1.10.0] — 2026-08-04
+
+### Added — ritual-token coverage is now gated in the adapters
 
 Closes the gap `docs/BACKLOG.md` recorded during the 1.9.0 cycle. `check_review_feedback`
 (ADR-008 §2) shipped to three of four runtimes on its first cut, because each renderer
@@ -102,8 +714,6 @@ silently**: the code renderers echo the raw token, the prose surfaces simply omi
   adapter and token named. (An earlier cut of the parser stopped at generic's wrapped
   continuation lines and reported 4 of 5 tokens missing from a surface declaring all 5 —
   caught by the guard itself before commit.)
-
-_Nothing yet._
 
 ## [1.9.0] — 2026-08-02
 
@@ -180,7 +790,7 @@ those two.
 
 Design proposal for the FM6/D57 mechanism ADR-008 §4 named but shipped as prose:
 a ratified decision must reach the surfaces personas pull *work* from, not just
-`decisions/`. **Awaiting owner review — nothing implemented.**
+`decisions/`. **Accepted with changes (Vikram, 2026-08-02 / 2026-08-04) — not yet implemented.**
 
 Load-bearing boundary: **baron never determines what a decision contradicts** —
 inferring it needs a model call (crossing ADR-007's line) and its worst failure

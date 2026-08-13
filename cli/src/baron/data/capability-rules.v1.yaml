@@ -105,20 +105,30 @@ commands:
       # `git push` options that consume the next token (skipped so their
       # values are not mistaken for remote/refspec positionals).
       value_options: ["--repo", "--receive-pack", "--exec", "-o", "--push-option"]
+      # Each rule names the `matcher` — the SHAPE of the check a consumer
+      # performs. The set is closed (flag_present, refspec_prefix,
+      # refspec_default_branch, current_branch_is_default, subcommand_present);
+      # a rule naming anything else is REFUSED at parse time, as is a rule
+      # naming a matcher other than the one guard implements for it. Adding a
+      # matcher is new detection code in guard.py, not a config line.
       rules:
         force_flags:
           verb: force_push
+          matcher: flag_present
           flags: ["--force", "-f", "--force-if-includes"]
           flag_prefixes: ["--force-with-lease"]
         plus_refspec:
           verb: force_push
+          matcher: refspec_prefix
           prefix: "+"
         all_branches:
           # Pushing all branches necessarily includes the default branch.
           verb: push_main
+          matcher: flag_present
           flags: ["--all", "--branches", "--mirror"]
         default_branch_target:
           verb: push_main
+          matcher: refspec_default_branch
           # When the repo's actual default branch cannot be resolved, these
           # destination names are conservatively treated as the default
           # branch (HEAD resolves to the current branch first, when known).
@@ -129,10 +139,12 @@ commands:
           # `git merge` while ON the default branch lands commits on it
           # directly — same capability as pushing to it.
           verb: push_main
+          matcher: current_branch_is_default
   gh:
     rules:
       pr_merge:
         verb: merge_pr
+        matcher: subcommand_present
         subcommand: ["pr", "merge"]
 
 # --- file-operation scoping rules (write tools) ----------------------------------------

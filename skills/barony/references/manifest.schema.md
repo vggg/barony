@@ -22,6 +22,7 @@
 | `personas` | yes | list | roster: each entry points at a `persona.yaml` |
 | `adapters` | no | map | per-runtime adapter overrides (project defaults); runtime-neutral envelope — see below |
 | `workspace` | no | map | where persona working copies live locally (v1.2, optional) — see below |
+| `events` | no | map | observation-plane config (v1.3, optional, **reserved — not read yet**) — see below |
 
 ### adapters (runtime-neutral envelope)
 
@@ -79,6 +80,33 @@ workspace:
 Absence means: only `repos[]` working copies are swept. This block is *local-topology*
 metadata — it never affects hydration or capability mapping.
 
+### events (optional, v1.3) — RESERVED, not read yet
+
+Where baron's observation events go (ADR-013). Declared in the schema so a manifest can
+carry the intent without `baron validate` emitting an unknown-field warning, and so the key
+is reserved before something else claims it.
+
+**Honest bound: no baron command reads this today.** The only live selector is the
+`BARON_EVENTS_SINK` environment variable (default `null` — baron writes nothing unless an
+operator opts in). Wiring the manifest is deferred because `baron guard` runs on every tool
+call and nobody has measured the cost of a manifest discovery plus YAML parse on that path;
+the likely resolution is adapters rendering the value into the hook environment at
+`baron init` time.
+
+| Field | Req | Notes |
+|---|---|---|
+| `events.sink` | no | sink name — built-in `null` / `disk`, or a `baron.sinks` plugin |
+| `events.options` | no | opaque map, owned by the named sink; this schema defines only the shape |
+
+```yaml
+events:
+  sink: disk          # built-ins: null (default) | disk
+  # options: {}       # sink-owned; ignored by sinks that don't recognize a key
+```
+
+Absence means the `null` sink. Like `adapters`, this block is additive and safely ignorable
+by any consumer that does not know it.
+
 ## Example (tasklib-agents, derived from the Phase 2 dogfood)
 
 ```yaml
@@ -132,3 +160,6 @@ adapters:                     # optional; runtime-neutral envelope
 - **v1.2** (baron M2, ADR-003): added the optional `workspace` block
   (`clones` / `worktrees_root`) describing local persona working copies for divergence
   sweeps (`baron status`). Additive — existing manifests are unchanged.
+- **v1.3** (ADR-013): added the optional `events` block (`sink` / opaque `options`) for the
+  observation plane. Additive, and currently **reserved**: the schema accepts it so it does
+  not warn, but no command reads it — `BARON_EVENTS_SINK` is the live selector.

@@ -69,18 +69,25 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   repo (reports terrence + carson) and against a fresh scaffold (clean).)*
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
-- [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
+- [~] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
   wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
   Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
   (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
-  **Design — two layers, most designs conflate them:** (a) **delivery** — a git-native mailbox
-  `_mailbox/<persona>/` swept first each loop, can't-miss, survives everything; (b) **wake** — a
-  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. `baron notify
-  <persona> <msg>` writes the mailbox AND fires the event. Laptop-off durable; **retires the wasteful
-  wall-clock cron** the badminton pilot polls on now; no bespoke server; on-brand git-native. Adopt A2A
-  *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
-  steering. Start with a design ADR. Detail: vault
+  **Design — two layers, most designs conflate them:** (a) **delivery** and (b) **wake** — a
+  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. Laptop-off
+  durable; no bespoke server; on-brand git-native. Adopt A2A *vocabulary* as the interop north-star
+  only; reserve Temporal signals for true sub-second mid-run steering. Detail: vault
   `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
+  *(Design ADR: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md) — **ACCEPTED with changes, Vikram
+  2026-08-02**; all eight §8 questions answered and recorded verbatim in the ADR. Unblocked: build.
+  The headline change is that the design **drops the proposed `_mailbox/<persona>/` surface** —
+  `_handoff/` already is the delivery layer, and adversarial review supplied the stronger argument
+  (it already carries `priority:`). Other owner answers: the pilot's 15-minute cron drops to
+  hourly/daily as a **slow backstop** rather than being retired, because §5.3's silent-no-op paths
+  (missing PAT, missing workflow, rate limit) are real and something must still catch a wake that
+  never fired; `--max-depth 2` enforced in **both** CLI and workflow; repo-event triggers are **out**
+  of the first cut; the handoff-filename disagreement is **its own change**, not smuggled in here;
+  duplicate-notify **reuses the existing handoff and wakes only**.)*
 - [ ] **2.6 — Governed vault propagation** — mechanize the current project-level handoff convention
   without giving a runtime hook arbitrary cross-repository write authority. Proposed seam:
   `baron vault propose --input <event.json> --json` classifies/normalizes a candidate; `baron vault
@@ -119,11 +126,63 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
   retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
   classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
+  - **PARTIAL, 2026-08-09 ([ADR-015](docs/adr/ADR-015-baron-export.md)):** the *producer* half is
+    built and shipped as **`baron export`** — ADRs/decisions/findings/handoffs walked into flat
+    records that each carry `path + commit_sha`, with sources that cannot honour that citation
+    skipped by name rather than mis-cited. That discharges the "every retrieval result must carry
+    an authoritative source ID/version" requirement independently of which backend wins, since it
+    is a requirement on the corpus walk, not on the store. **Curated status is still not
+    exported** (no schema), and ADRs living in the code repo are out of reach (needs the manifest).
+  - **Still NOT built, deliberately:** the backend contract interface, the `baron.knowledge`
+    entry-point group, and any vendor adapter. Reasons in ADR-015 §4 — 3.4 is gated on 3.3 (which
+    does not exist), and a published entry-point group with no consumer is unretractable public
+    API. Tests assert `baron.forges` is still the only group, that runtime deps are still
+    typer + pyyaml, and that no vendor name appears under `cli/src/baron/`.
+  - **~~BLOCKING OWNER DECISION~~ — RESOLVED 2026-08-10
+    ([ADR-022](docs/adr/ADR-022-substrate-invariant-amended-default-not-only.md)).** The owner
+    took the second branch of the choice below: **invariant #1 is consciously AMENDED**, and the
+    why is recorded. It now reads *git + markdown is the **DEFAULT** substrate; plugins may
+    extend it to other suitable platforms* — **bounded** by *governance state stays complete in
+    git*: "who may do what", "who did what" and "what is true now" must stay answerable from the
+    repository alone, and a plugin may be authoritative for **derived or auxiliary** domains
+    (semantic search, embeddings, cross-project recall) and **never** for authority, evidence or
+    the ledger. **Mode (b) is answered: refused** — "it holds things the repo does not" is
+    authority-bearing by construction. **3.4 is therefore mode (a), a rebuildable projection.**
+    Note what did *not* change: **no adapter is authorised**, 3.4 is still gated on 3.3 (which
+    does not exist), the `baron.knowledge` entry-point group is still **not** published and its
+    test stays green, and nothing about the vendor has been run. The original framing follows.
+    - *(original)* Carried from the 2026-08-04 Codex reconciliation, item C:
+      mode **(b)** "authoritative knowledge source" contradicts the product vision's invariant #1
+      ("the repo is the only source of truth; any hosted surface is a cache, rebuildable from
+      `git clone`; `cat` always works"). Either drop mode (b) and keep the substrate a projection,
+      or consciously amend invariant #1 and record why. **Recommendation: drop (b).** No adapter
+      should be built until this is answered *and* 3.3 exists.
+  - **Nothing about the vendor has been run.** Its public docs were read on 2026-08-09; no
+    ingest, no retrieval, no measurement. Do not let any surface imply otherwise (ADR-015 §6).
 
 ## Carried from STATUS.md (in-flight, keep visible)
 - [ ] Phase-gate audit — re-run `multi-agent-audit` against the pilot with guard/lock topology.
+  **Note the precondition moved**: the audit ingester now partitions baron's own evidence out
+  of the activity plane ([ADR-021](docs/adr/ADR-021-audit-ingester-partitions-observation-rows.md)),
+  so a re-run is safe to pair with a baron export — but the **default sink is `null` by
+  signed decision** ([ADR-013 §7.1](docs/adr/ADR-013-observation-plane-events-and-sinks.md)),
+  so a project produces no `.baron/events/` rows until an operator opts in. Whoever runs this
+  has to turn sinks on in the pilot first, or the fidelity number moves for no measured reason.
 - [ ] Merger precondition verification + guard coverage growth (`docs/BACKLOG.md`).
-- [ ] pydantic-ai adapter field validation.
+- [ ] pydantic-ai adapter field validation. *(The adapter gained an in-process evidence
+  producer in [ADR-019](docs/adr/ADR-019-runtime-neutral-event-plane.md); that is a second
+  measured producer on the event plane, **not** the ADR-001 acceptance bar. The bar is still
+  a real persona on a real project on this runtime, and it has not been run.)*
+
+## Deferred out of the 2026-08 ops-plane consolidation
+
+Recorded in `docs/DECISIONS-FOR-REVIEW.md` §F and carried in `docs/BACKLOG.md` §
+*Deferred out of the 2026-08 ops-plane consolidation*, not re-listed here: **F1** the
+per-runtime capability matrix (harness already merged; what remains is an output redesign),
+**F2** delivery-verified `instructed` via the ritual-fence technique (needs a live runtime in
+CI and its own vocabulary decision), **F4** an aggregate over `baron.enforcement` in the audit
+skill (un-built, not blocked), and wiring the reserved `events:` manifest node (blocked on
+measuring guard's hot path). None is queued. Promote one into P2/P3 only on the owner's call.
 
 ---
 
