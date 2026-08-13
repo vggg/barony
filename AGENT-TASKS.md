@@ -68,18 +68,25 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   repo (reports terrence + carson) and against a fresh scaffold (clean).)*
 - [ ] **2.4 — `baron promote`** — mechanize the pilot→canonical upstream path (P1 is the manual version
   of this; #2.4 makes it a governed operation so learnings don't stay trapped downstream).
-- [ ] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
+- [~] **2.5 — `baron notify` — wake/nudge idle agents** (fixes FM1/FM5: agents are poll-only, nothing
   wakes the responsible agent when a verdict or handoff lands; today a human is the message bus).
   Researched 2026-07-31 — external survey confirms **no agent framework wakes a cold headless agent**
   (that's a *platform* capability; A2A wakes the orchestrator, not the worker; MCP is orthogonal).
-  **Design — two layers, most designs conflate them:** (a) **delivery** — a git-native mailbox
-  `_mailbox/<persona>/` swept first each loop, can't-miss, survives everything; (b) **wake** — a
-  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. `baron notify
-  <persona> <msg>` writes the mailbox AND fires the event. Laptop-off durable; **retires the wasteful
-  wall-clock cron** the badminton pilot polls on now; no bespoke server; on-brand git-native. Adopt A2A
-  *vocabulary* as the interop north-star only; reserve Temporal signals for true sub-second mid-run
-  steering. Start with a design ADR. Detail: vault
+  **Design — two layers, most designs conflate them:** (a) **delivery** and (b) **wake** — a
+  `repository_dispatch` GitHub Actions event that *spawns* a fresh headless persona. Laptop-off
+  durable; no bespoke server; on-brand git-native. Adopt A2A *vocabulary* as the interop north-star
+  only; reserve Temporal signals for true sub-second mid-run steering. Detail: vault
   `projects/AgentBootstrapNasikoMix/research-a2a-wake-nudge.md` + `research-agent-messaging.md` (FM1/FM5).
+  *(Design ADR: [ADR-010](docs/adr/ADR-010-baron-notify-wake.md) — **ACCEPTED with changes, Vikram
+  2026-08-02**; all eight §8 questions answered and recorded verbatim in the ADR. Unblocked: build.
+  The headline change is that the design **drops the proposed `_mailbox/<persona>/` surface** —
+  `_handoff/` already is the delivery layer, and adversarial review supplied the stronger argument
+  (it already carries `priority:`). Other owner answers: the pilot's 15-minute cron drops to
+  hourly/daily as a **slow backstop** rather than being retired, because §5.3's silent-no-op paths
+  (missing PAT, missing workflow, rate limit) are real and something must still catch a wake that
+  never fired; `--max-depth 2` enforced in **both** CLI and workflow; repo-event triggers are **out**
+  of the first cut; the handoff-filename disagreement is **its own change**, not smuggled in here;
+  duplicate-notify **reuses the existing handoff and wakes only**.)*
 - [ ] **2.6 — Governed vault propagation** — mechanize the current project-level handoff convention
   without giving a runtime hook arbitrary cross-repository write authority. Proposed seam:
   `baron vault propose --input <event.json> --json` classifies/normalizes a candidate; `baron vault

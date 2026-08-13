@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Accepted design (no code yet) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
+
+Design for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a verdict or
+handoff lands nothing wakes the responsible persona and a human ends up being the
+message bus. **Accepted with changes (Vikram, 2026-08-02) — all eight §8 questions
+answered; implementation unblocked but not yet started.** Owner's substantive
+departures from the draft: the poll cron drops to a **slow backstop** rather than
+being retired, and a **manifest allowlist** gates who may fire a wake.
+
+The survey settles the landscape: **no agent framework wakes a cold headless
+agent** — LangGraph resumes a checkpointed graph, Temporal signals a hosted
+workflow, A2A notifies the dispatching orchestrator and presumes a long-running
+worker. Cold-starting an ephemeral CLI agent from an event belongs to the
+*platform* (GitHub Actions), not to agent frameworks.
+
+**The design departs from its own research on one point:** the research proposed a
+new `_mailbox/<persona>/` delivery surface. This ADR drops it — `_handoff/` is
+already ordered, addressed, durable and swept at session start, and sweep order is
+already expressible (ADR-008 §2). A second inbox would be two surfaces restating
+one contract, and would need ADR-002 §2's "no exceptions" rule to grow an exception
+on day one. So `baron notify` = an ordinary handoff **plus** a
+`repository_dispatch`, with **delivery independent of wake**: if the dispatch
+fails, the message is still a committed file and arrives on the next spawn.
+
+ADR-007 holds — baron writes the file and fires the event; the *spawn* lives in a
+project-owned workflow slot, never in baron.
+
+**Rev. 2 after adversarial design review**, which upheld the mailbox call (and
+supplied a better argument for it: `_handoff/` already carries `priority:`) but
+found four false claims asserted as decided. The material one: **"delivery is
+independent of wake" was false** — `handoff.create` commits but never pushes, so
+the dispatch would reach GitHub before the message and a cloud runner would clone
+and find nothing. Notify must push before dispatching, and must not dispatch if the
+push fails. Loop safety was rebuilt rather than restated: the depth counter had no
+propagation channel (each spawned agent re-invokes fresh; ADR-003 §2.2 forbids
+sidecar state) so depth now rides in the **handoff frontmatter**; the concurrency
+group bounds parallelism, not recursion, and no longer claims otherwise; and the
+real backstop turns out to be that `GITHUB_TOKEN` cannot chain dispatch-driven
+workflows — simultaneously the strongest guard and a silent failure, neither
+previously mentioned. FM5 was overclaimed (it needs the reviewer's same-SHA
+idempotency carve-out too). §8 now lists eight blocking questions.
 Nine parallel hardening workstreams, consolidated onto one branch. Baron gains an event
 stream, a wiring self-test, an inspection surface over its own capability rules, and an
 export of the governed corpus. It also reports **less** enforcement than it used to — on the
@@ -683,7 +724,7 @@ those two.
 
 Design proposal for the FM6/D57 mechanism ADR-008 §4 named but shipped as prose:
 a ratified decision must reach the surfaces personas pull *work* from, not just
-`decisions/`. **Awaiting owner review — nothing implemented.**
+`decisions/`. **Accepted with changes (Vikram, 2026-08-02 / 2026-08-04) — not yet implemented.**
 
 Load-bearing boundary: **baron never determines what a decision contradicts** —
 inferring it needs a model call (crossing ADR-007's line) and its worst failure

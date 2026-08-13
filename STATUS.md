@@ -158,6 +158,27 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Accepted, not yet implemented — P2.5 `baron notify` design
+
+[ADR-010](docs/adr/ADR-010-baron-notify-wake.md) (**accepted with changes**, Vikram 2026-08-02 — no
+code yet) designs the FM1/FM5 wake mechanism. Key call: **no new mailbox** — `_handoff/` already is
+the delivery surface, so `baron notify` is an ordinary handoff plus a `repository_dispatch`,
+**ordered** — commit, push, then dispatch, and no dispatch if the push fails. A failed *dispatch*
+still leaves a pushed message that arrives on the next spawn; the converse does not hold, which is
+why the order is load-bearing. ADR-007 boundary held: baron fires the event; the spawn lives in a
+project-owned workflow slot. Loop-safety guards specified up front.
+
+**All eight §8 questions are answered and recorded verbatim in the ADR**; implementation is
+unblocked. The owner's substantive departures from the draft: the pilot's 15-minute cron drops to
+hourly/daily as a **slow backstop** rather than being retired (§5.3's silent-no-op paths — missing
+PAT, missing workflow, rate limit — are real, so something must still catch a wake that never
+fired), and a **manifest allowlist** gates who may fire a wake — enforced **in the workflow**, in the
+collab repo, against the **committed handoff** rather than the dispatch payload (2026-08-04): a
+payload is written by whoever fires it, and `github.actor` cannot tell personas apart under the
+single-account constraint. A two-job gate/spawn split keeps a refused wake to one short job
+(§5.5). Dropping the mailbox stands;
+adversarial review upheld it independently. Sequencing answer was "build everything, sequenced by
+dependency," so this no longer competes with P2.2 / P2.4 / P3.1 for a slot.
 
 ## Shipped (unreleased) — observation plane: `baron.events` + `baron.sinks` (ADR-013)
 
