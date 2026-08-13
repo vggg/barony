@@ -65,7 +65,11 @@ def create(
     handoff_dir = collab / "_handoff"
     handoff_dir.mkdir(parents=True, exist_ok=True)
     date = clock.today().isoformat()
-    path = handoff_dir / f"{date}-{slugify(title)}.md"
+    # ADR-010 §8 Q6: intra-day order matters (more so under a low-latency wake), and
+    # the `from` disambiguates same-minute handoffs. Matches CONVENTIONS.md's documented
+    # `YYYY-MM-DD-HHMM-<from>-<slug>` — the code previously wrote date-only, a drift.
+    stamp = clock.now().strftime("%Y-%m-%d-%H%M")
+    path = handoff_dir / f"{stamp}-{slugify(from_)}-{slugify(title)}.md"
     if path.exists():
         raise HandoffError(f"{path} already exists — pick a different title")
     content = (

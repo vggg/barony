@@ -24,7 +24,7 @@ def test_create_writes_standard_frontmatter(collab: Path, fixed_clock: object) -
     path = handoff.create(
         collab, for_="tess", from_="rex", title="Review the tracker seam", priority="high"
     )
-    assert path.name == "2026-07-22-review-the-tracker-seam.md"
+    assert path.name == "2026-07-22-1200-rex-review-the-tracker-seam.md"
     text = path.read_text(encoding="utf-8")
     assert text.startswith("---\ncreated: 2026-07-22\nstatus: open\nfor: tess\nfrom: rex\npriority: high\n---\n")
     assert "# Review the tracker seam" in text
