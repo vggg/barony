@@ -443,7 +443,10 @@ def _ritual_lines(tokens: list, persona: Persona, collab_rel: str) -> list[str]:
         ),
         "check_backlog": (
             f"Read `{collab_rel}/backlog.md` for items labelled `agent-{persona.slug}` "
-            "(manifest backlog source)."
+            "(manifest backlog source). If `manifest.backlog.park_label` is declared, "
+            "SKIP parked items — marked `<!-- <park_label> -->` in a file backlog, or "
+            "carrying that label on a tracker. A parked item is work a ratified "
+            "decision superseded (ADR-009)."
         ),
     }
     return [rendered.get(t, t) for t in tokens or [] if isinstance(t, str)]

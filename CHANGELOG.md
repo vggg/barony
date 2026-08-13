@@ -6,6 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `barony` 0.8.0: `baron decision reconcile` / `check` (P2.1, ADR-009 — `park` only)
+
+The FM6 mechanism. A ratified decision was recorded in `decisions/` and still
+silently re-litigated for days on the pilot, because the epic encoding the
+superseded direction sat **open, generating tickets**. Agents do not re-read
+`decisions/` when choosing work — they re-derive it from the backlog.
+**`decisions/` is a record; the backlog is a control.**
+
+Scope is `park` alone (owner decision, 2026-08-02) — the obligation that
+demonstrably caused FM6. `supersedes` / `broadcast` / `direction_doc` stay designed
+in ADR-009 §3 and unbuilt.
+
+- **`baron decision reconcile <N> --park <item>`** records what a decision
+  supersedes, in a marker-delimited block **inside that decision's own
+  `decisions/index.md` entry** (ADR-003 §2.2 — no second store). Idempotent.
+  baron never infers *what* a decision contradicts: the items are declared input.
+- **`baron decision check [N] [--fetch]`** verifies discharge. Exit 1 on
+  outstanding, CI-usable.
+- **The discharge condition is the whole feature.** A park is discharged only when
+  an agent's backlog query stops returning the item: **closed** (tracker), or
+  **marked and declared** via the new `manifest.backlog.park_label` (schema
+  **v1.3**, additive). On a **file** backlog the item carries an HTML-comment
+  marker `<!-- parked -->`, and **removal alone is NOT a verifiable discharge** —
+  baron cannot tell "removed" from "renamed" or "never matched", so it reports
+  unverifiable rather than guessing green.
+- **Green means DISCHARGED, nothing else.** `check` exits 0 only when every
+  obligation is positively discharged. An earlier cut exited 0 on `unverifiable`,
+  which meant moving absence from discharged to unverifiable produced the
+  *identical* exit code and changed nothing a CI gate could see — the fix relabelled
+  the failure without fixing it.
+- **Three states, never two** — discharged / outstanding / **unverifiable**. A
+  github_issues backlog without `--fetch`, an unreachable forge, or a `jira`
+  backlog reports unverifiable and is scored as neither. A **malformed block is
+  OUTSTANDING**, not unverifiable: corrupting it must not be the easiest way to
+  turn the gate green.
+- **Matching is token-bounded, never substring.** Review constructed three
+  independent false DISCHARGEDs against the first cut: `unparked` satisfied a
+  `parked` label; `--park #214` against a line reading `issue 214 …` reported
+  **absent** — the *strong* discharge — while the item sat there active; and
+  `--park 214` was discharged by an unrelated `SHU-2140`. A false discharge prints
+  green on exactly the FM6 state this exists to catch, so ids are normalized
+  (`#214` ≡ `214`) and both ids and labels match on `[\w-]` boundaries.
+- **Forge queries target the declared repo.** Without `--repo`, `gh` runs against
+  the collab checkout and answers the *collab* repo's same-numbered issue. A park
+  naming a repo baron cannot resolve reports unverifiable rather than querying the
+  wrong one.
+- **`check_backlog` now excludes parked items** in all SEVEN renderers (the two
+  code renderers, the three prose adapter surfaces, plus `PARTICIPATE.md` and
+  `persona.schema.md`'s token table — the last two found only when a reviewer
+  counted them), which is what makes the `filtered` discharge real rather than
+  notional.
+- **Authored data, not a derived view.** Unlike the handoff index this block cannot
+  be regenerated, so reconcile only ever appends or updates its own region, never
+  rebuilds it, and a malformed block is **reported, never silently rewritten**
+  (ADR-003 §2.6 precedent) — with a test asserting the file is left byte-identical.
+
+**Forge Protocol lesson, recorded because it bit during the build:** `get_issue`
+was first declared on the `@runtime_checkable` `Forge` Protocol — and immediately
+broke `test_lock.py`'s recorded fake, because those `isinstance` checks test method
+**presence**. Adding a method to the Protocol retroactively invalidates every
+implementation that predates it: the opposite of additive, and it would have broken
+any third-party `baron.forges` plugin the same way. Optional capabilities now live
+**outside** the Protocol as a documented duck-typed contract detected with
+`forge.base.supports()`, degrading to `unverifiable`. A regression test pins it.
+
+### Added — plugin 1.10.0: ritual-token coverage is now gated in the adapters
 ### Accepted design (no code yet) — [ADR-010](docs/adr/ADR-010-baron-notify-wake.md): `baron notify`
 
 Design for the FM1/FM5 wake gap: Barony fleets are poll-only, so when a verdict or

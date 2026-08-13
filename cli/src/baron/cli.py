@@ -15,6 +15,7 @@ import typer
 
 from . import (
     clock,
+    decision as decision_mod,
     export as export_mod,
     doctor as doctor_mod,
     guard as guard_mod,
@@ -350,6 +351,104 @@ def finding_new(
     rebases onto origin, re-parses the index, renumbers, and retries (bounded).
     """
     _ledger_new("finding", collab, title, author, body_file, no_push, retries)
+
+
+@decision_app.command("reconcile")
+def decision_reconcile(
+    number: int = typer.Argument(..., help="Decision number, e.g. 57 for D57."),
+    park: list[str] = typer.Option(
+        [], "--park",
+        help="Backlog item this decision supersedes (issue number, or an id for a file backlog). Repeatable.",
+    ),
+    collab: Path = _COLLAB_OPT,
+    no_commit: bool = typer.Option(False, "--no-commit", help="Write the block but do not commit."),
+) -> None:
+    """Record what a ratified decision must reconcile (ADR-009 — `park` only).
+
+    A decision is durable only when it reaches the surfaces personas pull WORK
+    from. Recording it in decisions/ is the obvious half; parking the items it
+    supersedes is the half that stops an agent picking up the now-wrong work.
+
+    baron does NOT infer what a decision contradicts — the items are declared
+    input. It records them, and `baron decision check` verifies discharge.
+    """
+    requested = [decision_mod.Park(p) for p in park]
+    try:
+        try:
+            manifest = status_mod.load_manifest(collab)
+        except Exception:
+            manifest = {}
+        unresolved = decision_mod.unresolved_parks(collab, manifest, requested)
+        merged = decision_mod.reconcile(
+            collab, number, parks=requested, commit=not no_commit,
+        )
+    except decision_mod.DecisionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"D{number}: {len(merged)} park obligation(s) recorded")
+    for p in merged:
+        typer.echo(f"  park {p.issue}")
+    for p in unresolved:
+        typer.echo(
+            f"WARNING: `{p.issue}` matches nothing in the backlog. `check` will report "
+            f"it unverifiable forever, since absence is not treated as proof. Record "
+            f"the id exactly as the backlog writes it (e.g. GH-214, not 214).",
+            err=True,
+        )
+    typer.echo("\nrun `baron decision check` to verify discharge; recording is not reconciling.")
+
+
+@decision_app.command("check")
+def decision_check(
+    number: Optional[int] = typer.Argument(None, help="Only this decision (default: all)."),
+    collab: Path = _COLLAB_OPT,
+    fetch: bool = typer.Option(False, "--fetch", help="Query the forge for issue-tracker backlogs."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Verify every recorded park obligation is discharged.
+
+    Three states, never two: discharged / outstanding / unverifiable. An
+    unreachable forge is never scored as either (ADR-009 §4). Exit 0 = nothing
+    outstanding, 1 = outstanding.
+    """
+    try:
+        manifest = status_mod.load_manifest(collab)
+    except Exception as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    forge = repo = None
+    if fetch:
+        try:
+            from .forge import get_forge
+
+            # get_forge takes a forge NAME (default "github"); passing the manifest
+            # raised TypeError: unhashable type: 'dict' — and it escaped the except
+            # below, so the ONLY path that verifies a github_issues backlog crashed.
+            forge = get_forge(str(manifest.get("forge", "github")))
+            repo = collab
+        except (ForgeError, ForgeUnavailable, TypeError, KeyError) as exc:
+            typer.echo(
+                f"note: forge unavailable ({exc.__class__.__name__}: {exc}) — "
+                f"forge-backed checks report unverifiable"
+            )
+    try:
+        findings = decision_mod.check(collab, manifest, only=number, forge=forge, repo=repo)
+    except decision_mod.DecisionError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    if json_out:
+        _echo_json({"findings": [f.__dict__ for f in findings]})
+    else:
+        for f in findings:
+            typer.echo(f"{f.state.upper():13s} D{f.decision} park {f.target}: {f.message}")
+        outstanding = sum(1 for f in findings if f.state == decision_mod.OUTSTANDING)
+        unver = sum(1 for f in findings if f.state == decision_mod.UNVERIFIABLE)
+        typer.echo(
+            f"{len(findings)} obligation(s): {outstanding} outstanding, {unver} unverifiable"
+        )
+    # Green only on all-DISCHARGED: unverifiable is amber, and amber is not green.
+    raise typer.Exit(0 if decision_mod.is_green(findings) else 1)
 
 
 @decision_app.command("new")

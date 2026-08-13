@@ -156,6 +156,11 @@ MANIFEST_SPEC: Node = _map(
             {
                 "source": Node("str", enum=BACKLOG_SOURCES, enum_severity="warning"),
                 "location": Node("str"),
+                # v1.3 (ADR-009 §3.2): the label a parked item carries so the rendered
+                # check_backlog query excludes it. Optional — but without it the only
+                # discharge for a park obligation is CLOSING the item, which is
+                # deliberate: the default fails toward the strong condition.
+                "park_label": Node("str", required=False),
             }
         ),
         "personas": Node(

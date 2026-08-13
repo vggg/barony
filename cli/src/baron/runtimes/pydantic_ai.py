@@ -177,7 +177,12 @@ _RITUAL_LINES = {
         "LIVE (SHA matches). A verdict at an older SHA is void and needs a re-review. "
         "Never treat a review-state label as the evidence."
     ),
-    "check_backlog": "Read the project backlog (source per the manifest).",
+    "check_backlog": (
+        "Read the project backlog (source per the manifest). If "
+        "manifest.backlog.park_label is declared, skip parked items — marked "
+        "<!-- <park_label> --> in a file backlog, or carrying that label on a "
+        "tracker. A parked item is work a ratified decision superseded (ADR-009)."
+    ),
 }
 
 

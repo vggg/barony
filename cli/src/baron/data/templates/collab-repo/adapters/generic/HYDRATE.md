@@ -156,6 +156,9 @@ avoids leaking secrets).
   verdict's head SHA against the PR's current head and act on the LIVE ones (SHA matches) before
   claiming new work. A review-state label is an index, never the evidence.
 - `check_backlog` -> resolve `manifest.backlog` (a file read, or an issue-tracker query).
+  When `manifest.backlog.park_label` is declared, EXCLUDE parked items: a tracker by its
+  label field, a file backlog by the HTML-comment marker `<!-- <park_label> -->` on the
+  item's line. A parked item is work a ratified decision superseded (ADR-009 §3.2).
 
 <!-- /ritual-map:v1 -->
 

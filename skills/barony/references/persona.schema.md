@@ -68,7 +68,7 @@ remains external to the adapters (see `STATUS.md` deferred items).
 | `read_conventions` | read the collab repo's CONVENTIONS + COORDINATION |
 | `check_handoffs` | find open handoffs addressed to this persona or `all` |
 | `check_review_feedback` | on this persona's open PRs, act on any review verdict that is LIVE at the current head — before claiming new work |
-| `check_backlog` | read the project backlog (source per manifest: file or issue-tracker) |
+| `check_backlog` | read the project backlog (source per manifest: file or issue-tracker), EXCLUDING parked items when `manifest.backlog.park_label` is declared — tracker: its label field; file backlog: the HTML-comment marker `<!-- <park_label> -->` (ADR-009 §3.2) |
 
 > v0 used `pull_both_repos` (transport-coupled). v1 renames to `sync_repos` (intent only).
 > The adapter + manifest decide HOW to sync and WHERE the backlog lives.

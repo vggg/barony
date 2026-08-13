@@ -45,15 +45,16 @@ adopter gets templates missing battle-tested rules. Precedent: ADR-002 folded th
 *Each is a candidate net-new differentiator — several may be things no competitor has. Probe/scope
 with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
 
-- [~] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
+- [x] **2.1 — `baron decision`** — the FM6/D57 mechanism: a ratified decision must *reconcile the
   work-pull surfaces it contradicts* (park/close contradicting epics, update direction doc, broadcast),
   not just append to `decisions/`. This is the "next thing to extend on" (owner, 2026-07-31). Start with
   a design ADR.
   *(Design ADR: [ADR-009](docs/adr/ADR-009-baron-decision-reconciliation.md), status **proposed / parked**.
-  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**.)*
-  **Currency, 2026-08-10: P2.3 has shipped, so the sequencing gate is discharged — what holds
-  this now is Q1 (first-cut scope), Q3 (who may run `reconcile`) and Q4 (retrofit +
-  supersession), which are owner answers, not build work.** No implementation until they land.
+  Owner 2026-08-02: `park_label` read-side change **accepted**; **P2.3 first**; **first cut = `park`
+  only**. SHIPPED in CLI 0.8.0 — reconcile/check, the marker block, `manifest.backlog.park_label`
+  (schema v1.3), and park-exclusion in all five `check_backlog` renderers. Q3/Q4 took the proposed
+  defaults (not capability-gated; block-less legacy decisions are green, not nagged).
+  `supersedes` / `broadcast` / `direction_doc` remain designed and unbuilt.)*
 - [ ] **2.2 — Deterministic enforcement** (already load-bearing in the roadmap, ADR-004 territory):
   per-runtime hook/ToolGuard interceptors so a denied capability is *impossible*, not requested.
   Driver: FM4 — a dev persona merged ~15 PRs despite `merge_pr` denied in its own config, then refused

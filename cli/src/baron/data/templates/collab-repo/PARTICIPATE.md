@@ -31,7 +31,9 @@ Execute `persona.yaml > session_ritual` in order, resolving intent tokens via th
 - `check_review_feedback` → on your open PRs, compare each latest verdict comment's head SHA to
   the PR's current head; act on the verdicts that are LIVE (SHA matches) before claiming new
   work. A label is never the evidence — see `CONVENTIONS.md § A label is not evidence`.
-- `check_backlog` → read `manifest.backlog` (file or tracker).
+- `check_backlog` → read `manifest.backlog` (file or tracker). When
+  `manifest.backlog.park_label` is declared, EXCLUDE parked items — tracker: its label field;
+  file backlog: the HTML-comment marker `<!-- <park_label> -->` (ADR-009 §3.2).
 
 ### 4. Do the work, within your capabilities
 - Claim a backlog item; branch; work; report to `findings/`.
