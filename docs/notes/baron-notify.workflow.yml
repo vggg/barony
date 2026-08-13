@@ -1,0 +1,75 @@
+# baron-notify.yml — EMITTED INTO THE COLLAB REPO by `baron init` (ADR-010 §4).
+#
+# STATUS: reference template from the ADR-010 core implementation. Wiring it into
+# `baron init` (scaffold.py emit list) + the template drift guard is the remaining
+# step — see the coverage note. It is reproduced here verbatim so review can happen
+# against the CLI that fires the event.
+#
+# Barony ships the event, the gate, and the seam. It NEVER ships `claude -p`:
+# the `spawn` job is an explicitly PROJECT-OWNED slot (ADR-007 — the runtime owns
+# the agent loop). repository_dispatch runs workflows from the DEFAULT BRANCH ONLY,
+# which is why `baron notify` refuses to wake from any other branch.
+name: baron-notify
+
+on:
+  repository_dispatch:
+    types: [baron-notify]
+
+# Stampede guard only — NOT a loop guard (ADR-010 §5.2). The real loop backstop is
+# that a default GITHUB_TOKEN cannot trigger another dispatch-driven workflow
+# (§5.3): chained wakes no-op until the project supplies a PAT. Say so out loud.
+concurrency:
+  group: baron-notify-${{ github.event.client_payload.persona }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    # ~seconds: resolve the handoff the CLI pushed, read manifest.notify.wake_allowed
+    # and the committed wake_depth. Detection + audit, NOT authentication (§5.5): the
+    # acting persona is read from the committed `from:`, never from client_payload.
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          STEM='${{ github.event.client_payload.handoff }}'
+          F="_handoff/${STEM}.md"
+          if [ ! -f "$F" ]; then
+            echo "handoff $F not found on the default branch — fail closed";
+            echo "allowed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          FROM=$(sed -n 's/^from:[[:space:]]*//p' "$F" | head -1)
+          DEPTH=$(sed -n 's/^wake_depth:[[:space:]]*//p' "$F" | head -1)
+          MAXD=2
+          # Absent notify.wake_allowed -> nobody may wake (fail-closed).
+          ALLOWED=$(python3 - "$FROM" <<'PY'
+          import sys, pathlib
+          try:
+              import yaml
+              m = yaml.safe_load(pathlib.Path("manifest.yaml").read_text()) or {}
+          except Exception:
+              print("false"); sys.exit(0)
+          allow = (m.get("notify") or {}).get("wake_allowed") or []
+          print("true" if sys.argv[1] in allow else "false")
+          PY
+          )
+          if [ "${DEPTH:-0}" -gt "$MAXD" ]; then ALLOWED=false; fi
+          echo "from=$FROM depth=${DEPTH:-0} allowed=$ALLOWED"
+          echo "allowed=$ALLOWED" >> "$GITHUB_OUTPUT"
+
+  spawn:
+    needs: gate
+    if: needs.gate.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # ┌─────────────────────────────────────────────────────────────────────┐
+      # │ PROJECT-OWNED SLOT. Barony emits the seam; you fill it. Spawn your    │
+      # │ runtime here (e.g. a headless `claude -p` for                         │
+      # │ ${{ github.event.client_payload.persona }}, reading the handoff       │
+      # │ ${{ github.event.client_payload.handoff }}). Give it whatever         │
+      # │ credential your project already uses for the code repo.               │
+      # └─────────────────────────────────────────────────────────────────────┘
+      - run: echo "spawn ${{ github.event.client_payload.persona }} — project-owned"

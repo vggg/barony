@@ -23,6 +23,7 @@ from . import (
     indexer,
     ledger,
     lock as lock_mod,
+    notify as notify_mod,
     rules as rules_mod,
     runtimes,
     scaffold as scaffold_mod,
@@ -1637,6 +1638,73 @@ def session_end(
     else:
         typer.echo(session_mod.render_end(report))
     raise typer.Exit(1 if report.reds else 0)
+
+
+@app.command("notify")
+def notify_cmd(
+    persona: str = typer.Argument(..., help="Persona to notify (the handoff's `for:`)."),
+    title: str = typer.Option(..., "--title", help="Handoff title (drives the filename slug)."),
+    from_: Optional[str] = typer.Option(
+        None, "--from", help="Sending persona. Required unless --no-wake."
+    ),
+    body_file: Optional[Path] = typer.Option(
+        None, "--body-file", help="File whose content becomes the handoff body."
+    ),
+    in_reply_to: Optional[str] = typer.Option(
+        None, "--in-reply-to", help="Parent handoff stem; carries the wake_depth chain (ADR-010 §5.1)."
+    ),
+    max_depth: int = typer.Option(
+        notify_mod.DEFAULT_MAX_DEPTH, "--max-depth", help="Refuse to wake past this hop count."
+    ),
+    no_wake: bool = typer.Option(
+        False, "--no-wake", help="Deliver the handoff only; fire no repository_dispatch."
+    ),
+    collab: Path = _COLLAB_OPT,
+) -> None:
+    """Deliver a _handoff/ to <persona>, then (unless --no-wake) fire a repository_dispatch
+    so a project-owned workflow spawns them. Delivery never depends on the wake (ADR-010)."""
+    wake = not no_wake
+    if wake and not from_:
+        typer.echo(
+            "error: --from is required unless --no-wake "
+            "(it keys manifest.notify.wake_allowed and wake_origin)",
+            err=True,
+        )
+        raise typer.Exit(2)
+    body: Optional[str] = None
+    if body_file is not None:
+        if not body_file.is_file():
+            typer.echo(f"error: --body-file {body_file} not found", err=True)
+            raise typer.Exit(2)
+        body = body_file.read_text(encoding="utf-8")
+    forge = None
+    if wake:
+        try:
+            from .forge import get_forge
+
+            forge = get_forge("github")
+        except Exception:
+            forge = None
+    try:
+        result = notify_mod.notify(
+            collab.resolve(),
+            persona=persona,
+            title=title,
+            from_=from_ or "baron",
+            body=body,
+            in_reply_to=in_reply_to,
+            max_depth=max_depth,
+            wake=wake,
+            forge=forge,
+        )
+    except notify_mod.NotifyError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(result.handoff.as_posix())
+    if result.woke:
+        typer.echo(f"woke {persona}: repository_dispatch fired (wake_depth {result.wake_depth}).")
+    else:
+        typer.echo(f"delivered; no wake — {result.suppressed}")
 
 
 def main() -> None:  # pragma: no cover - console-script convenience

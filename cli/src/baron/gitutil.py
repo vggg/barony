@@ -115,3 +115,10 @@ def last_commit_date(repo: Path, *paths: str) -> str | None:
     proc = git(repo, *args, check=False)
     out = proc.stdout.strip()
     return out or None
+
+
+def current_branch(repo: Path) -> str | None:
+    """The checked-out branch name, or None if detached HEAD."""
+    proc = git(repo, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    name = proc.stdout.strip()
+    return name if (proc.returncode == 0 and name and name != "HEAD") else None
