@@ -60,6 +60,7 @@ def create(
     priority: str = "medium",
     body: str | None = None,
     commit: bool = True,
+    extra: dict[str, str] | None = None,
 ) -> Path:
     handoff_dir = collab / "_handoff"
     handoff_dir.mkdir(parents=True, exist_ok=True)
@@ -74,7 +75,8 @@ def create(
         f"for: {for_}\n"
         f"from: {from_}\n"
         f"priority: {priority}\n"
-        "---\n"
+        + "".join(f"{k}: {v}\n" for k, v in (extra or {}).items())
+        + "---\n"
         "\n"
         f"# {title}\n"
     )

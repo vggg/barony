@@ -107,6 +107,28 @@ class GitHubForge:
             ]
         return data
 
+    def dispatch_event(
+        self, repo: Path, *, event_type: str, payload: dict[str, object]
+    ) -> None:
+        """Fire a repository_dispatch (ADR-010 §6, optional duck-typed extension).
+
+        Triggers the repo's workflows listening on ``event_type`` FROM ITS DEFAULT
+        BRANCH ONLY; the caller (``baron notify``) guarantees the handoff was pushed
+        there first. Needs write access — the same access a push needs.
+        """
+        if not self.available():
+            raise ForgeUnavailable("GitHub CLI (`gh`) not found on PATH")
+        body = json.dumps({"event_type": event_type, "client_payload": payload})
+        proc = subprocess.run(
+            ["gh", "api", "--method", "POST",
+             "repos/{owner}/{repo}/dispatches", "--input", "-"],
+            cwd=str(repo), input=body, capture_output=True, text=True,
+        )
+        if proc.returncode != 0:
+            raise ForgeError(
+                f"repository_dispatch failed: {proc.stderr.strip() or proc.stdout.strip()}"
+            )
+
     def create_branch(self, repo: Path, *, branch: str, base: str, message: str) -> None:
         """Branch + empty commit + push, without touching the local checkout:
         ``git commit-tree`` writes an empty commit on top of ``origin/<base>``
