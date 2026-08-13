@@ -45,6 +45,7 @@ kind                 emitted when                                 typical ``baro
 ``session.end``      an end report was rendered (ADR-007)         ``ok``
 ``tool.post``        a PostToolUse hook observed a completed call ``ok`` / ``error``
 ``tool.failure``     a tool call reported failure                 ``error``
+``review.verdict``   a reviewer/merger verdict + metrics (ADR-024) the verdict (``approved`` / ``changes`` / …)
 ===================  ===========================================  ==================================
 
 Reserved ``baron.*`` attribute keys (frozen for v1; new keys are additive):
@@ -116,6 +117,7 @@ KNOWN_KINDS: tuple[str, ...] = (
     "session.end",
     "tool.post",
     "tool.failure",
+    "review.verdict",   # ADR-024: a reviewer/merger verdict + its fleet-health metrics
 )
 
 #: Attribute slots every row carries, in wire order, after ``events.version``.

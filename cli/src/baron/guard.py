@@ -203,6 +203,7 @@ EVENT_KINDS = (
     "session.end",
     "tool.post",
     "tool.failure",
+    "review.verdict",   # ADR-024 — mirrors events.KNOWN_KINDS (single registry)
 )
 
 

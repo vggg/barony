@@ -20,6 +20,7 @@ from . import (
     doctor as doctor_mod,
     guard as guard_mod,
     handoff as handoff_mod,
+    health as health_mod,
     indexer,
     ledger,
     lock as lock_mod,
@@ -30,6 +31,7 @@ from . import (
     session as session_mod,
     status as status_mod,
     validate as validate_mod,
+    verdict as verdict_mod,
     waivers as waivers_mod,
     worktree as worktree_mod,
 )
@@ -1705,6 +1707,54 @@ def notify_cmd(
         typer.echo(f"woke {persona}: repository_dispatch fired (wake_depth {result.wake_depth}).")
     else:
         typer.echo(f"delivered; no wake — {result.suppressed}")
+
+
+verdict_app = typer.Typer(
+    help="Reviewer/merger verdicts on the observation plane (ADR-024 fleet-health)."
+)
+app.add_typer(verdict_app, name="verdict")
+
+
+@verdict_app.command("record")
+def verdict_record(
+    pr: int = typer.Option(..., "--pr", help="PR number reviewed."),
+    head: str = typer.Option(..., "--head", help="Head SHA the verdict is bound to."),
+    from_: str = typer.Option(..., "--from", help="Reviewing persona."),
+    verdict_: str = typer.Option(..., "--verdict", help="approved | changes | needs-human | ..."),
+    mutations_run: int = typer.Option(0, "--mutations-run", help="Mutation-check tally: run."),
+    mutations_killed: int = typer.Option(0, "--mutations-killed", help="Mutation-check tally: killed."),
+    drift: int = typer.Option(0, "--drift", help="Claim-vs-code drift instances found this verdict."),
+    drift_understating: int = typer.Option(0, "--drift-understating", help="Of those, how many pointed the safe/understating way."),
+    escape: bool = typer.Option(False, "--escape", help="Caught a defect a PRIOR review of an earlier head passed (a reviewer miss)."),
+    altitude: Optional[int] = typer.Option(None, "--altitude", help="Round number if this is a recurring bug chased across heads."),
+    note: str = typer.Option("", "--note", help="<=80 char note."),
+    collab: Path = _COLLAB_OPT,
+) -> None:
+    """Emit a review.verdict event. Default sink is null (D4) — set BARON_EVENTS_SINK=disk to record."""
+    verdict_mod.record(
+        collab.resolve(), author=from_, pr=pr, head=head, verdict=verdict_,
+        mutations_run=mutations_run, mutations_killed=mutations_killed,
+        drift_instances=drift, drift_understating=drift_understating,
+        escape=escape, altitude=altitude, note=note,
+    )
+    typer.echo(f"recorded review.verdict for PR #{pr}@{head}")
+
+
+@app.command("health")
+def health_cmd(
+    since: Optional[str] = typer.Option(None, "--since", help="ISO date prefix; drop verdicts before it."),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+    collab: Path = _COLLAB_OPT,
+) -> None:
+    """Fleet-health rollup: reviewer-quality metrics from the plane + baron status stalls (ADR-024).
+
+    Read-only. Measures what was emitted, not what happened — a fleet that records no
+    verdicts shows a clean board, so the report states its coverage."""
+    rep = health_mod.collect(collab.resolve(), since=since)
+    if json_out:
+        _echo_json(rep.to_dict())
+    else:
+        typer.echo(health_mod.render(rep))
 
 
 def main() -> None:  # pragma: no cover - console-script convenience
