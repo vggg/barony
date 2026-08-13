@@ -83,6 +83,7 @@ def test_layout_manifest_and_self_validation(tmp_path: Path, fixed_clock: object
         "wiki/log.md",
         ".github/workflows/lock-guard.yml",
         ".github/workflows/strip-stale-verdict.yml",
+        ".github/workflows/baron-notify.yml",
     ):
         assert (dest / rel).is_file(), f"missing {rel}"
 

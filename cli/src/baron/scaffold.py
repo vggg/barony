@@ -3,7 +3,7 @@
 The non-conversational subset of the ORCHESTRATE.md recipe: create the collab
 repo skeleton (CONVENTIONS/COORDINATION, manifest, canon/ + adapters/ from the
 vendored templates, hydrated ``agents/<slug>/persona.yaml`` per persona, the
-genesis handoff, ledger index headers, wiki stub, the lock-guard and the
+genesis handoff, ledger index headers, wiki stub, the lock-guard, strip-stale-verdict and baron-notify
 strip-stale-verdict CI templates), then git-init and commit. Everything
 emitted is deterministic — no interview, no runtime self-assessment.
 
@@ -754,6 +754,10 @@ def scaffold(
     copy(
         "collab-repo/.github/workflows/strip-stale-verdict.yml",
         ".github/workflows/strip-stale-verdict.yml",
+    )
+    copy(
+        "collab-repo/.github/workflows/baron-notify.yml",
+        ".github/workflows/baron-notify.yml",
     )
     # Runtime kits (deterministic floor; Tier-3 stays conversational — see module doc).
     for persona in personas:
