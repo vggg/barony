@@ -41,7 +41,7 @@ def test_index_block_created_and_regenerated(collab: Path, fixed_clock: object) 
     text = readme.read_text(encoding="utf-8")
     assert indexer.BEGIN_MARKER in text and indexer.END_MARKER in text
     assert "1 open · 0 done · 1 archived" in text
-    assert "| [2026-07-22-open-one.md](2026-07-22-open-one.md) | tess | rex | 0 |" in text
+    assert "| [2026-07-22-1200-rex-open-one.md](2026-07-22-1200-rex-open-one.md) | tess | rex | 0 |" in text
 
     # Custom prose outside the markers survives regeneration.
     readme.write_text("PREFACE\n\n" + text + "\nEPILOGUE\n", encoding="utf-8")

@@ -88,13 +88,13 @@ def test_start_surfaces_persona_open_handoff_and_brief(
 
     brief = session.start(collab, persona="tess")
     names = {h.path.name for h in brief.open_handoffs}
-    assert "2026-07-22-for-tess.md" in names
-    assert "2026-07-22-for-everyone.md" in names  # `all` is addressed to tess too
-    assert "2026-07-22-for-iris.md" not in names  # someone else's
+    assert "2026-07-22-1200-rex-for-tess.md" in names
+    assert "2026-07-22-1200-rex-for-everyone.md" in names  # `all` is addressed to tess too
+    assert "2026-07-22-1200-rex-for-iris.md" not in names  # someone else's
 
     text = session.render_brief(brief)
     assert "session brief" in text
-    assert "2026-07-22-for-tess.md" in text
+    assert "2026-07-22-1200-rex-for-tess.md" in text
     assert "file — backlog.md" in text  # backlog source + location from the manifest
     assert "CONVENTIONS.md (found)" in text and "COORDINATION.md (found)" in text
     # honesty note: no agent, orchestration is the runtime's job.
