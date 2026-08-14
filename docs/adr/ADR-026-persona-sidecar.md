@@ -15,6 +15,9 @@ related:
 
 # ADR-026 (ACCEPTED): the persona sidecar — a persona as a deployable unit
 
+> **§6 Q4 is SUPERSEDED by [ADR-027](ADR-027-agent-identity.md) (2026-08-14)** — the
+> "deferred per-persona signing keys" it pointed at are now specified and built.
+>
 > **ACCEPTED 2026-08-13 (Vikram) — §6 answered as recommended:** launcher first (emit
 > `agents/<slug>/sidecar.sh` + a `baron sidecar` subcommand), loop configurable per persona,
 > containerise once a fleet needs laptop-off durability, identity via the deferred per-persona signing
@@ -78,4 +81,9 @@ the sidecars run).
    fleet needs laptop-off durability? (Recommend: launcher first — it's the cheap proof.)
 4. **Identity/credentials:** how does a sidecar get its per-persona git identity + runtime credential
    (ties to the deferred per-persona signing keys)?
+   > **SUPERSEDED by [ADR-027](ADR-027-agent-identity.md) (2026-08-14).** The signing keys are no
+   > longer deferred and no longer unspecified: per-persona SSH keys, generated at spawn, enrolled
+   > once into `.barony/allowed_signers`, verified offline. A sidecar gets its identity by running
+   > `baron identity init`, which refuses to let the persona work until the key is enrolled. No
+   > per-persona *forge* credential is introduced — agents still push under the owner's identity.
 5. **Ephemeral vs. long-running** per persona (pairs with the Q2 decision): a manifest field?

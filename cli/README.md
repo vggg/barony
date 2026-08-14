@@ -371,6 +371,51 @@ prepared body under the frontmatter (parity with `finding`/`decision`, no
 `--as <slug>` attributes the close commit as `<slug>:` (default `baron:`).
 Status edits are textual so prose is never reflowed.
 
+### `baron identity init|show|sign` + `baron verify identity` ([ADR-027](../docs/adr/ADR-027-agent-identity.md))
+
+```bash
+baron identity init --persona carson       # at spawn — exits 1 until enrolled
+baron identity show                        # who is enrolled in this repo
+baron handoff sign _handoff/2026-08-14-1200-carson-note.md
+baron handoff verify --record-finding      # the librarian's ingest gate
+baron verify identity --base origin/main --head HEAD --label agent-carson   # the CI gate
+```
+
+Per-persona **SSH signing keys**, generated at spawn, enrolled once into
+`.barony/allowed_signers` (a file **in the repo** — a clone is sufficient to verify
+anything, offline, forever), verified with `git verify-commit`.
+
+`identity init` generates `~/.barony/keys/<slug>.key` if absent (`$BARON_KEY_DIR`
+overrides), configures **repo-local** git (`gpg.format=ssh`, `commit.gpgsign`,
+`tag.gpgsign`, the in-repo allowed-signers file, and a distinct
+`<slug>@agents.barony.invalid` author email), writes an enrollment **request** into
+`.barony/allowed_signers`, and **exits non-zero until that request is merged at HEAD**.
+The agent cannot merge it — `.github/CODEOWNERS` is owner-only — and that one human
+merge is the trust root. Identity precedes work.
+
+`verify identity` walks `BASE..HEAD` and, per commit, checks the signature against the
+in-repo allowlist, that git's trust status is `G`, and the **three-way cross-check**:
+signer principal ↔ the persona the commit claims (a `Barony-Persona:` trailer and/or the
+PR's `agent-<slug>` routing label, checked independently) ↔ an `agents/<slug>/persona.yaml`
+registry entry. Fail-closed. `baron init` emits it as `verify-identity.yml`; **make it a
+required status check**, and use squash/merge commits — *rebase-merge* adds head-branch
+commits to the base without signature verification.
+
+Handoffs and findings get detached signatures (`ssh-keygen -Y sign` → `<file>.sig`).
+`baron handoff verify` and `baron handoff close` refuse an artifact whose signature does
+not verify and **record the refusal as a finding** — an attribution failure is evidence,
+not something to drop silently. A *missing* signature only warns by default
+(ADR-027 §7.3); `--require-signature` makes it a refusal.
+
+**Agents still push under the owner's forge identity.** There are no per-persona tokens,
+machine accounts or GitHub Apps anywhere in this — attribution comes from the **key**, and
+GitHub allows unlimited signing keys per account. Owner setup:
+[`docs/runbooks/identity-signing.md`](../docs/runbooks/identity-signing.md).
+
+**Honest bound:** this establishes attribution among **cooperating** agents. Private keys
+sit unencrypted in each agent's workspace, so it does **not** defend against a hostile
+actor with write access there — the same bound as `baron guard`.
+
 ### `baron index` (M3)
 
 Regenerates a marker-delimited summary block (`BEGIN/END BARON INDEX` HTML

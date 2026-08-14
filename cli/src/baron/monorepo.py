@@ -223,6 +223,7 @@ def _root_readme(name: str, projects: list[ProjectRef], date: str) -> str:
 #: are emitted unchanged.
 _ROOT_WORKFLOWS: tuple[tuple[str, str], ...] = (
     ("collab-repo/.github/workflows/lock-guard.yml", "lock-guard.yml"),
+    ("collab-repo/.github/workflows/verify-identity.yml", "verify-identity.yml"),
     ("collab-repo/.github/workflows/strip-stale-verdict.yml", "strip-stale-verdict.yml"),
     (
         "collab-repo/.github/workflows/baron-notify-monorepo.yml",
@@ -231,8 +232,11 @@ _ROOT_WORKFLOWS: tuple[tuple[str, str], ...] = (
 )
 
 
-def create_root(root: Path, name: str, *, date: str) -> list[str]:
+def create_root(
+    root: Path, name: str, *, date: str, owner: str | None = None
+) -> list[str]:
     """Write the root marker, README and the shared CI seam. Returns created paths."""
+    from .scaffold import ALLOWED_SIGNERS_REL, render_codeowners
     from .templates import read_template
 
     if root.exists() and any(root.iterdir()):
@@ -250,6 +254,19 @@ def create_root(root: Path, name: str, *, date: str) -> list[str]:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(read_template(template_rel), encoding="utf-8")
         created.append(f".github/workflows/{out_name}")
+    # ADR-027: the root owns .github/, so the CODEOWNERS gate on every project's
+    # `.barony/` lives here — one gate for the whole monorepo, which is the same
+    # shape as one CI seam for the whole monorepo.
+    codeowners = root / ".github" / "CODEOWNERS"
+    codeowners.write_text(render_codeowners(owner), encoding="utf-8")
+    created.append(".github/CODEOWNERS")
+    # ...and the registry it gates. One git repo, one allowlist: git resolves
+    # `gpg.ssh.allowedSignersFile` against the work tree, so a monorepo has exactly
+    # one, at the root, covering every project's personas.
+    signers = root / ALLOWED_SIGNERS_REL
+    signers.parent.mkdir(parents=True, exist_ok=True)
+    signers.write_text(read_template("collab-repo/.barony/allowed_signers"), encoding="utf-8")
+    created.append(ALLOWED_SIGNERS_REL)
     return created
 
 

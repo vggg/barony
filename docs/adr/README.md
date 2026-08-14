@@ -39,6 +39,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [024](ADR-024-fleet-health.md) | `baron health` — a fleet-health surface from the substrate, not a bespoke script | Accepted 2026-08-13 | Sits BESIDE `baron status` and calls into it. §5 states the honest bound: it measures what was emitted. Goes portfolio-wide under ADR-025. |
 | [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
 | [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
+| [027](ADR-027-agent-identity.md) | Agent identity — per-persona SSH signing keys enrolled in the repo | Accepted 2026-08-14 | Promotes the 2026-08-04 vault spike. `baron identity init` / `baron verify identity`; `.barony/allowed_signers` is the registry, CODEOWNERS the human gate. Agents still push under the OWNER's forge identity — attribution is the KEY. **Supersedes ADR-026 §6 Q4.** |
 
 ## Where the owner decisions landed
 
@@ -58,7 +59,8 @@ also an owner call. All five are resolved; none of D2, D4 or F3 carried a code c
 ADR numbers are never reused. Two are absent from this directory on purpose:
 
 - **010** and **011** were claimed by branches that are still unmerged (PRs #29 and #32).
-  ADR-013's header carries the same note. Anyone opening a new ADR should start at **023**.
+  ADR-013's header carries the same note. Anyone opening a new ADR should start at **029**
+  (**028** is claimed by the merge-gate branch, PR #46).
 - Three workstreams of the ops-plane consolidation each independently wrote an `ADR-018`.
   The number stayed with `harden/d1-semantics` because ADR-019 was already written against
   it by number; the other two were renumbered **020** and **021**. Only identifiers changed
