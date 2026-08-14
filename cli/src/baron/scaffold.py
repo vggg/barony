@@ -58,6 +58,7 @@ ARCHETYPE_TEMPLATES: dict[str, str] = {
     "autonomous-cron": "collab-repo/agents/__AUTONOMOUS_CRON__/persona.yaml",
     "reviewer": "collab-repo/agents/__REVIEWER__/persona.yaml",
     "merger": "collab-repo/agents/__MERGER__/persona.yaml",
+    "observer": "collab-repo/agents/__OBSERVER__/persona.yaml",
 }
 
 RUNTIMES: tuple[str, ...] = ("claude", "generic", "pydantic-ai", "code-puppy")
@@ -495,6 +496,26 @@ def _ledger_index(ctx: _Context, kind: str) -> str:
         f"`baron {tool} new` (house style: `### {prefix}<N> — <title> (<date>, <author>)`).\n"
         "Numbering is allocated race-safely via push-retry; gaps are reported, history\n"
         "is never renumbered.\n"
+    )
+
+
+def _observations_index(ctx: _Context) -> str:
+    """The observer's zone index — deliberately NOT a numbered ledger (ADR-029 §4).
+
+    Findings and decisions carry allocated numbers because other records cite them;
+    observations are dated notes with no numbering authority behind them. Giving the
+    observer an `O<N>` allocator would hand a read-only persona a second single-writer
+    numbering surface, which is the thing the archetype is defined not to have.
+    """
+    observers = ", ".join(p.slug for p in ctx.personas if p.archetype == "observer")
+    return (
+        f"# {ctx.project} — observations index\n\n"
+        f"Dated notes from the observer ({observers}), newest first. Not numbered: an\n"
+        "observation is evidence, not a citable record — anything that needs a number is\n"
+        "proposed to the Librarian via `_handoff/` and becomes an `F<N>`.\n\n"
+        "| Date | Note | Headline |\n"
+        "|---|---|---|\n"
+        f"| {ctx.date} | *(none yet)* | scaffolded by `baron init` |\n"
     )
 
 
@@ -948,6 +969,11 @@ def scaffold(
     write("findings/index.md", _ledger_index(ctx, "findings"))
     copy("collab-repo/decisions/README.md", "decisions/README.md", docs)
     write("decisions/index.md", _ledger_index(ctx, "decisions"))
+    # The observer's zone, emitted ONLY when the roster carries an observer (ADR-029 §4):
+    # an empty single-writer ledger in a project with no writer is a surface nobody owns.
+    if any(p.archetype == "observer" for p in personas):
+        copy("collab-repo/observations/README.md", "observations/README.md", docs)
+        write("observations/index.md", _observations_index(ctx))
     copy("collab-repo/wiki/README.md", "wiki/README.md", docs)
     copy("collab-repo/wiki/index.md", "wiki/index.md", docs)
     write("wiki/log.md", _wiki_log(ctx))

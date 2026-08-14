@@ -48,8 +48,16 @@ CAPABILITY_VERBS: tuple[str, ...] = (
 PARAMETRIC_VERBS: frozenset[str] = frozenset({"write_path"})
 
 #: Named convenience scopes for write_path (data, not vocabulary — any str is legal).
-WRITE_PATH_SCOPES: tuple[str, ...] = ("findings", "_handoff", "wiki", "decisions")
+WRITE_PATH_SCOPES: tuple[str, ...] = (
+    "findings",
+    "_handoff",
+    "wiki",
+    "decisions",
+    "observations",  # the observer archetype's own zone (ADR-029)
+)
 
+#: `observer` (ADR-029) is read-only: it may read everything and writes only its
+#: own `observations/` ledger.
 #: `reviewer` and `merger` are dev-SHAPED (same hydration mechanics, a narrower
 #: capability set) but they are not `dev`. Recording them as `dev` — which the
 #: templates did until 2026-08-14 — throws away the one field that says which
@@ -63,6 +71,7 @@ ARCHETYPES: tuple[str, ...] = (
     "merger",
     "autonomous-event",
     "autonomous-cron",
+    "observer",
 )
 RITUAL_TOKENS: tuple[str, ...] = (
     "sync_repos",

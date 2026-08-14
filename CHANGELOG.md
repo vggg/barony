@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), PROPOSED)
+
+The fleet's first agent, and the one with no blast radius: it may **read everything** (handoffs,
+ledgers, wiki, git/PR activity, the ADR-013 event plane, `baron status` / `baron health`) and
+writes **one zone** — its own `observations/` — plus `_handoff/` to raise something to the
+Librarian. No `write_code`, no `open_pr`, no `merge_pr`, and **no numbering authority**: findings
+and decisions stay the Librarian's single-writer surface, so an observation that deserves a
+number is proposed by handoff, never self-assigned.
+
+- **`agents/__OBSERVER__/{persona.yaml,AGENT.md}`** + `baron init --personas observer:<slug>`.
+- **Read-only where it can be mechanical.** With `write_code` denied and `write_path` allowing
+  only `[observations, _handoff]`, `baron guard` blocks a write to every other zone and blocks
+  `merge_pr`/`push_main`/`force_push` — asserted against a real guard subprocess in
+  `cli/tests/test_observer.py`, not just stated in prose. The *read* breadth is unenforced by
+  design and by ADR-020: it is total, so there is nothing to deny.
+- **`observations/`** is a dated, append-only zone emitted only when the roster carries an
+  observer, and deliberately **not** a numbered ledger (ADR-030 §2.1). `observations` joins the
+  named `write_path` scopes; scopes are data, so **the frozen v1 verb list is untouched**.
+- **Cadence is recommended, not wired**: a daily cron sweep via a persona sidecar (ADR-026),
+  stateless per cycle. ADR-007 holds — baron still does not own the loop.
+- **First live pass included**: `docs/notes/observer-first-pass-2026-08-14.md`, run read-only over
+  the `fleet-coordination` monorepo and recent `vggg/barony` activity. It found a coordination
+  substrate with **no git remote** (the VANAR "producing into a void" pattern), two live PRs
+  proposing agent identity with no cross-reference, and persona identity claimed in commit
+  subjects but present in the author field for only 3 of 23 commits.
+- **Honest bound**: an observer reports what the substrate exposes. It is not a correctness
+  guarantee and enforces nothing — that is the guard's and the gate's job. Every note carries its
+  own coverage bound so an empty section cannot read as "all clear".
 ### Added — the prior-art gate: `baron adr check` (plugin 1.12.0 / CLI 0.12.0, [ADR-029](docs/adr/ADR-029-prior-art-gate.md))
 
 Barony's enforcement thesis — *instructed → enforced*, the FM4 lesson — applied to its own
