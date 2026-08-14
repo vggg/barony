@@ -70,6 +70,17 @@ audit product depends on.
 sidecar get its identity?" was a forward pointer to *"the deferred per-persona signing keys"*.
 They are no longer deferred. Both ends carry the supersession note, per the house convention.
 
+**Also supersedes ADR-011 (PR #32, opened 2026-08-04, `proposed`, never merged) — and the way
+that happened is itself the record.** ADR-011 proposed *the same mechanism*: SSH signing keys at
+spawn, an in-repo `allowed_signers` under CODEOWNERS, the signature ↔ registry ↔ claimed-persona
+cross-check, the same three-layer gate, the same rejection table. Both are readings of the same
+2026-08-04 spike, written ten days apart, **neither citing the other** — a live open PR in this
+repo's own corpus was missed, not just a vault note. ADR-011 stopped at `proposed` with five
+blocking owner questions and no code; ADR-027 §9 dispositions all five (Q1 answered yes, Q2
+answered with one case still open, Q3 and Q4 answered, **Q5 — a `baron validate` enrollment
+check — explicitly NOT built in this cut**). PR #32 is closed as superseded; ADR number 011 is
+not reused. This is the exact failure the prior-art gate (ADR-029) is being built to catch.
+
 `cli/tests/test_identity.py` (28 tests) drives **real** `ssh-keygen` and **real** git signing —
 a mocked `ssh-keygen` would prove the mock, and the whole claim is that stock tools suffice.
 Covered: enrollment read from HEAD not the worktree, the non-zero refusal, unsigned commits,
