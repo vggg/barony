@@ -1,0 +1,27 @@
+# .barony/allowed_signers — THE agent identity registry (ADR-027).
+#
+# OpenSSH `allowed_signers` format: <principal> <keytype> <keydata> [comment].
+# One line per enrolled persona, principal `<slug>@barony`:
+#
+#   carson@barony ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... # carson (enrolled 2026-08-04)
+#
+# WHY THIS FILE IS IN THE REPO. It is the whole registry. A clone is sufficient to
+# verify every commit, handoff and finding this project ever produced — offline, with
+# no server, no CA and no vendor. That is invariant #1, not a convenience.
+#
+# HOW A KEY GETS HERE. A persona runs `baron identity init`, which generates its key
+# and appends a REQUEST line here. The persona then opens a PR. **The owner merges
+# it.** `.github/CODEOWNERS` makes this path owner-only precisely so an agent cannot
+# enroll itself — a self-minted key proves nothing until a human vouches for it. That
+# one merge is the trust root of the entire scheme.
+#
+# ROTATION. Generate a new key, PR it in, and KEEP the old line (annotated with a
+# retirement date) so historical commits still verify. That is the entire lifecycle;
+# there is no vault, no escrow, and no automation (ADR-027 §4).
+#
+# HONEST BOUND. This establishes attribution among COOPERATING agents. Private keys
+# live unencrypted in each agent's workspace, so it does NOT defend against a hostile
+# actor with write access there. Same bound as `baron guard`; do not overclaim it.
+#
+# Empty is fail-closed: until a key is enrolled, `baron verify identity` fails every
+# commit, and `baron identity init` refuses to let a persona start work.

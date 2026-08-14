@@ -23,7 +23,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [008](ADR-008-ways-of-working-2026-07-31.md) | July-31-2026 ways of working — verdict/label split, decision reconciliation | Accepted 2026-07-31 | Extends ADR-002. §4 is mechanized (as a design) by ADR-009. |
 | [009](ADR-009-baron-decision-reconciliation.md) | `baron decision` — a ratified decision reaches the work-pull surfaces | **Proposed / parked** (partial owner review 2026-08-02) | Mechanizes ADR-008 §4. Design only, no code on this branch. Q1/Q3/Q4 genuinely open — see §10. |
 | 010 | *(reserved — `baron notify`, the wake mechanism)* | **Not on this branch** | Lives on the unmerged `p2-5-baron-notify` branch, PR #29. The number is reserved and not reused. |
-| 011 | *(reserved — agent identity at spawn)* | **Not on this branch** | Lives on the unmerged `adr-011-agent-identity` branch, PR #32. The number is reserved and not reused. |
+| 011 | *(reserved — agent identity at spawn)* | **Proposed, never merged · SUPERSEDED by [ADR-027](ADR-027-agent-identity.md) (2026-08-14)** | Lived on the unmerged `adr-011-agent-identity` branch, PR #32 (opened 2026-08-04). Same problem, same 2026-08-04 spike, **same mechanism** as ADR-027 — re-derived ten days later without either citing the other. ADR-027 carries the owner's acceptance and the code, and dispositions ADR-011's five blocking questions in its §9. **PR #32 closed as superseded**; the number is reserved and not reused. |
 | [012](ADR-012-hook-coverage-and-evidence-capture.md) | Claude Code hook coverage — one enforcing hook, four observing ones | Accepted 2026-08-09 | §4's provisional producer signature **superseded in part by ADR-013 §2**; `baron.hook_event` **superseded by ADR-019**. Both marked inline. |
 | [013](ADR-013-observation-plane-events-and-sinks.md) | Observation plane — events, sinks, and the enforcement/evidence asymmetry | Accepted 2026-08-09 | §4.1's label paragraph and §9.1's defect **superseded by ADR-018**. §7.1 records the D4 sink-default decision (2026-08-10). |
 | [014](ADR-014-guard-telemetry.md) | Guard-decision telemetry — adopted in part; its transport is retired | **Adopted in part 2026-08-09 · transport RETIRED 2026-08-10** | **Status record only.** The 435-line original was never merged and lives at `harden/otel:docs/adr/ADR-014-guard-telemetry.md`. Its analysis landed as ADR-018 (§4.2) and ADR-021 (§9.1); its transport is retired. **Not rejected** — see §2. |
@@ -39,6 +39,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [024](ADR-024-fleet-health.md) | `baron health` — a fleet-health surface from the substrate, not a bespoke script | Accepted 2026-08-13 | Sits BESIDE `baron status` and calls into it. §5 states the honest bound: it measures what was emitted. Goes portfolio-wide under ADR-025. |
 | [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
 | [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
+| [027](ADR-027-agent-identity.md) | Agent identity — per-persona SSH signing keys enrolled in the repo | Accepted 2026-08-14 | Promotes the 2026-08-04 vault spike. `baron identity init` / `baron verify identity`; `.barony/allowed_signers` is the registry, CODEOWNERS the human gate. Agents still push under the OWNER's forge identity — attribution is the KEY. **Supersedes ADR-026 §6 Q4** and **ADR-011** (PR #32 — the same design, re-derived; closed as superseded, see §9). |
 
 ## Where the owner decisions landed
 
@@ -57,8 +58,14 @@ also an owner call. All five are resolved; none of D2, D4 or F3 carried a code c
 
 ADR numbers are never reused. Two are absent from this directory on purpose:
 
-- **010** and **011** were claimed by branches that are still unmerged (PRs #29 and #32).
-  ADR-013's header carries the same note. Anyone opening a new ADR should start at **023**.
+- **010** was claimed by a branch that is still unmerged (PR #29). ADR-013's header carries
+  the same note.
+- **011** was claimed by PR #32 and is **superseded by ADR-027** — the two are the same design,
+  re-derived ten days apart. PR #32 is closed; ADR-011 was never merged and its number is not
+  reused. This is the case the prior-art gate (ADR-029) exists to catch, and it is recorded
+  here rather than quietly dropped.
+- Anyone opening a new ADR should start at **029** (**028** is claimed by the merge-gate
+  branch, PR #46).
 - Three workstreams of the ops-plane consolidation each independently wrote an `ADR-018`.
   The number stayed with `harden/d1-semantics` because ADR-019 was already written against
   it by number; the other two were renumbered **020** and **021**. Only identifiers changed

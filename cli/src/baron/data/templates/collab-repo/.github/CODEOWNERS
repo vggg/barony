@@ -1,0 +1,15 @@
+# CODEOWNERS — the human gate on agent enrollment (ADR-027 §2).
+#
+# EDIT THIS FILE: replace {{OWNER_HANDLE}} with the GitHub handle (or team) that owns
+# this project. `baron init --owner <handle>` fills it for you.
+#
+# `.barony/allowed_signers` is the registry that decides which keys count as which
+# persona. If an agent could merge a change to it, it could enroll itself, and the
+# whole scheme would be self-assertion wearing a crypto costume. Owner-only review on
+# this path is what makes enrollment a human act.
+#
+# This only bites when "Require review from Code Owners" is enabled in the branch
+# ruleset for the default branch. See docs: identity-signing runbook.
+
+/.barony/               {{OWNER_HANDLE}}
+/.github/CODEOWNERS     {{OWNER_HANDLE}}

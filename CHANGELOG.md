@@ -6,6 +6,88 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — agent identity: per-persona SSH signing keys, enrolled in the repo (plugin 1.11.0 / CLI 0.10.0, [ADR-027](docs/adr/ADR-027-agent-identity.md))
+
+On **2026-08-04** an un-onboarded Codex agent committed to `main` **under the owner's git
+identity**. From the repo alone it is unattributable — it reads as Vikram. ADR-027 promotes the
+verdict of the vault spike written that day (*Lightweight verifiable agent identity at spawn*,
+fourteen options against five criteria) into a decision and builds its §4.
+
+**Per-persona SSH signing keys, generated at spawn, enrolled once into an in-repo
+`.barony/allowed_signers` file, verified offline with `git verify-commit`.** The registry is a
+file in the repo, so a clone is sufficient to verify any artifact this project ever produced —
+no server, no CA, no vendor, no network. Invariant #1 holds by construction.
+
+**Agents still push under the owner's GitHub identity.** Per-persona attribution comes from the
+signing **key**, not from a separate account, app or token — GitHub places no limit on signing
+keys per account and records which key signed each commit. No forge credential is introduced
+anywhere by this change.
+
+- **`baron identity init --persona <slug>`** — generates `~/.barony/keys/<slug>.key` if absent
+  (`$BARON_KEY_DIR` overrides), configures **repo-local** git (`gpg.format=ssh`,
+  `commit.gpgsign`, `tag.gpgsign`, the in-repo allowed-signers file, and a distinct
+  `<slug>@agents.barony.invalid` author email — which alone would have made the Codex commit
+  visibly non-human), emits an enrollment **request**, and **exits non-zero until that request
+  is merged at HEAD**. Enrollment is read from HEAD, never the worktree: an agent that writes
+  the line itself has enrolled nothing. `.github/CODEOWNERS` makes `.barony/` owner-only, and
+  that one human merge is the trust root. Identity precedes work.
+- **`baron verify identity --base --head [--label]`** — the CI gate, fail-closed. Per commit:
+  the signature verifies against the in-repo allowlist, git trust status is `G`, and the
+  **three-way cross-check** — signer principal ↔ the persona the commit claims ↔ an
+  `agents/<slug>/persona.yaml` registry entry. A commit signed by a *genuinely enrolled* key but
+  *labelled* as another persona fails, which closes the `from:` misattribution class with the
+  same check that closes the anonymous-commit class. The trailer and the routing label are
+  checked **independently**; first-match-wins would reopen the hole from the other side.
+- **`baron init` scaffolds the whole gate**: `.barony/allowed_signers` (empty = fail-closed),
+  `.github/CODEOWNERS` (`--owner <handle>`, else a loud placeholder — a plausible wrong owner
+  would silently guard nothing), and `.github/workflows/verify-identity.yml`.
+- **Handoffs and findings carry detached signatures** (`ssh-keygen -Y sign` → `<file>.sig`).
+  `baron handoff sign|verify`, and `baron handoff close` — the librarian's ingest moment —
+  refuses an artifact whose signature does not verify and **records the refusal as a finding**.
+  An attribution failure is evidence; dropping it silently is what the audit product cannot
+  afford. A *missing* signature only warns (ADR-027 §7.3 — flipping that default is a
+  fleet-wide breaking change and should be signed, not defaulted).
+- **Owner runbook**: [`docs/runbooks/identity-signing.md`](docs/runbooks/identity-signing.md).
+  Nothing here works until the owner registers the keys and turns on the `main` ruleset —
+  including *not* using rebase-merge, which adds head-branch commits to the base without
+  signature verification.
+
+**Deliberately not built** (ADR-027 §4, adopting the spike's §5 verbatim): no Barony CA or PKI,
+no hosted registry or identity API, no custom signature format, no key escrow or rotation
+automation, no DID method, no NANDA/ANS/A2A integration on speculation — and **no per-persona
+machine accounts, GitHub Apps or PATs as the attribution mechanism**. The spike surveyed and
+rejected both: Apps/bot accounts are a separate heavyweight *authorization* question needing
+per-persona human provisioning and unverifiable from a clone; fine-grained PATs attribute to the
+*account*, not the persona, so they do not attribute at all.
+
+**Honest bound, stated in the ADR, the runbook, the template, and every command's output:** this
+establishes attribution among **cooperating** agents. The private key sits unencrypted in the
+agent's workspace, so it does **not** defend against a hostile actor with write access there —
+the same bound as `baron guard`. Overclaiming is the fastest way to lose the credibility the
+audit product depends on.
+
+**Supersedes [ADR-026](docs/adr/ADR-026-persona-sidecar.md) §6 Q4**, whose answer to "how does a
+sidecar get its identity?" was a forward pointer to *"the deferred per-persona signing keys"*.
+They are no longer deferred. Both ends carry the supersession note, per the house convention.
+
+**Also supersedes ADR-011 (PR #32, opened 2026-08-04, `proposed`, never merged) — and the way
+that happened is itself the record.** ADR-011 proposed *the same mechanism*: SSH signing keys at
+spawn, an in-repo `allowed_signers` under CODEOWNERS, the signature ↔ registry ↔ claimed-persona
+cross-check, the same three-layer gate, the same rejection table. Both are readings of the same
+2026-08-04 spike, written ten days apart, **neither citing the other** — a live open PR in this
+repo's own corpus was missed, not just a vault note. ADR-011 stopped at `proposed` with five
+blocking owner questions and no code; ADR-027 §9 dispositions all five (Q1 answered yes, Q2
+answered with one case still open, Q3 and Q4 answered, **Q5 — a `baron validate` enrollment
+check — explicitly NOT built in this cut**). PR #32 is closed as superseded; ADR number 011 is
+not reused. This is the exact failure the prior-art gate (ADR-029) is being built to catch.
+
+`cli/tests/test_identity.py` (28 tests) drives **real** `ssh-keygen` and **real** git signing —
+a mocked `ssh-keygen` would prove the mock, and the whole claim is that stock tools suffice.
+Covered: enrollment read from HEAD not the worktree, the non-zero refusal, unsigned commits,
+self-minted unenrolled keys, misattribution from label *and* trailer *and* both together,
+a signer with no registry entry, tampered handoffs, a handoff signed by a persona other than its
+`from:`, the recorded-finding ingest refusal, and backward compatibility for unsigned handoffs.
+
 ### Fixed — `baron health` read a plane nobody writes to in a monorepo (CLI 0.9.0, [ADR-025 §6.8](docs/adr/ADR-025-coordination-monorepo.md))
 
 Stage 2 of the same dogfood, and the defect §6.3's generalisation predicted. The disk sink

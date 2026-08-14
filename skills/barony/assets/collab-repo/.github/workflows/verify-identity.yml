@@ -1,0 +1,50 @@
+# verify-identity.yml — EMITTED by `baron init` (ADR-027 §2.2 layer (b)).
+#
+# THE REAL GATE. Every commit in this PR must (1) carry a signature that verifies
+# against `.barony/allowed_signers` in the repo, (2) report git trust status `G`, and
+# (3) pass the three-way cross-check: signer principal ↔ the persona the commit/PR
+# claims ↔ an `agents/<slug>/persona.yaml` registry entry. A commit signed by a real
+# enrolled key but LABELLED as another persona fails — that is the misattribution
+# class, closed by the same check that closes the anonymous-commit class.
+#
+# MAKE THIS A REQUIRED STATUS CHECK. A gate that can be merged around is a report.
+# See the identity-signing runbook for the ruleset settings, and note the platform's
+# own gap: "Rebase and merge" adds head-branch commits to the base WITHOUT signature
+# verification — use squash or merge commits.
+#
+# HONEST BOUND: this establishes attribution among COOPERATING agents. It does not
+# defend against a hostile actor with write access to an agent's workspace.
+name: verify-identity
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-identity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The check walks base..head, so the merge-base must be present.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install baron
+        run: pip install --quiet barony
+      - name: Verify signatures, trust and persona attribution
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          # The routing label (agent-<slug>) is one of the three legs: it is what the
+          # PR CLAIMS. Pass it through when exactly one is present.
+          LABEL=$(printf '%s' "$LABELS" | tr ',' '\n' | grep '^agent-' | head -1 || true)
+          baron verify identity \
+            --base "$BASE_SHA" --head "$HEAD_SHA" \
+            ${LABEL:+--label "$LABEL"}

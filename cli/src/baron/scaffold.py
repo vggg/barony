@@ -75,6 +75,40 @@ ADAPTERS = ("claude", "code-puppy", "pydantic-ai", "generic")
 _SLUG_RE = re.compile(r"^[a-z][a-z0-9-]*$")
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+#: ADR-027: the in-repo agent identity registry, and the human gate on it.
+ALLOWED_SIGNERS_REL = ".barony/allowed_signers"
+#: What `--owner` is filled with when the caller does not say. NOT a real handle:
+#: a placeholder that fails loudly beats a plausible wrong owner silently guarding
+#: nothing — CODEOWNERS ignores an unresolvable name without erroring.
+OWNER_PLACEHOLDER = "@REPLACE-WITH-OWNER-GITHUB-HANDLE"
+
+
+def render_codeowners(owner: str | None) -> str:
+    """`.github/CODEOWNERS` — owner-only review on the identity registry (ADR-027 §2)."""
+    handle = (owner or OWNER_PLACEHOLDER).strip()
+    if handle and not handle.startswith("@"):
+        handle = f"@{handle}"
+    return _fill(
+        read_template("collab-repo/.github/CODEOWNERS"),
+        {"OWNER_HANDLE": handle},
+        where="collab-repo/.github/CODEOWNERS",
+    )
+
+
+def _identity_notes(owner: str | None) -> list[str]:
+    notes = [
+        "identity (ADR-027): .barony/allowed_signers is EMPTY, which is fail-closed — "
+        "each persona runs `baron identity init --persona <slug>` and you merge the "
+        "resulting enrollment PR. Nothing verifies until you do.",
+    ]
+    if not owner:
+        notes.append(
+            f".github/CODEOWNERS carries {OWNER_PLACEHOLDER} — replace it with your "
+            "GitHub handle (or re-run with --owner), or the human gate on "
+            ".barony/ guards nothing.",
+        )
+    return notes
+
 
 @dataclass(frozen=True)
 class Persona:
@@ -159,6 +193,8 @@ class _Context:
     #: Persona slugs allowed to fire a wake (manifest `notify.wake_allowed`,
     #: ADR-010 §5.5). Empty = fail-closed, which is the deliberate default.
     wake_allowed: list[str] = field(default_factory=list)
+    #: GitHub handle (or team) that owns the CODEOWNERS gate on `.barony/` (ADR-027).
+    owner: str | None = None
 
     @property
     def identity_domain(self) -> str:
@@ -828,6 +864,7 @@ def scaffold(
     do_git: bool = True,
     in_monorepo: bool = False,
     wake_allowed: list[str] | None = None,
+    owner: str | None = None,
 ) -> InitReport:
     if not _NAME_RE.match(project_name):
         raise ScaffoldError(
@@ -870,6 +907,7 @@ def scaffold(
         code_remote=code_remote,
         in_monorepo=in_monorepo,
         wake_allowed=list(wake_allowed or []),
+        owner=owner,
     )
     report = InitReport(root=root, personas=personas, runtime=runtime)
     created = report.created
@@ -926,6 +964,19 @@ def scaffold(
             "collab-repo/.github/workflows/baron-notify.yml",
             ".github/workflows/baron-notify.yml",
         )
+        copy(
+            "collab-repo/.github/workflows/verify-identity.yml",
+            ".github/workflows/verify-identity.yml",
+        )
+        write(".github/CODEOWNERS", render_codeowners(ctx.owner))
+        report.notes.extend(_identity_notes(ctx.owner))
+        # The identity registry is keyed to the GIT REPO, not the project: git
+        # resolves `gpg.ssh.allowedSignersFile` relative to the work tree, and the
+        # CI check walks one commit range. So it lives beside `.github/` — in a
+        # monorepo that means the ROOT owns it (baron.monorepo.create_root), and a
+        # project subdir gets none. A per-subdir allowlist would be a second
+        # registry nothing reads, which is worse than no registry at all.
+        copy("collab-repo/.barony/allowed_signers", ALLOWED_SIGNERS_REL)
     # Runtime kits (deterministic floor; Tier-3 stays conversational — see module doc).
     for persona in personas:
         _emit_runtime_kit(root, persona, ctx, created)

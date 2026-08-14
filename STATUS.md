@@ -235,7 +235,43 @@ one is a usage error, never a default. ADR-007 is visible in the surface, not ju
 the human's session), `event` is spawned by the ADR-010 wake, `cron` is scheduler-driven or
 self-paced. A watching sidecar re-reads git as truth every cycle — stateless per task, so
 audit-by-diff survives a process that outlives one unit of work (§4). Containers stay deferred
-per the ADR; so do the per-persona signing keys the identity answer (§6 Q4) waits on.
+per the ADR. The per-persona signing keys its identity answer (§6 Q4) waited on are **no longer
+deferred** — see the next section; §6 Q4 is superseded by ADR-027.
+
+## Shipped (unreleased) — agent identity (ADR-027, plugin 1.11.0 / CLI 0.10.0)
+
+Per-persona **SSH signing keys**, generated at spawn, enrolled once into an in-repo
+`.barony/allowed_signers` file, verified offline with `git verify-commit` —
+[ADR-027](docs/adr/ADR-027-agent-identity.md), promoting the 2026-08-04 vault spike whose
+trigger was an un-onboarded Codex agent committing to `main` under the owner's identity.
+
+`baron identity init` generates the key, configures repo-local git signing, emits an enrollment
+**request**, and **refuses to let the persona work** (exit 1) until the owner has merged that
+request at HEAD. `baron verify identity` is the CI gate: signature ↔ trust status `G` ↔ the
+three-way cross-check (signer principal ↔ claimed persona ↔ `persona.yaml` registry entry),
+which closes the `from:` misattribution class as well as the anonymous-commit class. `baron init`
+scaffolds the registry, `.github/CODEOWNERS` and `verify-identity.yml`. Handoffs and findings get
+detached `ssh-keygen -Y sign` signatures; an unverifiable one is **refused and recorded as a
+finding** at ingest.
+
+**Agents still push under the owner's forge identity** — attribution is the KEY, not an account.
+No per-persona PATs, machine accounts or GitHub Apps: the spike surveyed and rejected both for
+this problem (a separate, heavyweight *authorization* question).
+
+**Not done, and it is the owner's to do** (`docs/runbooks/identity-signing.md`): registering each
+public key as a signing key on the GitHub account, the `main` ruleset (require PR + the
+`verify-identity` check + signed commits, and **no rebase-merge** — it adds head-branch commits
+to the base unverified), and filling `CODEOWNERS`. Until then `.barony/allowed_signers` is empty,
+which is fail-closed, and nothing verifies.
+
+**Honest bound**, in the ADR and in every command's output: attribution among **cooperating**
+agents. The private key is unencrypted in the agent's workspace, so this does not defend against
+a hostile actor with write access there — the same bound as `baron guard`.
+
+**Residual owner decisions surfaced rather than assumed** (ADR-027 §7): key location under
+containers, whether enrollment may ever be delegated to a trusted persona (shipped human-only),
+whether a missing handoff signature should refuse (shipped off), and whether `baron guard` should
+refuse for an unenrolled persona at every tool call rather than only at spawn.
 
 ## Shipped (unreleased) — P2.1 `baron decision` (park only, CLI 0.8.0)
 

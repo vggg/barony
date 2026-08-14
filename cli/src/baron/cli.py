@@ -21,6 +21,7 @@ from . import (
     guard as guard_mod,
     handoff as handoff_mod,
     health as health_mod,
+    identity as identity_mod,
     indexer,
     ledger,
     lock as lock_mod,
@@ -140,6 +141,15 @@ def init(
             "emitted EMPTY, which is fail-closed: nobody may wake until you fill it."
         ),
     ),
+    owner: Optional[str] = typer.Option(
+        None,
+        "--owner",
+        help=(
+            "GitHub handle (or org/team) that owns the CODEOWNERS gate on "
+            ".barony/allowed_signers — the human trust root for agent enrollment "
+            "(ADR-027). Omitted = a loud placeholder you must replace."
+        ),
+    ),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git init + first commit."),
 ) -> None:
     """Scaffold a new collab repo — the deterministic subset of canon/ORCHESTRATE.md.
@@ -184,6 +194,7 @@ def init(
             runtime=runtime,
             do_git=not no_git,
             wake_allowed=wake,
+            owner=owner,
         )
         return
     try:
@@ -195,6 +206,7 @@ def init(
             runtime=runtime,
             do_git=not no_git,
             wake_allowed=wake,
+            owner=owner,
         )
     except scaffold_mod.ScaffoldError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -289,12 +301,13 @@ def _init_monorepo(
     runtime: str,
     do_git: bool,
     wake_allowed: Optional[list] = None,
+    owner: Optional[str] = None,
 ) -> None:
     """`baron init --layout monorepo`: root + first project subdir (ADR-025)."""
     root = dest.resolve()
     try:
         created = monorepo_mod.create_root(
-            root, name, date=clock.today().isoformat()
+            root, name, date=clock.today().isoformat(), owner=owner
         )
         project_name = (
             monorepo_mod.META_PROJECT
@@ -928,8 +941,19 @@ def handoff_close(
     no_commit: bool = typer.Option(False, "--no-commit", help="Move without git (no history-preserving mv)."),
 ) -> None:
     """Flip status to done (+ closed: date, optional note) and git-mv the file
-    to _handoff/archive/YYYY/ — archive, never delete."""
+    to _handoff/archive/YYYY/ — archive, never delete.
+
+    Closing is the librarian's INGEST moment, so it is where an unverifiable
+    signature is refused (ADR-027 §2.3): a `.sig` that is present and does not
+    verify fails the close and is logged as a finding rather than dropped. A
+    MISSING signature only warns — see `baron handoff verify --require-signature`.
+    """
     prefix = f"{as_.strip().lower()}:" if as_ and as_.strip() else "baron:"
+    resolved = _resolve_handoff(collab.resolve(), file)
+    if resolved is not None:
+        verdict = _ingest_gate(collab.resolve(), resolved, record_finding=True)
+        if not verdict.ok:
+            raise typer.Exit(1)
     try:
         dest = handoff_mod.close(
             collab.resolve(), file, note=note, prefix=prefix, commit=not no_commit
@@ -963,6 +987,339 @@ def handoff_list(
             f"{h.status:6s} {h.path.name}  for={h.for_} from={h.from_} "
             f"priority={h.priority} age={age}"
         )
+
+
+# --- ADR-027: agent identity (SSH signing keys enrolled in the repo) ---------------------
+
+
+def _resolve_handoff(collab: Path, file: Path) -> Optional[Path]:
+    """The same lookup `baron handoff close` does, without the error path."""
+    path = file if file.is_absolute() else (Path.cwd() / file)
+    if path.is_file():
+        return path
+    candidate = collab / "_handoff" / file.name
+    return candidate if candidate.is_file() else None
+
+
+def _handoff_from(path: Path) -> Optional[str]:
+    """The persona a handoff CLAIMS to be from — the field the signature backs."""
+    from .frontmatter import split_frontmatter
+
+    meta, _ = split_frontmatter(path.read_text(encoding="utf-8"))
+    value = (meta or {}).get("from")
+    return str(value).strip().lower() if value else None
+
+
+def _ingest_gate(
+    collab: Path,
+    path: Path,
+    *,
+    record_finding: bool = False,
+    require_signature: bool = False,
+) -> identity_mod.FileVerdict:
+    """Verify a handoff's detached signature; refuse and RECORD on failure.
+
+    An attribution failure that is silently dropped is not evidence. Logging it as
+    a finding is the point — it is what the audit product reads (ADR-027 §2.3).
+    """
+    verdict = identity_mod.verify_file(
+        collab,
+        path,
+        expect_slug=_handoff_from(path),
+        require_signature=require_signature,
+    )
+    if verdict.ok:
+        return verdict
+    typer.echo(
+        f"error: {path.name} failed the identity gate: {verdict.reason}", err=True
+    )
+    if record_finding:
+        try:
+            n = ledger.add_entry(
+                collab,
+                "finding",
+                title=f"unverifiable handoff signature: {path.name}",
+                author="baron",
+                body=(
+                    f"`{path.name}` was refused at ingest (ADR-027 §2.3).\n\n"
+                    f"- claimed `from:` — `{_handoff_from(path) or '(none)'}`\n"
+                    f"- signature — {'present' if verdict.signed else 'absent'}\n"
+                    f"- reason — {verdict.reason}\n\n"
+                    "Refusals are recorded, not dropped: an attribution failure is "
+                    "evidence. Re-sign with `baron identity sign`, or enroll the key.\n"
+                ),
+                push=False,
+            )
+            typer.echo(f"recorded finding F{n}", err=True)
+        except ledger.LedgerError as exc:  # a ledger-less project must still refuse
+            typer.echo(f"note: could not record a finding ({exc})", err=True)
+    return verdict
+
+
+identity_app = typer.Typer(
+    help=(
+        "Per-persona SSH signing identity (ADR-027): generate at spawn, enrol once "
+        "into .barony/allowed_signers, sign everything, verify offline. "
+        "Bound: " + identity_mod.BOUND + "."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(identity_app, name="identity")
+
+verify_app = typer.Typer(
+    help="Verification gates run in CI. Fail-closed by design.",
+    no_args_is_help=True,
+)
+app.add_typer(verify_app, name="verify")
+
+
+@identity_app.command("init")
+def identity_init(
+    persona: str = typer.Option(..., "--persona", help="Persona slug (e.g. carson)."),
+    collab: Path = _COLLAB_OPT,
+    git_name: Optional[str] = typer.Option(
+        None, "--git-name", help="git author name (default: `<Slug> (Barony agent)`)."
+    ),
+    no_request: bool = typer.Option(
+        False,
+        "--no-request",
+        help="Do not write the enrollment-request line into .barony/allowed_signers.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Give this persona a signing identity, then REFUSE TO WORK until it is enrolled.
+
+    Generates `~/.barony/keys/<slug>.key` if absent ($BARON_KEY_DIR overrides),
+    points this repo's git at it (repo-local: `gpg.format=ssh`, `commit.gpgsign`,
+    `tag.gpgsign`, the in-repo allowed-signers file, and a distinct
+    `<slug>@agents.barony.invalid` author email), and emits an enrollment REQUEST —
+    a PR-ready line in `.barony/allowed_signers`.
+
+    It exits NON-ZERO until that line is merged at HEAD. The agent cannot merge it
+    (`.github/CODEOWNERS` is owner-only) and that is deliberate: a self-minted key
+    proves nothing until a human vouches for it. Identity precedes work.
+    """
+    try:
+        report = identity_mod.init(
+            collab.resolve(), persona, git_name=git_name,
+            request_enrollment=not no_request,
+        )
+    except identity_mod.IdentityError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    if json_out:
+        _echo_json(report.to_dict())
+    else:
+        typer.echo(
+            f"{'generated' if report.generated else 'reusing'} key "
+            f"{report.private_key.as_posix()} (principal {identity_mod.principal(persona)})"
+        )
+        for setting in report.configured:
+            typer.echo(f"  git config {setting}")
+        for note in report.notes:
+            typer.echo(f"note: {note}")
+        typer.echo(f"bound: {identity_mod.BOUND}")
+    if not report.enrolled:
+        typer.echo(
+            f"error: {persona} is NOT enrolled in {identity_mod.ALLOWED_SIGNERS} at HEAD "
+            "— refusing to start work. Commit the request, open a PR, ask the owner to "
+            "merge it, then re-run.",
+            err=True,
+        )
+        raise typer.Exit(1)
+    typer.echo(f"enrolled: {identity_mod.principal(persona)} — cleared to work")
+
+
+@identity_app.command("show")
+def identity_show(
+    persona: Optional[str] = typer.Option(None, "--persona", help="Limit to one slug."),
+    collab: Path = _COLLAB_OPT,
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Who is enrolled in this repo's `.barony/allowed_signers` — the whole registry."""
+    root = collab.resolve()
+    entries = identity_mod.read_allowed_signers(root)
+    if persona:
+        entries = [e for e in entries if e.slug == persona]
+    rows = [
+        {
+            "slug": e.slug,
+            "principal": e.principal,
+            "keytype": e.keytype,
+            "fingerprint": e.keydata[:16] + "…",
+            "comment": e.comment,
+            "has_persona_yaml": e.slug in identity_mod.registry_slugs(root),
+        }
+        for e in entries
+    ]
+    if json_out:
+        _echo_json({"allowed_signers": identity_mod.ALLOWED_SIGNERS, "entries": rows,
+                    "bound": identity_mod.BOUND})
+        return
+    if not rows:
+        typer.echo(
+            f"no enrolled signers in {identity_mod.ALLOWED_SIGNERS} "
+            "(empty is fail-closed — nothing verifies until a key is merged)"
+        )
+        return
+    for row in rows:
+        registry = "" if row["has_persona_yaml"] else "  [NO persona.yaml]"
+        typer.echo(f"{row['principal']:24s} {row['keytype']} {row['fingerprint']}{registry}")
+
+
+@identity_app.command("sign")
+def identity_sign(
+    file: Path = typer.Argument(..., help="The artifact to sign (handoff, finding, …)."),
+    persona: str = typer.Option(..., "--persona", help="Signing persona slug."),
+    namespace: str = typer.Option(
+        identity_mod.HANDOFF_NAMESPACE, "--namespace", help="ssh-keygen -Y sign namespace."
+    ),
+) -> None:
+    """Write `<file>.sig` — a detached SSH signature over the artifact.
+
+    So a handoff's `from:` stops being a bare self-assertion: it becomes a claim
+    backed by a signature verifiable against the same in-repo allowlist.
+    """
+    try:
+        sig = identity_mod.sign_file(file, persona, namespace=namespace)
+    except identity_mod.IdentityError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(sig.as_posix())
+
+
+@handoff_app.command("sign")
+def handoff_sign(
+    file: Path = typer.Argument(..., help="Handoff file (path, or bare name in _handoff/)."),
+    persona: Optional[str] = typer.Option(
+        None, "--persona", help="Signing persona (default: the handoff's `from:`)."
+    ),
+    collab: Path = _COLLAB_OPT,
+) -> None:
+    """Sign a handoff — `<file>.sig` beside it (ADR-027 §2.3)."""
+    root = collab.resolve()
+    path = _resolve_handoff(root, file)
+    if path is None:
+        typer.echo(f"error: handoff not found: {file}", err=True)
+        raise typer.Exit(1)
+    slug = persona or _handoff_from(path)
+    if not slug:
+        typer.echo("error: no --persona and the handoff has no `from:` to sign as", err=True)
+        raise typer.Exit(2)
+    try:
+        sig = identity_mod.sign_file(path, slug)
+    except identity_mod.IdentityError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(sig.as_posix())
+
+
+@handoff_app.command("verify")
+def handoff_verify(
+    file: Optional[Path] = typer.Argument(None, help="One handoff (default: every open one)."),
+    collab: Path = _COLLAB_OPT,
+    require_signature: bool = typer.Option(
+        False,
+        "--require-signature",
+        help="Treat a MISSING signature as a failure too (default: warn only — "
+        "ADR-027 §7.3 leaves this off until the owner signs the change).",
+    ),
+    record_finding: bool = typer.Option(
+        False, "--record-finding", help="Log each refusal as a finding (ingest posture)."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Verify handoff signatures against `.barony/allowed_signers` — the ingest gate.
+
+    The librarian refuses an unverifiable handoff and RECORDS the refusal rather
+    than dropping it silently: an attribution failure is evidence (ADR-027 §2.3).
+    """
+    root = collab.resolve()
+    if file is not None:
+        resolved = _resolve_handoff(root, file)
+        if resolved is None:
+            typer.echo(f"error: handoff not found: {file}", err=True)
+            raise typer.Exit(1)
+        paths = [resolved]
+    else:
+        paths = [h.path for h in handoff_mod.iter_handoffs(root) if h.status == "open"]
+    verdicts = [
+        _ingest_gate(root, p, record_finding=record_finding,
+                     require_signature=require_signature)
+        for p in paths
+    ]
+    if json_out:
+        _echo_json([v.to_dict() for v in verdicts])
+    else:
+        for v in verdicts:
+            state = "ok" if v.ok else "REFUSED"
+            typer.echo(f"{state:8s} {v.file.name}  {v.signer or v.reason}")
+    if any(not v.ok for v in verdicts):
+        raise typer.Exit(1)
+
+
+@verify_app.command("identity")
+def verify_identity(
+    base: str = typer.Option(
+        "origin/main", "--base", help="Base ref/SHA of the range to verify."
+    ),
+    head: str = typer.Option("HEAD", "--head", help="Head ref/SHA of the range."),
+    label: Optional[str] = typer.Option(
+        None,
+        "--label",
+        help="The PR's routing label (agent-<slug>) — the persona the PR CLAIMS.",
+    ),
+    collab: Path = _COLLAB_OPT,
+    no_registry: bool = typer.Option(
+        False,
+        "--no-registry",
+        help="Skip the persona.yaml leg (for a code repo with no agents/ tree).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """The CI gate: every commit in BASE..HEAD is signed, trusted, and attributed.
+
+    Three legs per commit (ADR-027 §2.1): `git verify-commit` against the in-repo
+    allowlist; git trust status `G`; and signer principal ↔ the persona the commit
+    claims (`Barony-Persona:` trailer, else the routing label) ↔ an
+    `agents/<slug>/persona.yaml` registry entry. Fail-closed — make it a REQUIRED
+    status check, and use squash/merge commits, not rebase-merge (which adds
+    head-branch commits to the base without signature verification).
+
+    Bound: attribution among cooperating agents, not a defence against a hostile
+    actor with write access to a workspace.
+    """
+    try:
+        verdicts = identity_mod.verify_range(
+            collab.resolve(), base, head, label=label, require_registry=not no_registry
+        )
+    except identity_mod.IdentityError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    bad = [v for v in verdicts if not v.ok]
+    if json_out:
+        _echo_json({
+            "base": base, "head": head, "label": label,
+            "commits": [v.to_dict() for v in verdicts],
+            "ok": not bad, "bound": identity_mod.BOUND,
+        })
+    else:
+        for v in verdicts:
+            if v.ok:
+                typer.echo(f"ok       {v.sha[:12]}  {v.signer}")
+            else:
+                typer.echo(f"REFUSED  {v.sha[:12]}  {v.signer or '(no signer)'}")
+                for reason in v.reasons:
+                    typer.echo(f"           - {reason}")
+        if not verdicts:
+            typer.echo(f"no commits in {base}..{head}")
+        typer.echo(f"bound: {identity_mod.BOUND}")
+    if bad:
+        typer.echo(
+            f"error: {len(bad)}/{len(verdicts)} commit(s) failed the identity gate",
+            err=True,
+        )
+        raise typer.Exit(1)
 
 
 # --- M3: index ------------------------------------------------------------------------
