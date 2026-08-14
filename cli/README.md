@@ -473,15 +473,23 @@ finding/decision numbering: duplicates are errors (exit 1); gaps and
 out-of-order headings are **report-only** warnings — baron never renumbers
 history.
 
-### `baron export [--kind K]... [--json]` (P3.4 partial, [ADR-015](../docs/adr/ADR-015-baron-export.md))
+### `baron export [--wide] [--kind K]... [--note-dir D]... [--json]` (P3.4 partial, [ADR-015](../docs/adr/ADR-015-baron-export.md) + [ADR-032](../docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md))
 
-The governed corpus as **citable records** — one flat record per ADR, decision,
-finding and handoff, walked from the same markdown the personas write:
+The governed corpus as **citable records** — one flat record per artifact, walked
+from the same markdown the personas write. **Four kinds by default** — the `adr`,
+`decision`, `finding` and `handoff` ledgers. **`--wide` adds two more**: `status`
+(`wiki/status.md`, `STATUS.md`) and `note` (`wiki/`, `docs/notes/`), which ADR-032
+added after P3.3 measured retrieval and found the binding constraint was
+**coverage, not ranking**. They are opt-in rather than default because widening
+the corpus moves the record set under every existing consumer (ADR-032 §3.1,
+amended); `--kind` selects any of the six explicitly.
 
 ```bash
 baron export                                                    # table
 baron export --json | jq '.records[] | select(.kind=="decision")'
+baron export --wide --json                                      # + status and note
 baron export --kind adr --kind decision --json                  # subset
+baron export --kind note --note-dir research --json             # retarget the note walk
 baron export --json | jq -r '.records[] | "\(.id)\t\(.commit_sha)\t\(.path)"'
 ```
 
@@ -490,13 +498,23 @@ baron export --json | jq -r '.records[] | "\(.id)\t\(.commit_sha)\t\(.path)"'
   "path": "decisions/index.md", "commit_sha": "6bccfba7…", "status": null,
   "body": "**Owner decision (Vikram), ratified 2026-07-31…",
   "links": [{"type": "ref", "target": "ADR-0011"}, {"type": "ref", "target": "D56"}],
-  "meta": {"form": "heading"} }
+  "meta": {"form": "heading"}, "project": "barony" }
 ```
 
-Eight core fields (`id, kind, title, path, commit_sha, status, body, links`) plus
-an open, kind-specific `meta`. Primary key is `(kind, id)`. `path` is
-**repo-root-relative** so the citation below pastes verbatim; the envelope's
-`repo_prefix` recovers the `--collab`-relative form when they differ.
+Nine core fields (`id, kind, title, path, commit_sha, status, body, links,
+project`) plus an open, kind-specific `meta`. Primary key is
+**`(project, kind, id)`** — two projects in one monorepo legitimately both hold an
+`ADR-001`. `path` is **repo-root-relative** so the citation below pastes verbatim;
+the envelope's `repo_prefix` recovers the `--collab`-relative form when they differ.
+
+**Run it at a coordination-monorepo root** ([ADR-025](../docs/adr/ADR-025-coordination-monorepo.md))
+and it walks every registered project subdir and aggregates — `layout: "monorepo"`,
+per-project counts in `projects[]`, each record tagged with its `project`, and
+subdirs the marker does not list reported in `unregistered[]` rather than silently
+swept in. The record shape is identical in both layouts, so `jq '.records[]'` does
+not care which topology produced the payload. Before ADR-032 a root-level run
+walked nothing and reported **0 records** while the per-project runs returned real
+counts — the same silent-false-zero class as the ADR-025 §6.8 health bug.
 
 **Every record cites a commit that reproduces it.** A source file that is
 untracked or has uncommitted edits is **skipped and named** in `skipped[]` — never

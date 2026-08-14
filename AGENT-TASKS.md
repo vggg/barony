@@ -137,6 +137,20 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   proves equivalent auditability, portability, disaster recovery, and human inspectability.** Every
   retrieval result must carry an authoritative source ID/version (path+commit SHA for Git). Exit:
   classify the Cognee adapter as supported projection, supported source, experimental, or rejected.
+  - **PRODUCER WIDENED, 2026-08-14 ([ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md), owner decision #5):**
+    acting on ADR-031 (P3.3)'s measured finding that the retrieval miss was **coverage,
+    not ranking**, `baron export` now reaches (a) every project subdir of an ADR-025 coordination
+    monorepo — it previously reported **0 records** at the root — and (b) under `--wide`, two more
+    corpora, `status` and `note`, which completes this task's own "ADRs/decisions/findings/handoffs/**curated
+    status**" list and supersedes ADR-015 §7's deferral. The widened corpus is **opt-in** (ADR-032
+    §3.1, amended at integration): a six-kind default measurably regressed `baron memeval`'s pinned
+    ADR-031 numbers, so the capability ships behind a flag and flipping the default waits on §4.3's
+    two harness fixes. Measured on the P3.3 fixtures: retrieval
+    ceiling 84.4% → 87.5%, R@5 76.0 → 79.2, flagship query's unreachable gold record now reachable;
+    MRR 81.2 → 75.0 (a widened small corpus adds competition — reported, not suppressed). **The
+    backend half is untouched and still gated**: no `baron.knowledge` group, no vendor, no
+    adapter. The next question is now well-posed — does a semantic layer recover precision-at-1
+    while keeping the coverage?
   - **PARTIAL, 2026-08-09 ([ADR-015](docs/adr/ADR-015-baron-export.md)):** the *producer* half is
     built and shipped as **`baron export`** — ADRs/decisions/findings/handoffs walked into flat
     records that each carry `path + commit_sha`, with sources that cannot honour that citation

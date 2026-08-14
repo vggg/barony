@@ -1613,11 +1613,30 @@ def export(
         help=(
             "Restrict to one or more kinds (repeatable): "
             + " | ".join(export_mod.KIND_ORDER)
-            + ". Default: all four."
+            + ". Default: the four ledgers ("
+            + ", ".join(export_mod.DEFAULT_KINDS)
+            + ")."
+        ),
+    ),
+    wide: bool = typer.Option(
+        False,
+        "--wide",
+        help=(
+            "Walk the widened ADR-032 corpus — the four ledgers plus `status` and "
+            "`note`. Opt-in: widening by default would move the record set under "
+            "existing consumers. Ignored when --kind is given."
         ),
     ),
     adr_dir: str = typer.Option(
         export_mod.ADR_DIR, "--adr-dir", help="ADR directory, relative to the collab repo."
+    ),
+    note_dir: Optional[list[str]] = typer.Option(
+        None,
+        "--note-dir",
+        help=(
+            "Tree walked for the `note` kind (repeatable, relative to the collab "
+            "repo). Default: " + " + ".join(export_mod.NOTE_DIRS) + "."
+        ),
     ),
     archived: bool = typer.Option(
         True,
@@ -1635,13 +1654,26 @@ def export(
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
-    """Export ADRs, decisions, findings and handoffs as citable records.
+    """Export the governed corpora as citable records.
+
+    Four kinds by default — the `adr`, `decision`, `finding` and `handoff`
+    ledgers. `--wide` adds the two corpora ADR-032 built after P3.3 measured
+    retrieval and found the binding constraint was **coverage, not ranking**:
+    curated `status` and research `note`s (`wiki/` and `docs/notes/`,
+    retargetable with `--note-dir`). They are opt-in rather than default because
+    widening the corpus moves the record set under every existing consumer;
+    `--kind` selects any of the six explicitly.
 
     One flat record per artifact — `{id, kind, title, path, commit_sha, status,
-    body, links}` plus an open `meta` bag — walked from the same markdown the
-    personas write. Every record names the commit whose bytes were parsed, so
+    body, links, project}` plus an open `meta` bag — walked from the same markdown
+    the personas write. Every record names the commit whose bytes were parsed, so
     `git show <commit_sha>:<path>` reproduces the source exactly; that is the
     citation requirement AGENT-TASKS.md 3.4 puts on any knowledge substrate.
+
+    Run at a **coordination-monorepo root** (ADR-025) this walks every registered
+    project subdir and aggregates, with each record carrying its `project`;
+    before ADR-032 it walked nothing there and reported 0 records while the
+    per-project runs returned real counts.
 
     A source that is untracked or has uncommitted edits is **skipped and named**
     (`skipped[]`), never emitted with a SHA that does not match its content.
@@ -1654,14 +1686,39 @@ def export(
     '.records[] | select(.kind=="decision")'` is the whole intended workflow
     today. Exit 0; exit 2 if the collab path is not a git repo with history.
     """
+    note_dirs = tuple(note_dir) if note_dir else export_mod.NOTE_DIRS
+    # --kind is an explicit restriction and wins; --wide is the widened default.
+    if kind:
+        selected_kinds = set(kind)
+    elif wide:
+        selected_kinds = set(export_mod.KIND_ORDER)
+    else:
+        selected_kinds = None
     try:
-        result = export_mod.collect(
-            collab,
-            kinds=set(kind) if kind else None,
-            include_archived=archived,
-            allow_dirty=allow_dirty,
-            adr_dir=adr_dir,
-        )
+        if monorepo_mod.is_root(collab.resolve()):
+            repo = monorepo_mod.load(collab.resolve())
+            result = export_mod.collect_portfolio(
+                collab.resolve(),
+                [(p.dir, p.name) for p in repo.projects],
+                unregistered=repo.unregistered,
+                kinds=selected_kinds,
+                include_archived=archived,
+                allow_dirty=allow_dirty,
+                adr_dir=adr_dir,
+                note_dirs=note_dirs,
+            )
+        else:
+            result = export_mod.collect(
+                collab,
+                kinds=selected_kinds,
+                include_archived=archived,
+                allow_dirty=allow_dirty,
+                adr_dir=adr_dir,
+                note_dirs=note_dirs,
+            )
+    except monorepo_mod.MonorepoError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
     except export_mod.ExportError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2)

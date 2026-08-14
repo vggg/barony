@@ -3,9 +3,19 @@
 AGENT-TASKS.md 3.4 asks for a pluggable knowledge substrate whose every
 retrieval result carries "an authoritative source ID/version (path+commit SHA
 for Git)". This module ships **only the producer side of that requirement**: a
-deterministic walk of the four governed corpora a collab repo already keeps —
-ADRs, decisions, findings, handoffs — emitted as flat records that each name
-the file and the exact commit whose content was read.
+deterministic walk of the governed corpora a collab repo already keeps — ADRs,
+decisions, findings, handoffs, plus curated status and research notes — emitted
+as flat records that each name the file and the exact commit whose content was
+read.
+
+**Why the corpus is six kinds and not four (ADR-032).** P3.3's harness
+(ADR-031) measured the lexical baseline over this export and found the miss was
+**coverage, not ranking**: on the flagship query the baseline already retrieved
+the gold record at rank 1, and its only failure was a research note in ``wiki/``
+that this walker never visited. Widening what gets walked is therefore the move
+that changes the numbers; ``status`` and ``note`` close 3.4's own corpus list
+("ADRs/decisions/findings/handoffs/curated status"), which ADR-015 §7 recorded
+as a deliberate deferral rather than a decision.
 
 **There is no knowledge backend here, and deliberately no plugin seam** — no
 entry-point group, no sink protocol, and no vendor named anywhere in this
@@ -36,6 +46,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
+import yaml
+
 from . import clock
 from .frontmatter import split_frontmatter
 from .gitutil import git, is_git_repo
@@ -54,10 +66,36 @@ class ExportError(RuntimeError):
 FORMAT = "baron.export/v1"
 
 #: Emission order. Stable, and independent of filesystem iteration order.
-KIND_ORDER = ("adr", "decision", "finding", "handoff")
+KIND_ORDER = ("adr", "decision", "finding", "handoff", "status", "note")
+
+#: The four ledger corpora — kept as a named set so a caller (or a consumer
+#: pinning the old behaviour) can ask for exactly them.
+LEDGER_KINDS = ("adr", "decision", "finding", "handoff")
+
+#: What a caller that names no kinds gets. ADR-032 §3.1 (amended): the four
+#: ledgers, i.e. the pre-ADR-032 set. `status` and `note` are shipped, walked by
+#: the same code path and covered by the same citation gate, but a widened corpus
+#: is **opt-in** (`--wide`, or an explicit `--kind`) rather than the default.
+#: The reason is measured, not stylistic: a default widening silently changes the
+#: record set under every existing consumer, and the estate has one — `baron
+#: memeval` (ADR-031), whose pinned numbers a six-kind default moves without
+#: anyone asking it to. See ADR-032 §3.1 and §4.3.
+DEFAULT_KINDS = LEDGER_KINDS
 
 #: Default location of the ADR corpus, relative to the collab repo root.
 ADR_DIR = "docs/adr"
+
+#: Default trees walked for the ``note`` kind — curated, human-written markdown
+#: that is not one of the four ledgers. Deliberately an explicit include-list and
+#: not "every .md in the repo": `note` means *curated*, and a recursive walk of
+#: the whole collab repo would sweep in agent templates, workspace scaffolding
+#: and the emit-time fixtures, none of which anyone wrote to be retrieved.
+NOTE_DIRS = ("wiki", "docs/notes")
+
+#: Files exported as the ``status`` kind — 3.4's "curated status". Both spellings
+#: exist in the wild: `wiki/status.md` is what the collab-repo template emits,
+#: `STATUS.md` at the collab root is what a repo that predates the template keeps.
+STATUS_FILES = ("wiki/status.md", "STATUS.md")
 
 
 # --- record ----------------------------------------------------------------------------
@@ -65,7 +103,13 @@ ADR_DIR = "docs/adr"
 
 @dataclass
 class Record:
-    """One governed artifact. Primary key is ``(kind, id)``."""
+    """One governed artifact. Primary key is ``(project, kind, id)``.
+
+    ``project`` joined the key at ADR-032. In a coordination monorepo two
+    projects legitimately both hold an ``ADR-001``; keying on ``(kind, id)``
+    alone would have reported the second one as a duplicate and dropped it —
+    trading the silent zero this change fixes for a silent halving.
+    """
 
     id: str
     kind: str
@@ -81,6 +125,11 @@ class Record:
     body: str
     links: list[dict[str, str]] = field(default_factory=list)
     meta: dict[str, object] = field(default_factory=dict)
+    #: The project this record was governed by — the manifest's `project.name`,
+    #: or None when the collab repo has no readable manifest. Present in BOTH
+    #: layouts (ADR-032 §3.2): a consumer must not have to know which topology
+    #: produced a payload to know which project a record belongs to.
+    project: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -93,6 +142,7 @@ class Record:
             "body": self.body,
             "links": self.links,
             "meta": self.meta,
+            "project": self.project,
         }
 
 
@@ -109,6 +159,28 @@ class Skipped:
 
 
 @dataclass
+class ProjectExport:
+    """Per-project provenance for one leg of a portfolio export (ADR-032 §3.3)."""
+
+    dir: str  # subdir under the monorepo root
+    name: str  # project name (identity domain / manifest project.name)
+    collab: str  # absolute path walked
+    repo_prefix: str  # what was prepended to make `path` repo-root-relative
+    records: int
+    skipped_sources: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "dir": self.dir,
+            "name": self.name,
+            "collab": self.collab,
+            "repo_prefix": self.repo_prefix,
+            "records": self.records,
+            "skipped_sources": self.skipped_sources,
+        }
+
+
+@dataclass
 class Export:
     generated: str
     collab: str
@@ -117,6 +189,19 @@ class Export:
     records: list[Record]
     skipped: list[Skipped]
     duplicates: list[str]
+    #: "single" (one collab repo) or "monorepo" (ADR-025 coordination monorepo,
+    #: aggregated across the registry). The record shape is identical in both —
+    #: that is the point, so `--json | jq '.records[]'` does not fork per layout.
+    layout: str = "single"
+    #: Single layout: the one project's name (None when no readable manifest).
+    project: str | None = None
+    #: Monorepo layout: one entry per registered project actually walked.
+    projects: list[ProjectExport] = field(default_factory=list)
+    #: Monorepo layout: subdirs holding a manifest.yaml the marker does not list.
+    #: Reported, never silently included — same posture as `baron status`.
+    unregistered: list[str] = field(default_factory=list)
+    #: Monorepo layout: registered projects that could not be walked, and why.
+    unreadable: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         counts: dict[str, int] = {}
@@ -125,8 +210,13 @@ class Export:
         return {
             "format": FORMAT,
             "generated": self.generated,
+            "layout": self.layout,
             "collab": self.collab,
             "repo_prefix": self.repo_prefix,
+            "project": self.project,
+            "projects": [p.to_dict() for p in self.projects],
+            "unregistered": self.unregistered,
+            "unreadable": self.unreadable,
             "head": self.head,
             "records": [r.to_dict() for r in self.records],
             "skipped": [s.to_dict() for s in self.skipped],
@@ -134,6 +224,10 @@ class Export:
             "summary": {
                 "records": len(self.records),
                 "by_kind": {k: counts.get(k, 0) for k in KIND_ORDER if counts.get(k)},
+                "by_project": {
+                    p.name: p.records for p in self.projects
+                } if self.projects else {},
+                "projects": len(self.projects),
                 "skipped_sources": len(self.skipped),
             },
         }
@@ -401,8 +495,45 @@ def _commit_sha(root: Path, rel: str, cache: dict[str, str]) -> str:
 # --- collection ------------------------------------------------------------------------
 
 
+def _doc_record(root: Path, path: Path, kind: str, corpus: str) -> tuple[str, Record]:
+    """A whole-file markdown record (``status`` / ``note``).
+
+    The ID is the collab-relative path minus the extension — ``wiki/research-x``.
+    Whole-file corpora have no ID scheme of their own (that is exactly what makes
+    them *not* ledgers), and the path is the only thing about them that is both
+    unique within a project and stable across runs.
+    """
+    rel = path.relative_to(root).as_posix()
+    meta, body = split_frontmatter(path.read_text(encoding="utf-8"))
+    meta = {str(k): _scalar(v) for k, v in (meta or {}).items()}
+    status_value = meta.get("status")
+    return (
+        rel,
+        Record(
+            id=rel[: -len(path.suffix)] if path.suffix else rel,
+            kind=kind,
+            title=_title_from_body(body, path.stem),
+            path=rel,
+            commit_sha="",
+            status=status_value.strip()
+            if isinstance(status_value, str) and status_value.strip()
+            else None,
+            body=body.strip(),
+            links=_merge_links(extract_links(body), _related_links(meta)),
+            meta={
+                **{k: v for k, v in meta.items() if k != "related"},
+                "corpus": corpus,
+            },
+        ),
+    )
+
+
 def _candidates(
-    root: Path, kinds: set[str], include_archived: bool, adr_dir: str
+    root: Path,
+    kinds: set[str],
+    include_archived: bool,
+    adr_dir: str,
+    note_dirs: tuple[str, ...] = NOTE_DIRS,
 ) -> list[tuple[str, Record]]:
     """(collab-relative source path, record) pairs.
 
@@ -505,7 +636,61 @@ def _candidates(
                 )
             )
 
+    # --- ADR-032: the two whole-file corpora ---------------------------------
+    #
+    # `status` is claimed FIRST so that a file listed in STATUS_FILES which also
+    # sits inside a note dir (`wiki/status.md` does) is exported once, as the
+    # kind that describes it, rather than twice under two IDs.
+    status_paths: set[Path] = set()
+    if "status" in kinds:
+        for rel in STATUS_FILES:
+            path = root / rel
+            if path.is_file():
+                status_paths.add(path.resolve())
+                out.append(_doc_record(root, path, "status", "status"))
+
+    if "note" in kinds:
+        # A note dir that contains (or IS) the ADR dir would re-export every ADR
+        # under a second ID and a second kind. `--adr-dir` makes that reachable,
+        # so exclude the ADR tree explicitly rather than relying on the defaults
+        # never overlapping.
+        adr_root = (root / adr_dir).resolve()
+        for note_dir in note_dirs:
+            note_root = root / note_dir
+            if not note_root.is_dir():
+                continue
+            for path in sorted(note_root.rglob("*.md")):
+                resolved = path.resolve()
+                if resolved in status_paths:
+                    continue
+                if resolved == adr_root or adr_root in resolved.parents:
+                    continue
+                out.append(_doc_record(root, path, "note", note_dir))
+
     return out
+
+
+def project_name(collab: Path) -> str | None:
+    """The collab repo's ``project.name``, or None when there is no readable manifest.
+
+    Deliberately total: a directory can be a perfectly good corpus without being
+    a well-formed Barony project, and refusing to export one over a malformed
+    manifest would put a validation failure on the read path.
+    """
+    manifest = collab / "manifest.yaml"
+    if not manifest.is_file():
+        return None
+    try:
+        data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+    except (yaml.YAMLError, OSError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    project = data.get("project")
+    if not isinstance(project, dict):
+        return None
+    name = project.get("name")
+    return str(name) if name else None
 
 
 def collect(
@@ -515,11 +700,17 @@ def collect(
     include_archived: bool = True,
     allow_dirty: bool = False,
     adr_dir: str = ADR_DIR,
+    note_dirs: tuple[str, ...] = NOTE_DIRS,
+    project: str | None = None,
 ) -> Export:
     """Walk the governed corpora and return citable records.
 
     Raises :class:`ExportError` when ``collab`` is not a git repository or has
     no commits — provenance is not optional, so there is no degraded mode.
+
+    ``project`` overrides the name read from ``manifest.yaml``; the portfolio
+    walk passes the registry's name so a subdir whose manifest disagrees with
+    the marker is still attributed to the project the monorepo registered it as.
     """
     root = collab.resolve()
     if not root.is_dir():
@@ -529,7 +720,7 @@ def collect(
             f"{root} is not a git repository — `baron export` cites commit SHAs, "
             "which requires git history"
         )
-    selected = set(kinds) if kinds else set(KIND_ORDER)
+    selected = set(kinds) if kinds else set(DEFAULT_KINDS)
     unknown = selected - set(KIND_ORDER)
     if unknown:
         raise ExportError(
@@ -538,7 +729,8 @@ def collect(
 
     head = _head_sha(root)
     prefix = _repo_prefix(root)
-    candidates = _candidates(root, selected, include_archived, adr_dir)
+    name = project if project is not None else project_name(root)
+    candidates = _candidates(root, selected, include_archived, adr_dir, note_dirs)
 
     rels = sorted({rel for rel, _ in candidates})
     state = _source_state(root, rels, prefix)
@@ -563,22 +755,12 @@ def collect(
             continue
         record.path = f"{prefix}{rel}"
         record.commit_sha = sha
+        record.project = name
         if condition != "clean":
             record.meta = {**record.meta, "dirty": condition}
         records.append(record)
 
-    duplicates: list[str] = []
-    seen: set[tuple[str, str]] = set()
-    deduped: list[Record] = []
-    for record in records:
-        key = (record.kind, record.id)
-        if key in seen:
-            duplicates.append(f"{record.kind}:{record.id}")
-            continue
-        seen.add(key)
-        deduped.append(record)
-
-    deduped.sort(key=lambda r: (KIND_ORDER.index(r.kind), _sort_key(r.id)))
+    deduped, duplicates = dedupe(records)
     skipped = [
         Skipped(path=rel, reason=reason, records=count)
         for (rel, reason), count in sorted(skipped_counts.items())
@@ -591,16 +773,138 @@ def collect(
         records=deduped,
         skipped=skipped,
         duplicates=duplicates,
+        layout="single",
+        project=name,
+    )
+
+
+def dedupe(records: list[Record]) -> tuple[list[Record], list[str]]:
+    """Drop repeat ``(project, kind, id)`` keys, in emission order, naming each.
+
+    Shared by the single and portfolio walks so the two cannot disagree about
+    what a duplicate *is* — which matters because the portfolio walk is where
+    the answer changed (ADR-032 §3.4).
+    """
+    seen: set[tuple[str | None, str, str]] = set()
+    duplicates: list[str] = []
+    out: list[Record] = []
+    for record in records:
+        key = (record.project, record.kind, record.id)
+        if key in seen:
+            prefix = f"{record.project}:" if record.project else ""
+            duplicates.append(f"{prefix}{record.kind}:{record.id}")
+            continue
+        seen.add(key)
+        out.append(record)
+    out.sort(
+        key=lambda r: (r.project or "", KIND_ORDER.index(r.kind), _sort_key(r.id))
+    )
+    return out, duplicates
+
+
+def collect_portfolio(
+    root: Path,
+    projects: list[tuple[str, str]],
+    *,
+    unregistered: list[str] | None = None,
+    kinds: set[str] | None = None,
+    include_archived: bool = True,
+    allow_dirty: bool = False,
+    adr_dir: str = ADR_DIR,
+    note_dirs: tuple[str, ...] = NOTE_DIRS,
+) -> Export:
+    """Aggregate one export across a coordination monorepo's registered projects.
+
+    ``projects`` is ``[(subdir, project_name), ...]`` — the caller supplies it
+    from the registry so this module does not import :mod:`baron.monorepo` (which
+    imports the scaffolder, and the export has no business dragging that in).
+
+    The **same** ``Export`` shape comes back, with ``layout: "monorepo"`` and the
+    records of every project concatenated. That is deliberate: the bug being
+    fixed is that a root-level run reported zero, and the fix is worthless if it
+    also forces every consumer of ``--json | jq '.records[]'`` to learn a second
+    payload shape. Per-project provenance rides on each record (``project``) and
+    on ``projects[]``, so nothing is lost by the flattening.
+
+    ``path`` needs no adjustment: ``_repo_prefix`` already resolves each subdir's
+    offset from the git top-level, so a record walked in ``<root>/barony`` comes
+    back with ``barony/docs/adr/...`` and ``git show <sha>:<path>`` works from
+    the root exactly as ADR-015 §3.1 requires.
+    """
+    resolved = root.resolve()
+    if not is_git_repo(resolved):
+        raise ExportError(
+            f"{resolved} is not a git repository — `baron export` cites commit SHAs, "
+            "which requires git history"
+        )
+    head = _head_sha(resolved)
+    records: list[Record] = []
+    skipped: list[Skipped] = []
+    duplicates: list[str] = []
+    legs: list[ProjectExport] = []
+    unreadable: dict[str, str] = {}
+    for subdir, name in projects:
+        path = resolved / subdir
+        if not path.is_dir():
+            unreadable[subdir] = f"{path} does not exist"
+            continue
+        try:
+            leg = collect(
+                path,
+                kinds=kinds,
+                include_archived=include_archived,
+                allow_dirty=allow_dirty,
+                adr_dir=adr_dir,
+                note_dirs=note_dirs,
+                project=name,
+            )
+        except ExportError as exc:
+            # One unwalkable project must not zero the portfolio — the same
+            # reasoning ADR-015 §3.2 used to reject "refuse the whole export
+            # when anything is dirty", one level up.
+            unreadable[subdir] = str(exc)
+            continue
+        records.extend(leg.records)
+        skipped.extend(leg.skipped)
+        duplicates.extend(leg.duplicates)
+        legs.append(
+            ProjectExport(
+                dir=subdir,
+                name=name,
+                collab=leg.collab,
+                repo_prefix=leg.repo_prefix,
+                records=len(leg.records),
+                skipped_sources=len(leg.skipped),
+            )
+        )
+    deduped, cross_duplicates = dedupe(records)
+    return Export(
+        generated=clock.today().isoformat(),
+        collab=resolved.as_posix(),
+        repo_prefix=_repo_prefix(resolved),
+        head=head,
+        records=deduped,
+        skipped=sorted(skipped, key=lambda s: (s.path, s.reason)),
+        duplicates=duplicates + cross_duplicates,
+        layout="monorepo",
+        project=None,
+        projects=legs,
+        unregistered=sorted(unregistered or []),
+        unreadable=unreadable,
     )
 
 
 def render_table(export: Export) -> str:
     """Human surface — one line per record, then the provenance caveats."""
     lines: list[str] = []
+    monorepo = export.layout == "monorepo"
     for r in export.records:
         status = r.status or "-"
         title = r.title if len(r.title) <= 72 else r.title[:69] + "..."
-        lines.append(f"{r.kind:8s} {r.id:14s} {status:12s} {r.commit_sha[:8]}  {title}")
+        lead = f"{(r.project or '-'):14s} " if monorepo else ""
+        lines.append(
+            f"{lead}{r.kind:8s} {r.id:32s} {status:12s} {r.commit_sha[:8]}  {title}"
+        )
     if not lines:
         lines.append("no records")
     tally: dict[str, int] = {}
@@ -608,12 +912,28 @@ def render_table(export: Export) -> str:
         tally[r.kind] = tally.get(r.kind, 0) + 1
     counts = ", ".join(f"{k}={tally[k]}" for k in KIND_ORDER if k in tally)
     lines.append("")
+    scope = (
+        f"{len(export.projects)} project(s) in this monorepo"
+        if monorepo
+        else (export.project or "this collab repo")
+    )
     lines.append(
-        f"{len(export.records)} record(s) at {export.head[:8]}"
+        f"{len(export.records)} record(s) at {export.head[:8]} from {scope}"
         + (f" ({counts})" if counts else "")
     )
+    if monorepo:
+        for leg in export.projects:
+            lines.append(f"  {leg.dir + '/':20s} {leg.records:4d} record(s)")
     for s in export.skipped:
         lines.append(f"warning skipped {s.path}: {s.reason} ({s.records} record(s) not citable)")
     for dup in export.duplicates:
         lines.append(f"warning duplicate record id {dup} — first occurrence kept")
+    for name in export.unregistered:
+        lines.append(
+            f"warning {name}/ holds a manifest.yaml but is not registered in "
+            ".baron-monorepo.yaml — its records are NOT in this export "
+            "(`baron adopt-project` registers it)"
+        )
+    for name, why in sorted(export.unreadable.items()):
+        lines.append(f"warning {name}/ could not be exported: {why}")
     return "\n".join(lines)
