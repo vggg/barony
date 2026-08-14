@@ -23,6 +23,7 @@
 | `adapters` | no | map | per-runtime adapter overrides (project defaults); runtime-neutral envelope — see below |
 | `workspace` | no | map | where persona working copies live locally (v1.2, optional) — see below |
 | `events` | no | map | observation-plane config (v1.3, optional, **reserved — not read yet**) — see below |
+| `notify` | no | map | wake allowlist for `baron notify` (v1.4, optional, **fail-closed when absent**) — see below |
 
 ### adapters (runtime-neutral envelope)
 
@@ -107,6 +108,32 @@ events:
 Absence means the `null` sink. Like `adapters`, this block is additive and safely ignorable
 by any consumer that does not know it.
 
+### notify (optional, v1.4)
+
+Who may fire a `baron notify` **wake** — a `repository_dispatch` that spawns a persona and so
+spends the owner's Actions minutes (ADR-010 §5.5). Unlike `events`, this block **is read**: by
+`baron notify` before it dispatches, and — the one that matters — by the `gate` job of the
+emitted `.github/workflows/baron-notify.yml`, which reads it from the collab repo it is running
+in. Gating only in the CLI would be fail-closed at the command and wide open at the spend point.
+
+| Field | Req | Notes |
+|---|---|---|
+| `notify.wake_allowed` | no | list of persona slugs whose handoffs may trigger a spawn |
+
+```yaml
+notify:
+  wake_allowed: [librarian, reviewer]
+```
+
+**Absence means nobody may wake** — fail-closed, deliberately: a project that has not decided who
+may spend money does not spend money. `baron notify --no-wake` delivery is unaffected, so the
+command is never useless without this block.
+
+> Honest bound (ADR-010 §5.5): the gate reads `from:` out of the committed handoff frontmatter,
+> which the same actor wrote. This is **detection and audit, not authentication** — it stops the
+> accidental case and turns a bypass into an attributable git artifact. Per-persona commit signing
+> (ADR-011) is what would make it a fact.
+
 ## Example (tasklib-agents, derived from the Phase 2 dogfood)
 
 ```yaml
@@ -147,6 +174,10 @@ adapters:                     # optional; runtime-neutral envelope
   at `paths.root`; discovery and relative paths resolve from there.
 
 ## Changelog
+
+- **v1.4** (ADR-010 §5.5): added the optional `notify` block (`wake_allowed`) gating who may
+  fire a wake. Additive — a manifest without it validates unchanged, and the gate then refuses
+  every wake (fail-closed).
 
 - **v1.3** (ADR-009 §3.2): added optional `backlog.park_label`. Additive — a manifest
   without it validates unchanged, and `baron decision check` simply falls back to the

@@ -180,6 +180,16 @@ MANIFEST_SPEC: Node = _map(
             },
             required=False,
         ),
+        # Wake allowlist (ADR-010 §5.5). Fail-closed: absent -> nobody may fire a
+        # `baron notify` wake. Declared here so a manifest carrying the block
+        # validates without an unknown-field warning; the live readers are
+        # notify.py (CLI side) and the emitted baron-notify.yml gate job.
+        "notify": _map(
+            {
+                "wake_allowed": Node("list", required=False, item=Node("str")),
+            },
+            required=False,
+        ),
         # v1.2 optional additions (see manifest.schema.md): where persona working
         # copies live locally, so `baron status` can sweep them for divergence.
         "workspace": _map(

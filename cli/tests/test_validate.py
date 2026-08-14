@@ -122,6 +122,27 @@ def test_events_block_is_additive_and_warning_free(tmp_path: Path) -> None:
     assert [f for f in found if f.check == "unknown-field"] == []
 
 
+def test_notify_block_is_additive_and_warning_free(tmp_path: Path) -> None:
+    """ADR-010 §5.5. `notify.wake_allowed` gates who may fire a wake, and both the
+    CLI and the emitted gate job read it — so every project that has enabled wake
+    carries the block. It is in MANIFEST_SPEC so carrying it costs no warning."""
+    copy = tmp_path / "manifest.yaml"
+    copy.write_text(
+        MINIMAL_MANIFEST + "notify:\n  wake_allowed: [librarian, reviewer]\n",
+        encoding="utf-8",
+    )
+    found = validate_file(copy)
+    assert errors(found) == [], [f.message for f in found]
+    assert found == [], [f.message for f in found]
+
+
+def test_notify_wake_allowed_must_be_a_list_of_strings(tmp_path: Path) -> None:
+    """The control: declaring the block does not make it shapeless."""
+    copy = tmp_path / "manifest.yaml"
+    copy.write_text(MINIMAL_MANIFEST + "notify:\n  wake_allowed: librarian\n", encoding="utf-8")
+    assert any(f.check == "type" for f in errors(validate_file(copy)))
+
+
 def test_a_genuinely_unknown_manifest_block_still_warns(tmp_path: Path) -> None:
     """The control for the test above: the schema is not simply permissive."""
     copy = tmp_path / "manifest.yaml"
