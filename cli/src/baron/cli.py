@@ -25,6 +25,7 @@ from . import (
     indexer,
     ledger,
     lock as lock_mod,
+    merge as merge_mod,
     monorepo as monorepo_mod,
     notify as notify_mod,
     rules as rules_mod,
@@ -2601,6 +2602,74 @@ def health_cmd(
         _echo_json(rep.to_dict())
     else:
         typer.echo(health_mod.render(rep))
+
+
+# --- the merge gate (ADR-027) ---------------------------------------------------------
+
+merge_app = typer.Typer(
+    help="The merger's preconditions, mechanized — a fail-closed gate (ADR-028).",
+    no_args_is_help=True,
+)
+app.add_typer(merge_app, name="merge")
+
+
+@merge_app.command("check")
+def merge_check(
+    number: int = typer.Argument(..., help="Pull request number."),
+    repo: Optional[str] = typer.Option(
+        None, "--repo",
+        help="Code repo as owner/name. Default: the manifest's `code` repo — a merger runs "
+             "in the COLLAB repo, where gh would otherwise answer about the wrong PR.",
+    ),
+    collab: Path = _COLLAB_OPT,
+    verdict_author: Optional[str] = typer.Option(
+        None, "--verdict-author",
+        help="Only count verdicts from this forge login. Useless under the single-account "
+             "constraint (every persona is the same login) — it becomes meaningful when "
+             "agent identity (ADR-027) is deployed.",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Evaluate the merge preconditions for a PR. Exit 0 = merge allowed, 1 = REFUSE.
+
+    Fail-closed: a missing verdict, a verdict bound to any sha but the current head,
+    red or pending or absent CI, an open changes-requested, an unreachable forge — each
+    is a refusal naming the precondition that failed. Review-state LABELS are reported
+    as ignored and never scored (ADR-008 §1: labels are an index, the SHA-bound verdict
+    comment is the record).
+
+    This command does not merge, and there is no `baron merge do` (ADR-007: baron
+    provides the governed check; the runtime decides to invoke it).
+    """
+    collab_root = collab.resolve()
+    target = repo
+    if target is None:
+        try:
+            target = merge_mod.code_repo_slug(status_mod.load_manifest(collab_root))
+        except Exception:
+            target = None
+    try:
+        from .forge import get_forge
+
+        forge = get_forge("github")
+        result = merge_mod.check(
+            forge, collab_root, number,
+            target_repo=target, verdict_author=verdict_author,
+        )
+    except (ForgeError, ForgeUnavailable) as exc:
+        result = merge_mod.refused(
+            merge_mod.FORGE_UNAVAILABLE,
+            f"{exc.__class__.__name__}: {exc}",
+            pr=number, repo=target or "",
+        )
+
+    if json_out:
+        _echo_json(result.to_dict())
+    else:
+        for line in merge_mod.render(result):
+            typer.echo(line)
+    # The refusal IS the return value, not advice attached to a zero exit.
+    raise typer.Exit(0 if result.allowed else 1)
 
 
 def main() -> None:  # pragma: no cover - console-script convenience

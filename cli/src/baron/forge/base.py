@@ -79,6 +79,17 @@ class Forge(Protocol):
 #   get_issue(repo: Path, number: int, *, target_repo: str | None = None) -> dict
 #       One issue, normalized: {number, state, labels (list of names), title, url}.
 #       Consumed by `baron decision check` for github_issues backlogs.
+#
+#   get_pr(repo: Path, number: int, *, target_repo: str | None = None) -> dict
+#       ONE snapshot of a pull request, normalized:
+#         {number, state, isDraft, headRefOid, url, labels (names), reviewDecision,
+#          comments [{author:{login}, body, createdAt}], checks [{name, state}]}
+#       Consumed by `baron merge check` (ADR-028). It must be a single query: the
+#       gate compares a verdict's sha against the head in the SAME payload, so a
+#       forge that assembles the snapshot from several calls can hand the gate a
+#       verdict and a head that were never true at the same instant. Absent
+#       implementation => the gate REFUSES (never degrades to unverifiable — a
+#       merge is an action, not a report, so amber is red here).
 
 def supports(forge: object, capability: str) -> bool:
     """True when ``forge`` implements an optional extension named above."""

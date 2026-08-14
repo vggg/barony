@@ -674,6 +674,57 @@ against a fake. The CI side is the emitted
 `.github/workflows/lock-guard.yml` template (bash + `gh`), which fails any
 *other* PR touching a locked path.
 
+### `baron merge check <pr>` — the merger's gate, mechanized ([ADR-028](../docs/adr/ADR-028-mechanized-merge-gate.md))
+
+The `__MERGER__` persona is specified as *a gate, not a button*. This makes the
+checkable half of that gate a **fail-closed return value** instead of prose the
+model can talk itself past (FM4: a persona merged ~15 PRs with `merge_pr` denied
+in its own config).
+
+```bash
+baron merge check 128 --repo example-org/gardenkit    # exit 0 = allowed, 1 = REFUSE
+baron merge check 128 --json                          # code repo from manifest.yaml
+```
+
+Four preconditions, in order, scored against **one** PR snapshot (so the verdict's
+sha, the labels and the checks all describe the same observed head):
+
+| # | Precondition | Passes when |
+|---|---|---|
+| 1 | `pr_open` | OPEN, not a draft, head resolves to a full 40-hex sha |
+| 2 | `verdict_at_head` | a `REVIEW:PASS <sha>` comment exists whose sha **equals the current head** |
+| 3 | `no_changes_requested` | no `REVIEW:FAIL` at the head, no platform changes-requested |
+| 4 | `ci_green` | every check on the head sha succeeded, and at least one actually ran |
+
+```
+=== merge gate — example-org/gardenkit#128 @ 3f9c1a2b4d6e ===
+  PASS  pr_open                open, not a draft, head sha resolved
+  FAIL  verdict_at_head        newest verdict is REVIEW:PASS 8ab21c04f7d9 but the head is
+                               now 3f9c1a2b4d6e — the head moved since review...
+  FAIL  no_changes_requested   not evaluated — ...; fail-closed
+  FAIL  ci_green               not evaluated — ...; fail-closed
+  ----  labels IGNORED by design (index, not record): reviewed-approved
+VERDICT: REFUSE — verdict_at_head [stale_verdict]: ...
+```
+
+**Fail-closed, everywhere.** Missing verdict, stale sha, abbreviated sha (never
+prefix-matched — two commits can share a prefix), red CI, **pending** CI, **absent**
+CI, an unrecognized check state, an open `REVIEW:FAIL`, a missing `gh` — each is a
+refusal with a stable reason slug. Preconditions that could not be reached are
+reported FAILED, not skipped. Unlike `baron decision check`'s three states, there is
+no amber: a merge is an action, and for an action amber is red.
+
+**Labels are an input to nothing** (ADR-008 §1) — collected and printed as *ignored*
+in both directions: an approval label cannot rescue a stale verdict, and a
+`changes-requested` label cannot block a clean head.
+
+**It never merges, and there is no `baron merge do`** (ADR-007). Under one shared forge
+account baron cannot attest *who* posted a verdict — the dev could post its own
+`REVIEW:PASS` — so merging stays owner-in-the-loop until per-persona forge identity
+(ADR-027) is deployed; `--verdict-author <login>` then pins the reviewer. Preconditions
+3 and 4 of the persona's four (record obligations, hot-file collisions) are **not**
+covered here and stay the merger's own; exit 0 means "1 and 2 hold", not "merge it".
+
 ### `baron worktree add|list|remove|prune|repair` (M6 tooling)
 
 The branch-per-persona worktree topology (ADR-003 §2.7): one shared object

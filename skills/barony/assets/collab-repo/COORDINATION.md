@@ -109,6 +109,14 @@ Projects that adopt the reviewer + merger personas (`agents/__REVIEWER__/`,
    refuses naming the failed precondition: CI green on the *current* head SHA; a REVIEW:PASS
    naming the *current* head SHA; record obligations met (handoffs for material
    findings/decisions); no hot-file collision.
+   The first two are **mechanized** — `baron merge check <pr> --repo <owner/name>` (ADR-028)
+   evaluates them from one PR snapshot and exits 1 with the failing precondition named.
+   Fail-closed: no verdict, a stale or abbreviated sha, pending or absent CI, an open
+   `REVIEW:FAIL`, or an unreachable forge all REFUSE. **Labels are collected and reported as
+   ignored, never scored.** The Merger runs it before anything else and does not merge past a
+   refusal; preconditions 3 and 4 remain its own to verify. The command verifies and reports —
+   it never merges. Until per-persona forge identity (ADR-027) is deployed, nothing can attest
+   *who* posted a verdict, so **the owner performs the merge**.
 4. **Dev sweeps feedback before claiming new work** (`check_review_feedback` in the dev
    ritual): compare each open PR's latest verdict SHA to its current head, and act on the
    verdicts that are LIVE. A `changes-requested` whose SHA equals your head is a *current*

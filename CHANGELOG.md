@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `baron merge check`: the merge decision becomes a fail-closed gate (CLI 0.11.0, [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md))
+
+The `__MERGER__` archetype was always specified as *a gate, not a button* — but the gate
+was **persona prose**, the same enforcement tier FM4 watched a persona override ~15 times.
+`baron merge check <pr>` makes the checkable half a return value: exit 0 = allowed, exit 1
+= REFUSE naming the failed precondition, a stable reason slug, and the sha it checked.
+
+- **Four preconditions, scored against ONE PR snapshot** — `pr_open`, `verdict_at_head`,
+  `no_changes_requested`, `ci_green`. One snapshot is load-bearing: assembled from separate
+  queries, a push landing mid-check could pair a "matching" verdict with a head CI never ran
+  on — the stale-verdict merge the gate exists to stop, rebuilt at the mechanism layer.
+- **`reviewed-sha == head`, exactly.** A verdict on any other sha is `stale_verdict`; an
+  abbreviated sha is `verdict_malformed` and is **never prefix-matched** — two commits can
+  share a prefix, and the whole gate rests on that equality being exact.
+- **Fail-closed with no amber.** No verdict, pending CI, *absent* CI, an all-skipped check
+  set, an unrecognized check state, an open `REVIEW:FAIL` (even beside a later PASS on the
+  same sha — same sha means same code), a missing `gh`: each REFUSES. Preconditions that
+  could not be reached are reported FAILED, not skipped, because a reader rounds an absence
+  down to "fine". Deliberately unlike `baron decision check`'s three states: that is a
+  report, this is an action, and for an action amber is red.
+- **Labels are an input to nothing** (ADR-008 §1) — collected and printed as *ignored*, in
+  both directions: an approval label cannot rescue a stale verdict, and a
+  `changes-requested` label cannot block a clean head.
+- **It never merges, and there is no `baron merge do`** (ADR-007). The honest bound, stated
+  in the command's own output: under one shared forge account baron cannot attest *who*
+  posted a verdict — a dev can post its own `REVIEW:PASS` — so merging stays
+  owner-in-the-loop until per-persona forge identity (ADR-027) is deployed. `--verdict-author`
+  ships now, useless today, load-bearing the moment identities exist.
+- **Honest scope:** two of the merger's four preconditions are mechanized. Record
+  obligations and hot-file collisions stay the persona's, and the command says so — exit 0
+  means "1 and 2 hold", never "merge it".
+- New optional forge extension `get_pr` (duck-typed, outside the Protocol per the
+  `forge/base.py` rule); the `__MERGER__` template, `COORDINATION.md § Review and merge`
+  and `cli/README.md` carry the wiring.
+
+**Correction made at queue integration (2026-08-14).** ADR-028 §4 was drafted against an
+earlier, *rejected* ADR-027 that proposed per-persona **forge credentials**, and claimed that
+ADR-027 would unblock autonomous merging. The accepted ADR-027 is **SSH commit signing** and
+introduces no forge credential at all — so the claim was false and is **withdrawn in §4**, not
+reworded. The gap is real and now stated: ADR-027 attributes *commits*, a `REVIEW:PASS` is a
+*PR comment*, and the two do not meet. `--verdict-author` therefore does **not** become useful
+when ADR-027 lands. New ADR-028 §7 Q4 records the two candidate routes (per-persona forge
+identity, or a signed in-repo verdict artifact under ADR-027 §2.3) and that neither is
+designed. `baron merge check` stays owner-in-the-loop, which is what it already shipped as.
+
 ### Added — agent identity: per-persona SSH signing keys, enrolled in the repo (plugin 1.11.0 / CLI 0.10.0, [ADR-027](docs/adr/ADR-027-agent-identity.md))
 
 On **2026-08-04** an un-onboarded Codex agent committed to `main` **under the owner's git
