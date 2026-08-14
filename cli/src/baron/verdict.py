@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 
 from . import events
+from .sinks.disk import events_dir as plane_dir
 
 _INT_FIELDS = ("mutations_run", "mutations_killed", "drift_instances", "drift_understating")
 
@@ -66,8 +67,14 @@ def read(collab: Path, *, since: str | None = None) -> list[dict[str, object]]:
     ``since`` is an ISO-date/prefix; rows whose ``start_timestamp`` sorts before it
     are dropped (same UTC-ISO prefix match the pilot's metrics-report used).
     Returns [] when the disk sink was never enabled — nothing to measure, not an error.
+
+    The read resolves the plane through :func:`baron.sinks.disk.events_dir` — the
+    SAME resolution the write took. Joining ``.baron/events`` onto ``collab``
+    instead is correct only when the collab dir IS the git top-level; in a
+    coordination monorepo it reads an empty subdir while the verdicts sit at the
+    root (ADR-025 §6.8).
     """
-    events_dir = collab / ".baron" / "events"
+    events_dir = plane_dir(collab)
     if not events_dir.is_dir():
         return []
     out: list[dict[str, object]] = []

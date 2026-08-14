@@ -68,6 +68,20 @@ def _repo_root(cwd: str) -> Path:
     return path
 
 
+def events_dir(cwd: Path | str) -> Path:
+    """Where the disk sink writes events for ``cwd`` — and therefore the ONLY
+    place a reader may look for them.
+
+    The plane is **repo-wide**, not directory-wide: it hangs off the git
+    top-level. In a coordination monorepo (ADR-025) a project subdir is not its
+    own git repo, so every project in one clone shares one plane. Readers must
+    resolve through this function rather than joining ``.baron/events`` onto the
+    collab path — that join silently reads an empty directory beside a populated
+    one, which is the false-green class ADR-025 §6.3 warned about.
+    """
+    return _repo_root(str(cwd)) / Path(*EVENTS_DIR.parts)
+
+
 class DiskSink:
     """Appends one JSON line per event to ``<repo root>/.baron/events/<date>.jsonl``."""
 
@@ -83,7 +97,7 @@ class DiskSink:
         self._cwd = Path(cwd)
 
     def directory(self) -> Path:
-        return _repo_root(str(self._cwd)) / Path(*EVENTS_DIR.parts)
+        return events_dir(self._cwd)
 
     def path_for(self, event: "Event", directory: Path | None = None) -> Path:
         assert event.ts is not None  # Event.__post_init__ guarantees it

@@ -198,6 +198,20 @@ they are not. §2's "a monorepo subdir is an ordinary Barony project" holds for 
 fails for anything that shells out to git or assumes its own nesting depth — so that is now the
 audit boundary for the next command that goes portfolio-wide.
 
+**Stage 2 found one more by applying that boundary — fixed ([ADR-025 §6.8](docs/adr/ADR-025-coordination-monorepo.md)).**
+`baron health` **wrote** verdicts to the
+git top-level (where the disk sink puts the plane) and **read** them from a `.baron/events` join
+onto the project subdir. Measured in the dogfood: `verdict.read(<root>)` → 1 row,
+`verdict.read(<root>/barony)` → 0. So an approved verdict sat on disk while health printed `0
+verdict(s)`, reassured that a project recording no verdicts shows a clean board, and advised
+enabling a sink already enabled — a false green of the same class as the `--code-repo` aliasing
+bug, invisible in single-project layouts because there the collab dir *is* the git top-level.
+Write and read now share one resolution (`sinks.disk.events_dir`); the portfolio rollup reads
+the shared plane **once** rather than once per project (which would have replaced the false zero
+with an N× false total); and the report names the plane it read, so a zero is attributable.
+ADR-024 §5's honest bound is untouched — health still measures what was **emitted**; this was
+about reading what was.
+
 **Still open — persona-name collisions (ADR-025 §6.7).** Default slugs
 (`dev`/`reviewer`/`merger`/`librarian`) collide when two projects share one monorepo clone and
 a runtime resolves personas globally. Deferred to its own ADR/PR: the fix spans the persona

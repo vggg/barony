@@ -487,12 +487,15 @@ class PortfolioHealth:
     root: Path
     per_project: dict[str, health_mod.HealthReport]
     since: str | None = None
+    #: The verdict half, read ONCE from the repo-wide plane. The disk sink hangs
+    #: the plane off the git top-level, and a monorepo subdir is not its own git
+    #: repo — so all projects in one clone share one plane. Summing a per-project
+    #: read would report N× the verdicts that exist (ADR-025 §6.8).
+    plane: health_mod.HealthReport | None = None
 
     def to_dict(self) -> dict[str, object]:
         reports = {name: rep.to_dict() for name, rep in self.per_project.items()}
-        verdicts = sum(r.verdicts for r in self.per_project.values())
-        run = sum(r.mutations_run for r in self.per_project.values())
-        killed = sum(r.mutations_killed for r in self.per_project.values())
+        plane = self.plane
         return {
             "layout": "monorepo",
             "root": self.root.as_posix(),
@@ -500,14 +503,14 @@ class PortfolioHealth:
             "projects": reports,
             "summary": {
                 "projects": len(reports),
-                "verdicts": verdicts,
+                "verdicts": plane.verdicts if plane else 0,
                 "mutation_kill": {
-                    "killed": killed,
-                    "run": run,
-                    "rate": (killed / run) if run else None,
+                    "killed": plane.mutations_killed if plane else 0,
+                    "run": plane.mutations_run if plane else 0,
+                    "rate": plane.kill_rate if plane else None,
                 },
-                "claim_drift": sum(r.drift_instances for r in self.per_project.values()),
-                "reviewer_escapes": sum(len(r.escapes) for r in self.per_project.values()),
+                "claim_drift": plane.drift_instances if plane else 0,
+                "reviewer_escapes": len(plane.escapes) if plane else 0,
                 "stalls": sum(len(r.stalls) for r in self.per_project.values()),
             },
         }
@@ -515,17 +518,22 @@ class PortfolioHealth:
 
 def collect_health(root: Path, *, since: str | None = None) -> PortfolioHealth:
     repo = load(root)
+    # Stalls/divergence are genuinely per-project (they come from `baron status`
+    # on each subdir). Verdicts are NOT: one plane, read once at the root.
     per_project = {
-        project.dir: health_mod.collect(project.path(root), since=since)
+        project.dir: health_mod.collect(
+            project.path(root), since=since, include_verdicts=False
+        )
         for project in repo.projects
         if project.path(root).is_dir()
     }
-    return PortfolioHealth(root, per_project, since=since)
+    plane = health_mod.collect(root, since=since, include_stalls=False)
+    return PortfolioHealth(root, per_project, since=since, plane=plane)
 
 
 def render_health(rep: PortfolioHealth) -> str:
     win = f"since {rep.since}" if rep.since else "all time"
-    total = sum(r.verdicts for r in rep.per_project.values())
+    total = rep.plane.verdicts if rep.plane else 0
     stalls = sum(len(r.stalls) for r in rep.per_project.values())
     lines = [
         f"=== portfolio health ({win}) — {len(rep.per_project)} project(s), "
@@ -533,7 +541,14 @@ def render_health(rep: PortfolioHealth) -> str:
         "",
         "The same honest bound as single-project health (ADR-024 §5): this measures what",
         "was EMITTED. A project that records no verdicts shows a clean board.",
+        "",
+        "The observation plane is REPO-WIDE (one .baron/events for this clone), so the",
+        "verdict metrics below are portfolio-level, not per-project. Stalls are per-project.",
     ]
+    if rep.plane:
+        lines.append("")
+        lines += ["   " + line for line in health_mod.render(rep.plane).splitlines()
+                  if not line.startswith("STALLS / DIVERGENCE")]
     for name, report in rep.per_project.items():
         lines.append("")
         lines.append(f"-- {name}/")
