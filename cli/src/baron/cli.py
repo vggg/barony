@@ -29,6 +29,7 @@ from . import (
     runtimes,
     scaffold as scaffold_mod,
     session as session_mod,
+    sidecar as sidecar_mod,
     status as status_mod,
     validate as validate_mod,
     verdict as verdict_mod,
@@ -1707,6 +1708,90 @@ def notify_cmd(
         typer.echo(f"woke {persona}: repository_dispatch fired (wake_depth {result.wake_depth}).")
     else:
         typer.echo(f"delivered; no wake — {result.suppressed}")
+
+
+sidecar_app = typer.Typer(
+    help="Per-persona deployable work loop (ADR-026 persona sidecar).",
+    no_args_is_help=True,
+)
+app.add_typer(sidecar_app, name="sidecar")
+
+
+@sidecar_app.command("run")
+def sidecar_run(
+    persona: str = typer.Argument(..., help="Persona slug to run a cycle for."),
+    collab: Path = _COLLAB_OPT,
+    cmd: Optional[str] = typer.Option(
+        None,
+        "--cmd",
+        envvar="BARON_SIDECAR_CMD",
+        help="The runtime invocation (project-owned). Brief on stdin, also at "
+        "$BARON_SIDECAR_BRIEF; `{brief_file}` in the command is replaced with that path.",
+    ),
+    trigger: Optional[str] = typer.Option(
+        None, "--trigger", help="Override persona.yaml runtime.trigger (interactive|event|cron)."
+    ),
+    watch: bool = typer.Option(
+        False, "--watch", help="Long-running: keep cycling (event/cron triggers only)."
+    ),
+    interval: int = typer.Option(
+        sidecar_mod.DEFAULT_WATCH_INTERVAL, "--interval", help="Seconds between --watch cycles."
+    ),
+    max_cycles: Optional[int] = typer.Option(
+        None, "--max-cycles", help="Stop --watch after this many cycles (default: never)."
+    ),
+    timeout: Optional[int] = typer.Option(
+        None, "--timeout", help="Kill the runtime command after this many seconds."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Invoke the runtime even when the sweep finds no work."
+    ),
+    no_push: bool = typer.Option(False, "--no-push", help="Commit outcomes but do not push."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Plan + brief only: no sync, no runtime, nothing landed."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """One sidecar cycle for <persona>: sync the collab repo, sweep _handoff/ (review
+    feedback before new work) and the labelled backlog, invoke the runtime once, then
+    commit and push the outcome.
+
+    The runtime invocation is yours (--cmd / $BARON_SIDECAR_CMD, defaulted in the
+    emitted `agents/<slug>/sidecar.sh`): baron syncs, sweeps, commits and pushes; it
+    does not own the agent loop (ADR-007). Exit 0 green, 1 if the runtime failed.
+    """
+    kwargs = dict(
+        cmd=cmd,
+        trigger=trigger,
+        dry_run=dry_run,
+        force=force,
+        push=not no_push,
+        timeout=timeout,
+    )
+
+    def emit(report: sidecar_mod.CycleReport) -> None:
+        if json_out:
+            _echo_json(report.to_dict())
+        else:
+            typer.echo(sidecar_mod.render_cycle(report))
+
+    try:
+        if watch:
+            reports = sidecar_mod.watch(
+                collab.resolve(),
+                persona,
+                interval=interval,
+                max_cycles=max_cycles,
+                on_cycle=emit,
+                **kwargs,
+            )
+            raise typer.Exit(0 if all(r.ok for r in reports) else 1)
+        report = sidecar_mod.run_cycle(collab.resolve(), persona, **kwargs)
+    except sidecar_mod.SidecarError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    emit(report)
+    raise typer.Exit(0 if report.ok else 1)
 
 
 verdict_app = typer.Typer(

@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — the persona sidecar: `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh` ([ADR-026](docs/adr/ADR-026-persona-sidecar.md))
+
+ADR-026's launcher half, built. A persona becomes a **deployable unit**: the
+runtime kit `baron init` already emitted, plus a work loop that coordinates
+through the collab repo as shared state. It is the hand-written badminton
+`fleet-runner` generalised and emitted, and it adds no machinery — the cycle
+composes `baron session start --sync` and `baron session end`.
+
+- **`baron sidecar run <persona>`** runs one cycle: **sync** (`git pull --ff-only`
+  every manifest working copy) → **sweep** (open `_handoff/` items addressed to the
+  persona, plus unchecked backlog lines carrying its routing label, parked items
+  excluded) → **invoke** the runtime once with a work brief on stdin → **land**
+  (index + scoped coordination commit, then a plain `git push` — no force, no
+  retry). Flags: `--cmd`, `--trigger`, `--watch`/`--interval`/`--max-cycles`,
+  `--timeout`, `--force`, `--no-push`, `--dry-run`, `--json`.
+- **Nothing is paid for nothing.** No addressed handoff and no labelled backlog
+  item = idle: the runtime is not invoked at all (`--force` overrides). That
+  guard is the fleet-runner's, kept.
+- **The brief resolves review feedback before new work** — the `check_review_feedback`
+  → `check_backlog` ordering ADR-008 made load-bearing, now enforced by the one
+  thing that plans an unattended cycle.
+- **ADR-007 holds, visibly.** baron syncs, sweeps, commits and pushes; the *model
+  invocation* is supplied by the project (`--cmd` / `$BARON_SIDECAR_CMD` / the
+  emitted script). A cycle with no command is a usage error, never a default —
+  baron still does not own the agent loop.
+- **`baron init` emits `agents/<slug>/sidecar.sh`** (executable) beside each
+  runtime kit, from a new vendored template. Its header renders the persona's
+  `runtime.trigger` (ADR-026 §6 Q2): `interactive` is one-shot by hand and
+  refuses `--watch` (that loop is the human's session), `event` is spawned by the
+  ADR-010 wake, `cron` is scheduler-driven or self-paced. The runtime invocation
+  is a **PROJECT-OWNED SLOT** — pre-filled for `--runtime claude`, an explicit
+  fill-me elsewhere rather than a guess that fails at 3am. Cycle logs land in an
+  auto-ignored `agents/<slug>/logs/`, so a running sidecar never reads as drift.
+
+Containers stay deferred exactly as the ADR decided: launcher first, containerise
+when a fleet needs laptop-off durability.
+
 ### Added — `manifest.yaml` schema **v1.4**: the optional `notify` block (ADR-010 §5.5)
 
 `notify.wake_allowed` — the list of persona slugs whose handoffs may fire a
