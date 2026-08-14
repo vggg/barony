@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `manifest.yaml` schema **v1.4**: the optional `notify` block (ADR-010 §5.5)
+
+`notify.wake_allowed` — the list of persona slugs whose handoffs may fire a
+`repository_dispatch` wake — is now a **recognized, optional** manifest field.
+It was already read by two live consumers (`baron notify` before it dispatches, and
+the `gate` job of the emitted `baron-notify.yml`), but the schema did not know it,
+so every project that had actually enabled wake got `manifest.notify: unknown field`
+out of `baron validate`. A manifest carrying the block now validates with **zero**
+warnings; `wake_allowed` must still be a list of strings, and a genuinely unknown
+block still warns. Semantics are unchanged and deliberately fail-closed: **absent
+means nobody may wake.** Canon doc + vendored copy updated; ADR-010 §5.5 left the
+minor number unpinned, and this takes **v1.4** (ADR-009's `park_label` took v1.3).
+
+### Accepted design (no code yet) — [ADR-025](docs/adr/ADR-025-coordination-monorepo.md): the coordination monorepo
+
+`baron init` emits one collab repo per project, so N projects is 2N repos and there
+is **no cross-project view**. ADR-025 reframes the missing "portfolio tier" as a
+*topology*, not a new abstraction: one coordination monorepo with each project as a
+subdir, and the portfolio itself as a code-less `_meta/` project — the portfolio is
+a project that coordinates projects, governed by the same primitives one level up.
+**Accepted (Vikram, 2026-08-13)** with §7 answered as recommended: keep `baron init`
+for the root and add `baron add-project`; `repository_dispatch` carries the project
+and the gate `cd`s into that subdir; identity stays `<slug>@<project>.local`; and the
+monorepo is an **opt-in `--layout monorepo`** — per-project repos remain the default,
+because a monorepo cannot grant per-project access.
+
+### Accepted design (no code yet) — [ADR-026](docs/adr/ADR-026-persona-sidecar.md): the persona sidecar
+
+Deploying a fleet is bespoke today — a hand-written launchd job on one machine — so
+autonomous fleets stay "works on the author's laptop". ADR-026 packages a persona as
+a **deployable unit**: baron CLI + the already-emitted `agents/<slug>/runtime/` kit +
+a work loop, coordinating through the collab repo as shared state. **Accepted
+(Vikram, 2026-08-13)** with §6 answered as recommended: launcher first (`baron
+sidecar` + an emitted `sidecar.sh`), containerise once a fleet needs laptop-off
+durability, loop configurable per persona, identity via the deferred per-persona
+signing keys. ADR-007 holds — the sidecar *runs* the loop; baron still does not own it.
+
 ### Added — `barony` 0.8.0: `baron decision reconcile` / `check` (P2.1, ADR-009 — `park` only)
 
 The FM6 mechanism. A ratified decision was recorded in `decisions/` and still
