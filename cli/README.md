@@ -84,7 +84,16 @@ URL, recorded in `manifest.yaml` with a relative path + `workspace.worktrees_roo
 `--personas archetype:slug,...` (archetypes: `dev`, `librarian`,
 `autonomous-event`, `autonomous-cron`, `reviewer`, `merger`; a librarian is
 appended when missing), `--runtime claude|generic|pydantic-ai|code-puppy`,
-`--no-git`. Refuses a non-empty target directory.
+`--wake-allowed <slug>,...`, `--no-git`. Refuses a non-empty target directory,
+and a `--code-repo` that resolves to the collab repo itself.
+
+`manifest.yaml` always carries a `notify:` block, empty unless `--wake-allowed`
+names personas. Empty still means **nobody may wake** — ADR-010 §5.5's
+fail-closed contract is unchanged — but absent and empty are not the same thing
+to a reader: absent is invisible, and a project whose wakes silently never fire
+gives you nothing to search for. `--wake-allowed` is the one-flag way to scaffold
+a working wake loop, and it rejects a slug that is not a persona of this project
+(the gate matches the handoff's `from:`, so an unknown name could never fire).
 
 Emits the canonical layout — `CONVENTIONS.md`/`COORDINATION.md` (filled),
 `manifest.yaml`, `canon/` + `adapters/` copied verbatim from the **packaged
@@ -142,11 +151,51 @@ fleet-coordination/
 `--personas`, `--runtime` and `--no-git` behave as above and apply to that first
 project. **`baron add-project <name>`** grafts a further subdir into an existing
 root: `--root` (default `.`), `--project-name` (when the project name must differ
-from the subdir), `--code-repo`, `--personas`, `--runtime`, `--no-git`. It reuses
-`init`'s emitters verbatim and refuses cleanly on a non-monorepo directory, a
-duplicate, or anything that is not a plain subdir name. The subdir gets **no
-`.github/` and no git repo of its own** — both belong to the root, which is where
-both commands commit.
+from the subdir), `--code-repo`, `--personas`, `--runtime`, `--wake-allowed`,
+`--no-git`. It reuses `init`'s emitters verbatim and refuses cleanly on a
+non-monorepo directory, a duplicate, or anything that is not a plain subdir name.
+The subdir gets **no `.github/` and no git repo of its own** — both belong to the
+root, which is where both commands commit. If a project subdir does carry a
+`.github/` (an adopted repo brings one), both commands **warn that it is inert**:
+GitHub runs workflows from the repository root only, so a nested one fires never
+while reading like working CI.
+
+**`--code-repo` is resolved against the SUBDIR, and refuses to alias the
+coordination repo.** A code repo is a separate repo, so it may not be the
+monorepo root, live inside it, or contain it — `baron` errors instead of writing
+a `repos[].path` that resolves back inside. This matters most for a git URL,
+which names no local path: baron assumes the conventional sibling clone, and in a
+monorepo the sibling is `../../<name>`, one level further up than in a standalone
+collab repo. (The 2026-08-14 dogfood emitted `../<name>`, which pointed at the
+project subdir itself; every path existed, so `baron status` reported the code
+repo green with nothing cloned.)
+
+### `baron adopt-project <subdir>` — the migration path
+
+`add-project` scaffolds, and refuses a non-empty target — so an existing collab
+repo, with its own history, personas and ledgers, had no way into a monorepo.
+`adopt-project` registers one that is **already a subdir here**:
+
+```bash
+cd fleet-coordination
+git subtree add --prefix=gardenkit git@github.com:you/gardenkit-collab.git main
+baron adopt-project gardenkit
+```
+
+Placing the directory stays git's job — `git subtree add` keeps its history, a
+plain `mv` is right when history does not matter, and baron will not guess which
+you meant nor re-implement either. It picks up where git leaves off: verify the
+subdir is a collab repo, read its project name from its own manifest (never
+rewrite it), register it in the marker, re-render the root README, and commit.
+Flags: `--root`, `--project-name` (refused if it contradicts the manifest's
+`project.name`), `--no-git`. It refuses a subdir that is still its own git repo,
+one with no `manifest.yaml`, a duplicate, and a path rather than a plain name.
+
+Two things it deliberately does not do: delete the adopted `.github/` (reported
+inert — removing another repo's CI is not a side effect of registering it) and
+re-base its `repos[].path`. The collab root moved one level deeper, so a code
+repo recorded at `../x` is now at `../../x`; the command's next-steps output says
+so, and `baron status` reports it red until you fix it.
 
 Run at the root, `baron status` and `baron health` go **portfolio-wide** (per
 project, then a total; `--json` gains `layout`/`projects`/`summary`) and

@@ -131,6 +131,15 @@ def init(
             "portfolio project — no code repo, its work items are cross-project decisions)."
         ),
     ),
+    wake_allowed: Optional[str] = typer.Option(
+        None,
+        "--wake-allowed",
+        help=(
+            "Comma-separated persona slugs allowed to fire a `baron notify` WAKE "
+            "(manifest notify.wake_allowed, ADR-010 §5.5). Omitted = the block is "
+            "emitted EMPTY, which is fail-closed: nobody may wake until you fill it."
+        ),
+    ),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git init + first commit."),
 ) -> None:
     """Scaffold a new collab repo — the deterministic subset of canon/ORCHESTRATE.md.
@@ -164,6 +173,7 @@ def init(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2)
     dest = dir_ if dir_ is not None else Path(project_name)
+    wake = _parse_wake_allowed(wake_allowed)
     if layout == "monorepo":
         _init_monorepo(
             project_name,
@@ -173,6 +183,7 @@ def init(
             roster=roster,
             runtime=runtime,
             do_git=not no_git,
+            wake_allowed=wake,
         )
         return
     try:
@@ -183,6 +194,7 @@ def init(
             personas=roster,
             runtime=runtime,
             do_git=not no_git,
+            wake_allowed=wake,
         )
     except scaffold_mod.ScaffoldError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -225,6 +237,26 @@ def init(
 # --- ADR-025: the coordination monorepo -------------------------------------------------
 
 
+def _parse_wake_allowed(spec: Optional[str]) -> list[str]:
+    return [s.strip() for s in (spec or "").split(",") if s.strip()]
+
+
+def _warn_inert_github(root: Path) -> None:
+    """Report project subdirs whose `.github/` will never run (see monorepo.py)."""
+    try:
+        inert = monorepo_mod.inert_github_dirs(root)
+    except monorepo_mod.MonorepoError:  # pragma: no cover - caller already loaded it
+        return
+    for subdir in inert:
+        typer.echo(
+            f"warning: {subdir}/.github/ exists but is INERT — GitHub runs workflows only "
+            f"from the repo root ({root.name}/.github/workflows/), never from a subdir. "
+            "Move anything still needed to the root (lock-guard, strip-stale-verdict and "
+            "baron-notify already live there), then delete the nested copy.",
+            err=True,
+        )
+
+
 def _commit_monorepo(root: Path, paths: list[str], message: str) -> tuple[bool, Optional[str]]:
     """git-init (if needed) + commit ``paths`` at the monorepo root. (committed, note).
 
@@ -256,6 +288,7 @@ def _init_monorepo(
     roster: list,
     runtime: str,
     do_git: bool,
+    wake_allowed: Optional[list] = None,
 ) -> None:
     """`baron init --layout monorepo`: root + first project subdir (ADR-025)."""
     root = dest.resolve()
@@ -276,11 +309,13 @@ def _init_monorepo(
             code_repo=None if first_project == monorepo_mod.META_DIR else code_repo,
             personas=roster,
             runtime=runtime,
+            wake_allowed=wake_allowed,
         )
     except (monorepo_mod.MonorepoError, scaffold_mod.ScaffoldError) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)
     created = sorted(set(created) | set(project_files))
+    _warn_inert_github(root)
 
     typer.echo(
         f"scaffolded coordination monorepo {name} at {root.as_posix()} "
@@ -356,6 +391,15 @@ def add_project(
         "--runtime",
         help="Runtime kit to emit per persona: " + " | ".join(scaffold_mod.RUNTIMES) + ".",
     ),
+    wake_allowed: Optional[str] = typer.Option(
+        None,
+        "--wake-allowed",
+        help=(
+            "Comma-separated persona slugs allowed to fire a `baron notify` WAKE for "
+            "this project (manifest notify.wake_allowed, ADR-010 §5.5). Omitted = the "
+            "block is emitted EMPTY, which is fail-closed: nobody may wake."
+        ),
+    ),
     no_git: bool = typer.Option(False, "--no-git", help="Write the files; do not commit."),
 ) -> None:
     """Graft a new project subdir into an existing coordination monorepo (ADR-025).
@@ -386,6 +430,7 @@ def add_project(
             code_repo=code_repo,
             personas=roster,
             runtime=runtime,
+            wake_allowed=_parse_wake_allowed(wake_allowed),
         )
     except monorepo_mod.MonorepoError as exc:
         typer.echo(f"error: {exc}", err=True)
@@ -394,6 +439,7 @@ def add_project(
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1)
 
+    _warn_inert_github(root)
     typer.echo(f"grafted {ref.dir}/ into {root.as_posix()} ({len(created)} files)")
     typer.echo(
         "personas: " + ", ".join(f"{p.slug} ({p.archetype})" for p in roster)
@@ -415,6 +461,62 @@ def add_project(
         f"  3. install {ref.dir}/agents/<slug>/runtime/ where each runtime starts\n"
         "     (generating a kit is not installing it — see `baron init`'s note)\n"
         f"  4. edit {ref.dir}/manifest.yaml description and the persona scope blocks"
+    )
+
+
+@app.command("adopt-project")
+def adopt_project(
+    name: str = typer.Argument(
+        ..., help="Subdir under the monorepo root holding an EXISTING collab repo."
+    ),
+    root_: Path = typer.Option(
+        Path("."), "--root", help="Coordination-monorepo root (default: current directory)."
+    ),
+    project_name: Optional[str] = typer.Option(
+        None,
+        "--project-name",
+        help="Project name, if the adopted manifest does not declare one. Must not "
+        "contradict an existing project.name.",
+    ),
+    no_git: bool = typer.Option(False, "--no-git", help="Write the files; do not commit."),
+) -> None:
+    """Register an EXISTING collab repo, already a subdir here, as a project (ADR-025).
+
+    The migration path `add-project` cannot be: `add-project` scaffolds a new project
+    and refuses a non-empty target, so a collab repo that already has history,
+    personas and ledgers had no way in short of hand-editing the marker.
+
+    Placing the directory stays git's job — run `git subtree add --prefix=<name>
+    <remote> <branch>` to bring it in WITH its history (or plain `mv` when history
+    does not matter), then run this to make the portfolio aware of it. Baron will not
+    guess which of those you meant, and will not re-implement either.
+
+    Adopts as-is: the subdir's own manifest.yaml is read, never rewritten, and its
+    `.github/` is reported inert rather than deleted.
+    """
+    root = root_.resolve()
+    try:
+        ref, created = monorepo_mod.adopt_project(root, name, project_name=project_name)
+    except monorepo_mod.MonorepoError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+    _warn_inert_github(root)
+    typer.echo(f"adopted {ref.dir}/ as project {ref.name!r} in {root.as_posix()}")
+    if not no_git:
+        committed, note = _commit_monorepo(
+            root, created, f"baron: init | adopt existing project {ref.dir} into the monorepo"
+        )
+        typer.echo("git: committed at the monorepo root" if committed else "git: NOT committed")
+        if note:
+            typer.echo(f"note: {note}")
+    typer.echo(
+        "\nnext steps:\n"
+        f"  1. baron validate {ref.dir}       # the adopted specs — expect 0 errors\n"
+        "  2. baron status                  # portfolio-wide, from the root\n"
+        f"  3. re-base {ref.dir}/manifest.yaml `repos[].path` — the collab root moved one\n"
+        "     level deeper, so a code repo at `../x` is now at `../../x`\n"
+        f"  4. delete {ref.dir}/.github/ if present (inert here — CI lives at the root)"
     )
 
 

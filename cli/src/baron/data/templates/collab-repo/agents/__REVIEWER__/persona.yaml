@@ -10,7 +10,7 @@
 # the-verdict rule were hardened by the 2026-07-31 pilot run (ADR-008 §1).
 persona: {{PERSONA_NAME}}
 slug: {{PERSONA_SLUG}}
-archetype: dev
+archetype: reviewer
 identity:
   git_name: {{PERSONA_NAME}}
   git_email: {{PERSONA_SLUG}}@{{IDENTITY_DOMAIN}}

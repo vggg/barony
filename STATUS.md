@@ -183,6 +183,26 @@ carry the project name `meta` (that name becomes a hostname); and the registry i
 discovered*, so an unregistered subdir is reported rather than silently included or ignored.
 The control-plane pilot is the natural first `_meta` — not built here.
 
+**Dogfood-hardened 2026-08-14 ([ADR-025 §6](docs/adr/ADR-025-coordination-monorepo.md)).**
+`fleet-coordination` was stood up for real, with Barony grafted in as its first non-`_meta`
+project. It found six defects, two of them critical, and both criticals **failed silently
+upward**: `add-project --code-repo <url>` emitted a path that resolved back to the project
+subdir, so `baron status` reported a code repo **green** that had never been cloned; and no
+`notify:` block was emitted at all, so a grafted project could never be woken and the manifest
+gave no hint why. Fixed, with `baron adopt-project` added as the migration path that
+`add-project` structurally could not be.
+
+The generalisation worth keeping: none of the six argue against projects-as-subdirs. Every one
+is code written when *the collab repo* and *the git repo* were the same directory, run where
+they are not. §2's "a monorepo subdir is an ordinary Barony project" holds for the **data** and
+fails for anything that shells out to git or assumes its own nesting depth — so that is now the
+audit boundary for the next command that goes portfolio-wide.
+
+**Still open — persona-name collisions (ADR-025 §6.7).** Default slugs
+(`dev`/`reviewer`/`merger`/`librarian`) collide when two projects share one monorepo clone and
+a runtime resolves personas globally. Deferred to its own ADR/PR: the fix spans the persona
+spec, all four adapters and the drift checker. Workaround: per-project slugs.
+
 ## Shipped (unreleased) — the persona sidecar (ADR-026, launcher form)
 
 `baron sidecar run <persona>` plus a per-persona `agents/<slug>/sidecar.sh` emitted by

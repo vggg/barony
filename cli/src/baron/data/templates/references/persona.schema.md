@@ -13,7 +13,7 @@
 |---|---|---|---|
 | `persona` | yes | str | Display name, e.g. `Tess` |
 | `slug` | yes | str | kebab/lower id, e.g. `tess` (agent name + label stem) |
-| `archetype` | yes | enum | `dev` \| `librarian` \| `autonomous-event` \| `autonomous-cron`. See **Archetype support** below. |
+| `archetype` | yes | enum | `dev` \| `librarian` \| `reviewer` \| `merger` \| `autonomous-event` \| `autonomous-cron`. See **Archetype support** below. |
 | `identity.git_name` | yes | str | git author name |
 | `identity.git_email` | yes | str | git author email (may use `{{IDENTITY_DOMAIN}}`) |
 | `identity.commit_prefix` | yes | str | e.g. `tess:` |
@@ -49,8 +49,8 @@ also ships a `persona.yaml` template alongside its `AGENT.md` under `assets/coll
 | `librarian` | `agents/librarian/persona.yaml` | Wiki + indexes + drift checks; `open_pr` allowed (ADR-002 §6) |
 | `autonomous-event` | `agents/__AUTONOMOUS_EVENT__/persona.yaml` | Webhook-triggered; read + `run_tests` + `_handoff` reports |
 | `autonomous-cron` | `agents/__AUTONOMOUS_CRON__/persona.yaml` | Scheduled; delivers code changes via PR |
-| reviewer (dev variant) | `agents/__REVIEWER__/persona.yaml` | Adversarial, read-only, SHA-bound verdicts (ADR-002 §4) |
-| merger (dev variant) | `agents/__MERGER__/persona.yaml` | Holds the project's only `merge_pr` (ADR-002 §4) |
+| `reviewer` | `agents/__REVIEWER__/persona.yaml` | Adversarial, read-only, SHA-bound verdicts (ADR-002 §4). Dev-SHAPED, not `dev` |
+| `merger` | `agents/__MERGER__/persona.yaml` | Holds the project's only `merge_pr` (ADR-002 §4). Dev-SHAPED, not `dev` |
 
 Adapters hydrate all of these the same way — the archetype changes the capability set and
 trigger, not the hydration mechanics. Read-only archetypes (librarian, reviewer, merger) gain

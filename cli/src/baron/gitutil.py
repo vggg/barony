@@ -79,8 +79,16 @@ def ahead_behind(repo: Path, upstream: str) -> tuple[int, int]:
 
 
 def dirty_count(repo: Path) -> int:
-    """Number of uncommitted (staged/unstaged/untracked) paths."""
-    proc = git(repo, "status", "--porcelain")
+    """Number of uncommitted (staged/unstaged/untracked) paths UNDER ``repo``.
+
+    Scoped with the ``-- .`` pathspec, not left repo-wide. For a repo root the two
+    are identical; for a directory *inside* a work tree they are not, and in a
+    coordination monorepo (ADR-025) every project collab path is such a directory.
+    Unscoped, the 2026-08-14 dogfood reported `_meta` dirty because a sibling
+    project's `manifest.yaml` was uncommitted — one edit, N projects blamed, and
+    the report stops distinguishing which project actually needs a commit.
+    """
+    proc = git(repo, "status", "--porcelain", "--", ".")
     return len([line for line in proc.stdout.splitlines() if line.strip()])
 
 

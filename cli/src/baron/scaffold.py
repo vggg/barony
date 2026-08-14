@@ -156,6 +156,9 @@ class _Context:
     #: True when this project is a subdir of a coordination monorepo (ADR-025):
     #: the root owns git and .github/, and the collab path gains one level.
     in_monorepo: bool = False
+    #: Persona slugs allowed to fire a wake (manifest `notify.wake_allowed`,
+    #: ADR-010 §5.5). Empty = fail-closed, which is the deliberate default.
+    wake_allowed: list[str] = field(default_factory=list)
 
     @property
     def identity_domain(self) -> str:
@@ -166,17 +169,71 @@ class _Context:
         return next(p for p in self.personas if p.archetype == "librarian")
 
 
-def _resolve_code_repo(code_repo: str | None, root: Path) -> tuple[str, str | None, str | None]:
-    """(display_label, manifest_rel_path, remote_url) for --code-repo."""
+def _check_not_aliased(rel: str, root: Path, *, in_monorepo: bool) -> None:
+    """Refuse a `repos[].path` that points at the collab repo (or its monorepo root).
+
+    The 2026-08-14 dogfood failure: `add-project barony --code-repo
+    git@github.com:vggg/barony.git` emitted `path: ../barony`, which from
+    `<monorepo>/barony/` resolves back to the project subdir itself. Every path
+    then existed and was inside a git work tree, so `baron status` reported the
+    code repo GREEN while no code repo had ever been cloned — a false green is
+    worse than a red, because it ends the investigation.
+
+    The containment boundary is the git repo the collab tree lives in: the
+    monorepo root when this is a subdir, the collab root otherwise. A code repo
+    is a SEPARATE repo (ADR-025 §2 — "code repos stay separate and
+    per-project"), so it may be neither that directory, nor inside it, nor an
+    ancestor of it.
+    """
+    boundary = root.parent if in_monorepo else root
+    target = (root / rel).resolve()
+    what = "the coordination monorepo root" if in_monorepo else "the collab repo"
+    if target == boundary:
+        raise ScaffoldError(
+            f"--code-repo resolves to {what} itself ({rel!r} from {root.as_posix()}) — "
+            "a project's code repo must be a separate repo, not the coordination repo "
+            "(pass a path outside it, or omit --code-repo)"
+        )
+    if _is_within(target, boundary):
+        raise ScaffoldError(
+            f"--code-repo resolves to {rel!r}, INSIDE {what} — that would nest a code "
+            "repo in the coordination repo and alias the two; keep the code repo outside it"
+        )
+    if _is_within(boundary, target):
+        raise ScaffoldError(
+            f"--code-repo resolves to {rel!r}, an ANCESTOR of {what} — the coordination "
+            "repo would live inside its own project's code repo; pass a sibling path instead"
+        )
+
+
+def _is_within(inner: Path, outer: Path) -> bool:
+    return inner != outer and outer in inner.parents
+
+
+def _resolve_code_repo(
+    code_repo: str | None, root: Path, *, in_monorepo: bool = False
+) -> tuple[str, str | None, str | None]:
+    """(display_label, manifest_rel_path, remote_url) for --code-repo.
+
+    ``manifest_rel_path`` is relative to the COLLAB root, which in a monorepo is
+    one level deeper than the git repo — so the conventional "clone the code repo
+    beside the collab repo" layout is `../../<name>` there, not `../<name>`.
+    """
     if code_repo is None:
         return "(no code repo yet)", None, None
     if "://" in code_repo or code_repo.startswith("git@"):
         base = code_repo.rstrip("/").rsplit("/", 1)[-1]
         base = base[:-4] if base.endswith(".git") else base
-        return code_repo, f"../{base}", code_repo
+        # A URL names no local path, so we assume the conventional sibling clone —
+        # sibling of the git repo, which is the MONOREPO in a monorepo (one extra
+        # level up). Getting this wrong is what produced the self-aliasing manifest.
+        rel = f"../../{base}" if in_monorepo else f"../{base}"
+        _check_not_aliased(rel, root, in_monorepo=in_monorepo)
+        return code_repo, rel, code_repo
     path = Path(code_repo).expanduser()
     resolved = path if path.is_absolute() else Path.cwd() / path
     rel = os.path.relpath(resolved.resolve(), root.resolve()).replace(os.sep, "/")
+    _check_not_aliased(rel, root, in_monorepo=in_monorepo)
     remote: str | None = None
     if is_git_repo(resolved):
         proc = git(resolved, "remote", "get-url", "origin", check=False)
@@ -300,6 +357,27 @@ def _manifest(ctx: _Context) -> str:
     for p in ctx.personas:
         lines.append(f"  - slug: {p.slug}")
         lines.append(f"    spec: agents/{p.slug}/persona.yaml")
+    # `notify` is emitted ALWAYS, even empty (ADR-010 §5.5). The block being
+    # absent and the block being empty mean the same thing to `baron notify` and
+    # to the emitted workflow's gate job — nobody may wake — but they do NOT mean
+    # the same thing to the owner: an absent block is invisible, and the 2026-08-14
+    # dogfood spent its time asking why a grafted project could never be woken.
+    # Emitting it empty-with-instructions keeps the fail-closed contract and makes
+    # the knob discoverable at the one moment someone is reading the manifest.
+    allowed = ", ".join(ctx.wake_allowed)
+    lines += [
+        "notify:",
+        "  # Who may fire a `baron notify` WAKE — a repository_dispatch that spawns a",
+        "  # persona and spends the owner's Actions minutes (ADR-010 §5.5). Read by both",
+        "  # `baron notify` and the gate job of .github/workflows/baron-notify.yml.",
+        "  #",
+        "  # EMPTY MEANS NOBODY MAY WAKE — fail-closed on purpose: a project that has not",
+        "  # decided who may spend money does not spend money. `baron notify --no-wake`",
+        "  # delivery is unaffected, so the command is never useless without this.",
+        "  # Fill it here, or scaffold it with `--wake-allowed <slug>,<slug>`.",
+        f"  wake_allowed: [{allowed}]"
+        + ("" if allowed else "   # e.g. [" + ctx.librarian.slug + "]"),
+    ]
     if ctx.runtime == "claude":
         lines += [
             "adapters:",
@@ -749,6 +827,7 @@ def scaffold(
     runtime: str = "claude",
     do_git: bool = True,
     in_monorepo: bool = False,
+    wake_allowed: list[str] | None = None,
 ) -> InitReport:
     if not _NAME_RE.match(project_name):
         raise ScaffoldError(
@@ -757,14 +836,26 @@ def scaffold(
         )
     if runtime not in RUNTIMES:
         raise ScaffoldError(f"unknown runtime {runtime!r} — pick from {', '.join(RUNTIMES)}")
+    slugs = {p.slug for p in personas}
+    for slug in wake_allowed or []:
+        if slug not in slugs:
+            raise ScaffoldError(
+                f"--wake-allowed names {slug!r}, which is not a persona of this project "
+                f"(personas: {', '.join(sorted(slugs))}) — the wake gate matches the "
+                "handoff's `from:` slug, so an unknown name can never fire"
+            )
     if dest.exists() and any(dest.iterdir()):
         raise ScaffoldError(
             f"{dest} already exists and is not empty — refusing to scaffold over it"
         )
-    dest.mkdir(parents=True, exist_ok=True)
+    # Resolve --code-repo BEFORE creating anything: it is the last input that can
+    # be rejected, and a refusal that has already mkdir'd leaves a half-project
+    # behind for the retry to trip over.
     root = dest.resolve()
-
-    code_label, code_rel, code_remote = _resolve_code_repo(code_repo, root)
+    code_label, code_rel, code_remote = _resolve_code_repo(
+        code_repo, root, in_monorepo=in_monorepo
+    )
+    dest.mkdir(parents=True, exist_ok=True)
     ctx = _Context(
         project=project_name,
         root=root,
@@ -778,6 +869,7 @@ def scaffold(
         code_rel=code_rel,
         code_remote=code_remote,
         in_monorepo=in_monorepo,
+        wake_allowed=list(wake_allowed or []),
     )
     report = InitReport(root=root, personas=personas, runtime=runtime)
     created = report.created
