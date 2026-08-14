@@ -1,0 +1,51 @@
+name: pages
+
+# Publishes dashboard/ to GitHub Pages. The site root IS dashboard/, so the
+# three versions serve at /v1/, /v2/ and /v3/ with the index at /.
+#
+# Nothing is generated here: dashboard/data/fleet.json is a COMMITTED artifact
+# produced locally by dashboard/build-data.sh against the PRIVATE coordination
+# repo. CI has no access to that repo and must never try to reach it — this
+# workflow only uploads what is already in the tree.
+#
+# ONE-TIME OWNER STEP: Settings -> Pages -> Build and deployment -> Source:
+# "GitHub Actions". Until that is set, this workflow will fail at deploy.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel an in-flight deploy; queue behind it instead.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify the published snapshot is sane and leak-free
+        run: python3 dashboard/check_snapshot.py
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,625 @@
+{
+  "schema": "barony.dashboard/v1",
+  "generated_at": "2026-08-15T00:19:07Z",
+  "generator": {
+    "tool": "dashboard/build-data.sh",
+    "baron_version": "barony 0.17.0",
+    "source": "private coordination monorepo \u2014 curated projection, not a mirror"
+  },
+  "portfolio": {
+    "layout": "monorepo",
+    "projects": 2,
+    "agents": 6,
+    "public_repo": "vggg/barony"
+  },
+  "kpis": {
+    "projects": 2,
+    "agents": 6,
+    "open_prs": 4,
+    "red_findings": 21,
+    "warn_findings": 1,
+    "stalls": 21,
+    "verdicts": 1,
+    "open_handoffs": 3
+  },
+  "projects_detail": [
+    {
+      "name": "_meta",
+      "red": 0,
+      "warn": 0,
+      "state": "green",
+      "findings": [],
+      "records": {
+        "total": 3,
+        "by_kind": {
+          "decision": 1,
+          "handoff": 2
+        }
+      },
+      "open_handoffs": 1,
+      "agents": 2
+    },
+    {
+      "name": "barony",
+      "red": 21,
+      "warn": 1,
+      "state": "red",
+      "findings": [
+        {
+          "severity": "warn",
+          "area": "repo",
+          "subject": "repo:code Workspace/agent-project-bootstrap",
+          "check": "dirty",
+          "detail": "2 uncommitted path(s)"
+        },
+        {
+          "severity": "red",
+          "area": "repo",
+          "subject": "repo:code Workspace/agent-project-bootstrap",
+          "check": "behind",
+          "detail": "12 commit(s) behind origin/main (never pulled)"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code adr-023-reserved-filenames",
+          "check": "unmerged-branch",
+          "detail": "4 commit(s) not merged to origin/main; last commit 3d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code backup-main",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 15d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code dev/prior-art-gate",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/adr-027-agent-identity",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/export-monorepo-corpora",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/fleet-dashboard",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/identity-onboarding",
+          "check": "unmerged-branch",
+          "detail": "2 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/merge-gate",
+          "check": "unmerged-branch",
+          "detail": "2 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/observer-archetype",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code feat/signed-review-verdicts",
+          "check": "unmerged-branch",
+          "detail": "3 commit(s) not merged to origin/main; last commit 1d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code harden/otel",
+          "check": "unmerged-branch",
+          "detail": "3 commit(s) not merged to origin/main; last commit 6d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code p1-closeout-nb1-nb5",
+          "check": "unmerged-branch",
+          "detail": "4 commit(s) not merged to origin/main; last commit 13d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code p1-pilot-hardening-foldin",
+          "check": "unmerged-branch",
+          "detail": "5 commit(s) not merged to origin/main; last commit 15d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code p2-3-runtime-drift",
+          "check": "unmerged-branch",
+          "detail": "5 commit(s) not merged to origin/main; last commit 13d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code p2-baron-decision-adr",
+          "check": "unmerged-branch",
+          "detail": "3 commit(s) not merged to origin/main; last commit 13d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code release-1.10.0",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 11d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code release-1.9.0",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 13d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code ritual-surface-guard",
+          "check": "unmerged-branch",
+          "detail": "3 commit(s) not merged to origin/main; last commit 11d ago"
+        },
+        {
+          "severity": "red",
+          "area": "branch",
+          "subject": "repo:code roadmap-synthesis-2026-08-02",
+          "check": "unmerged-branch",
+          "detail": "1 commit(s) not merged to origin/main; last commit 11d ago"
+        },
+        {
+          "severity": "red",
+          "area": "repo",
+          "subject": "worktree:dev barony-worktrees/dev",
+          "check": "behind",
+          "detail": "16 commit(s) behind origin/main (never pulled)"
+        }
+      ],
+      "records": {
+        "total": 7,
+        "by_kind": {
+          "finding": 2,
+          "handoff": 5
+        }
+      },
+      "open_handoffs": 2,
+      "agents": 4
+    }
+  ],
+  "agents": [
+    {
+      "project": "_meta",
+      "slug": "atlas",
+      "persona": "Atlas",
+      "archetype": "librarian",
+      "routing_label": "agent-atlas",
+      "git_name": "Atlas",
+      "git_email": "atlas@meta.local",
+      "commit_prefix": "atlas:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "write_path: [wiki, _handoff, decisions, findings]",
+        "open_pr",
+        "push_main"
+      ],
+      "deny": [
+        "write_code",
+        "run_tests",
+        "merge_pr",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": false,
+      "can_write_code": false
+    },
+    {
+      "project": "_meta",
+      "slug": "iris",
+      "persona": "Iris",
+      "archetype": "librarian",
+      "routing_label": "agent-iris",
+      "git_name": "Iris",
+      "git_email": "iris@meta.local",
+      "commit_prefix": "iris:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "write_path: [wiki, _handoff, decisions, findings]",
+        "open_pr",
+        "push_main"
+      ],
+      "deny": [
+        "write_code",
+        "run_tests",
+        "merge_pr",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": false,
+      "can_write_code": false
+    },
+    {
+      "project": "barony",
+      "slug": "dev",
+      "persona": "Dev",
+      "archetype": "dev",
+      "routing_label": "agent-dev",
+      "git_name": "Dev",
+      "git_email": "dev@barony.local",
+      "commit_prefix": "dev:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "write_code",
+        "write_path: [findings, _handoff]",
+        "open_pr",
+        "run_tests"
+      ],
+      "deny": [
+        "write_path: [wiki]",
+        "merge_pr",
+        "push_main",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": false,
+      "can_write_code": true
+    },
+    {
+      "project": "barony",
+      "slug": "librarian",
+      "persona": "Librarian",
+      "archetype": "librarian",
+      "routing_label": "agent-librarian",
+      "git_name": "Librarian",
+      "git_email": "librarian@barony.local",
+      "commit_prefix": "librarian:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "write_path: [wiki, _handoff, decisions, findings]",
+        "open_pr",
+        "push_main"
+      ],
+      "deny": [
+        "write_code",
+        "run_tests",
+        "merge_pr",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": false,
+      "can_write_code": false
+    },
+    {
+      "project": "barony",
+      "slug": "merger",
+      "persona": "Merger",
+      "archetype": "merger",
+      "routing_label": "agent-merger",
+      "git_name": "Merger",
+      "git_email": "merger@barony.local",
+      "commit_prefix": "merger:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "merge_pr",
+        "write_path: [_handoff]"
+      ],
+      "deny": [
+        "write_code",
+        "write_path: [wiki, findings, decisions]",
+        "open_pr",
+        "run_tests",
+        "push_main",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": true,
+      "can_write_code": false
+    },
+    {
+      "project": "barony",
+      "slug": "reviewer",
+      "persona": "Reviewer",
+      "archetype": "reviewer",
+      "routing_label": "agent-reviewer",
+      "git_name": "Reviewer",
+      "git_email": "reviewer@barony.local",
+      "commit_prefix": "reviewer:",
+      "allow": [
+        "read_code",
+        "read_collab",
+        "run_tests",
+        "write_path: [_handoff]"
+      ],
+      "deny": [
+        "write_code",
+        "write_path: [wiki, findings, decisions]",
+        "open_pr",
+        "merge_pr",
+        "push_main",
+        "force_push",
+        "edit_other_personas"
+      ],
+      "holds_merge_pr": false,
+      "can_write_code": false
+    }
+  ],
+  "identity": {
+    "scheme": "persona identity block (git_name / git_email / commit_prefix / routing_label)",
+    "signing": {
+      "state": "not-implemented",
+      "label": "Not deployed",
+      "note": "Per-persona SSH signing keys are specified in ADR-027, which is now accepted on main \u2014 but no key is enrolled for this fleet, so no agent commit is cryptographically signed today. Identity is convention-enforced only."
+    }
+  },
+  "health": {
+    "rollup": {
+      "verdicts": 1,
+      "mutation_kill": {
+        "killed": 0,
+        "run": 0,
+        "rate": null
+      },
+      "claim_drift": 0,
+      "reviewer_escapes": 0,
+      "stalls": 21
+    },
+    "metrics": [
+      {
+        "key": "mutation_kill",
+        "label": "Mutation kill rate",
+        "value": null,
+        "unit": "ratio",
+        "n": 0,
+        "basis": "0 killed / 0 run",
+        "measured": false,
+        "note": "no observations recorded \u2014 not a clean result"
+      },
+      {
+        "key": "reviewer_escapes",
+        "label": "Reviewer escapes",
+        "value": 0,
+        "unit": "count",
+        "n": 1,
+        "basis": "across 1 recorded verdict(s)",
+        "measured": true,
+        "note": null
+      },
+      {
+        "key": "claim_drift",
+        "label": "Claim drift",
+        "value": 0,
+        "unit": "count",
+        "n": 1,
+        "basis": "across 1 recorded verdict(s)",
+        "measured": true,
+        "note": null
+      },
+      {
+        "key": "verdict_coverage",
+        "label": "Verdict coverage",
+        "value": 1,
+        "unit": "count",
+        "n": 1,
+        "basis": "1 verdict(s) on the event plane",
+        "measured": true,
+        "note": "single observation \u2014 indicative only, not a trend"
+      },
+      {
+        "key": "stalls",
+        "label": "Stalls",
+        "value": 21,
+        "unit": "count",
+        "n": 21,
+        "basis": "unmerged branches + behind working copies",
+        "measured": true,
+        "note": null
+      }
+    ],
+    "coverage": {
+      "measured": false,
+      "plane_shared": true,
+      "note": "The event plane is SHARED at the monorepo root, so verdicts roll up to the portfolio but cannot be attributed to a single project \u2014 per-project verdict counts read 0 while the rollup reads 1. This is a real coverage limit, not a clean board."
+    },
+    "projects": [
+      {
+        "name": "_meta",
+        "verdicts": 0,
+        "mutation_kill": {
+          "killed": 0,
+          "run": 0,
+          "rate": null
+        },
+        "claim_drift": {
+          "instances": 0,
+          "understating": 0,
+          "prs": 0,
+          "per_pr": 0.0
+        },
+        "reviewer_escapes": 0,
+        "stalls": 0,
+        "stall_list": [],
+        "plane_measured": false
+      },
+      {
+        "name": "barony",
+        "verdicts": 0,
+        "mutation_kill": {
+          "killed": 0,
+          "run": 0,
+          "rate": null
+        },
+        "claim_drift": {
+          "instances": 0,
+          "understating": 0,
+          "prs": 0,
+          "per_pr": 0.0
+        },
+        "reviewer_escapes": 0,
+        "stalls": 21,
+        "stall_list": [
+          "[behind] repo:code Workspace/agent-project-bootstrap \u2014 12 commit(s) behind origin/main (never pulled)",
+          "[unmerged-branch] repo:code adr-023-reserved-filenames \u2014 4 commit(s) not merged to origin/main; last commit 3d ago",
+          "[unmerged-branch] repo:code backup-main \u2014 1 commit(s) not merged to origin/main; last commit 15d ago",
+          "[unmerged-branch] repo:code dev/prior-art-gate \u2014 1 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/adr-027-agent-identity \u2014 1 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/export-monorepo-corpora \u2014 1 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/fleet-dashboard \u2014 1 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/identity-onboarding \u2014 2 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/merge-gate \u2014 2 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/observer-archetype \u2014 1 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code feat/signed-review-verdicts \u2014 3 commit(s) not merged to origin/main; last commit 1d ago",
+          "[unmerged-branch] repo:code harden/otel \u2014 3 commit(s) not merged to origin/main; last commit 6d ago",
+          "[unmerged-branch] repo:code p1-closeout-nb1-nb5 \u2014 4 commit(s) not merged to origin/main; last commit 13d ago",
+          "[unmerged-branch] repo:code p1-pilot-hardening-foldin \u2014 5 commit(s) not merged to origin/main; last commit 15d ago",
+          "[unmerged-branch] repo:code p2-3-runtime-drift \u2014 5 commit(s) not merged to origin/main; last commit 13d ago",
+          "[unmerged-branch] repo:code p2-baron-decision-adr \u2014 3 commit(s) not merged to origin/main; last commit 13d ago",
+          "[unmerged-branch] repo:code release-1.10.0 \u2014 1 commit(s) not merged to origin/main; last commit 11d ago",
+          "[unmerged-branch] repo:code release-1.9.0 \u2014 1 commit(s) not merged to origin/main; last commit 13d ago",
+          "[unmerged-branch] repo:code ritual-surface-guard \u2014 3 commit(s) not merged to origin/main; last commit 11d ago",
+          "[unmerged-branch] repo:code roadmap-synthesis-2026-08-02 \u2014 1 commit(s) not merged to origin/main; last commit 11d ago",
+          "[behind] worktree:dev barony-worktrees/dev \u2014 16 commit(s) behind origin/main (never pulled)"
+        ],
+        "plane_measured": false
+      }
+    ]
+  },
+  "merge_queue": [
+    {
+      "number": 55,
+      "title": "ADR-033: signed review verdicts \u2014 the merge gate proves WHO approved (plugin 1.17.0 / CLI 0.17.0)",
+      "author": "vggg",
+      "branch": "feat/signed-review-verdicts",
+      "draft": false,
+      "created_at": "2026-08-14T20:14:41Z",
+      "age_days": 0,
+      "mergeable": "MERGEABLE",
+      "checks": "passing",
+      "labels": [],
+      "url": "https://github.com/vggg/barony/pull/55"
+    },
+    {
+      "number": 54,
+      "title": "baron export reaches the whole estate \u2014 the monorepo walk + the opt-in widened corpus (ADR-032, plugin 1.16.0 / CLI 0.16.0)",
+      "author": "vggg",
+      "branch": "feat/export-monorepo-corpora",
+      "draft": false,
+      "created_at": "2026-08-14T20:05:28Z",
+      "age_days": 0,
+      "mergeable": "MERGEABLE",
+      "checks": "passing",
+      "labels": [],
+      "url": "https://github.com/vggg/barony/pull/54"
+    },
+    {
+      "number": 53,
+      "title": "baron identity register/enroll/protect \u2014 the ADR-027 runbook, mechanized (plugin 1.15.0 / CLI 0.15.0)",
+      "author": "vggg",
+      "branch": "feat/identity-onboarding",
+      "draft": false,
+      "created_at": "2026-08-14T19:59:05Z",
+      "age_days": 0,
+      "mergeable": "MERGEABLE",
+      "checks": "passing",
+      "labels": [],
+      "url": "https://github.com/vggg/barony/pull/53"
+    },
+    {
+      "number": 52,
+      "title": "Fleet dashboard on GitHub Pages \u2014 three versions over one showcase-safe snapshot (plugin 1.18.0)",
+      "author": "vggg",
+      "branch": "feat/fleet-dashboard",
+      "draft": false,
+      "created_at": "2026-08-14T17:58:28Z",
+      "age_days": 0,
+      "mergeable": "MERGEABLE",
+      "checks": "passing",
+      "labels": [],
+      "url": "https://github.com/vggg/barony/pull/52"
+    }
+  ],
+  "observer": {
+    "active": false,
+    "flags": [],
+    "label": "Not deployed",
+    "note": "The observer archetype (ADR-030) is merged, but no observer is deployed against this fleet, so there are zero flags \u2014 an empty watchlist, not a clean one."
+  },
+  "owner_actions": [
+    {
+      "severity": "action",
+      "kind": "merge-gate",
+      "summary": "PR #55 is green and awaiting the merge gate",
+      "detail": "ADR-033: signed review verdicts \u2014 the merge gate proves WHO approved (plugin 1.17.0 / CLI 0.17.0)",
+      "url": "https://github.com/vggg/barony/pull/55"
+    },
+    {
+      "severity": "action",
+      "kind": "merge-gate",
+      "summary": "PR #54 is green and awaiting the merge gate",
+      "detail": "baron export reaches the whole estate \u2014 the monorepo walk + the opt-in widened corpus (ADR-032, plugin 1.16.0 / CLI 0.16.0)",
+      "url": "https://github.com/vggg/barony/pull/54"
+    },
+    {
+      "severity": "action",
+      "kind": "merge-gate",
+      "summary": "PR #53 is green and awaiting the merge gate",
+      "detail": "baron identity register/enroll/protect \u2014 the ADR-027 runbook, mechanized (plugin 1.15.0 / CLI 0.15.0)",
+      "url": "https://github.com/vggg/barony/pull/53"
+    },
+    {
+      "severity": "action",
+      "kind": "merge-gate",
+      "summary": "PR #52 is green and awaiting the merge gate",
+      "detail": "Fleet dashboard on GitHub Pages \u2014 three versions over one showcase-safe snapshot (plugin 1.18.0)",
+      "url": "https://github.com/vggg/barony/pull/52"
+    },
+    {
+      "severity": "warn",
+      "kind": "stalls",
+      "summary": "21 stalled branch/working-copy findings",
+      "detail": "Unmerged local branches and working copies behind origin/main.",
+      "url": null
+    },
+    {
+      "severity": "warn",
+      "kind": "coverage",
+      "summary": "Fleet-health coverage is unattributed",
+      "detail": "The event plane is SHARED at the monorepo root, so verdicts roll up to the portfolio but cannot be attributed to a single project \u2014 per-project verdict counts read 0 while the rollup reads 1. This is a real coverage limit, not a clean board.",
+      "url": null
+    }
+  ],
+  "honesty": [
+    "Every number here is read from the live coordination repo by `baron`; none is hand-entered.",
+    "Metrics with an empty denominator render as `n/a` with their basis, never as 0% or 100%.",
+    "The event plane is SHARED at the monorepo root, so verdicts roll up to the portfolio but cannot be attributed to a single project \u2014 per-project verdict counts read 0 while the rollup reads 1. This is a real coverage limit, not a clean board.",
+    "Observer flags and commit signing are shown as NOT ACTIVE because neither is deployed in this fleet; both ADRs (027, 030) are now on main."
+  ]
+}

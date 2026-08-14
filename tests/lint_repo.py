@@ -83,7 +83,9 @@ def check_placeholders():
             text = f.read()
         if path.endswith(".md"):
             text = strip_code(text)
-        for tok in sorted(set(re.findall(r"\{\{[A-Za-z0-9_.\- ]+\}\}", text))):
+        # `${{ ... }}` is a GitHub Actions expression, not an unfilled emit-time
+        # placeholder — the leading `$` is what tells the two apart.
+        for tok in sorted(set(re.findall(r"(?<!\$)\{\{[A-Za-z0-9_.\- ]+\}\}", text))):
             fail(f"[placeholder] {rel(path)}: {tok}")
 
 
