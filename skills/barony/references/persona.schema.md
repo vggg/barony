@@ -13,7 +13,7 @@
 |---|---|---|---|
 | `persona` | yes | str | Display name, e.g. `Tess` |
 | `slug` | yes | str | kebab/lower id, e.g. `tess` (agent name + label stem) |
-| `archetype` | yes | enum | `dev` \| `librarian` \| `reviewer` \| `merger` \| `autonomous-event` \| `autonomous-cron`. See **Archetype support** below. |
+| `archetype` | yes | enum | `dev` \| `librarian` \| `reviewer` \| `merger` \| `autonomous-event` \| `autonomous-cron` \| `observer`. See **Archetype support** below. |
 | `identity.git_name` | yes | str | git author name |
 | `identity.git_email` | yes | str | git author email (may use `{{IDENTITY_DOMAIN}}`) |
 | `identity.commit_prefix` | yes | str | e.g. `tess:` |
@@ -51,10 +51,11 @@ also ships a `persona.yaml` template alongside its `AGENT.md` under `assets/coll
 | `autonomous-cron` | `agents/__AUTONOMOUS_CRON__/persona.yaml` | Scheduled; delivers code changes via PR |
 | `reviewer` | `agents/__REVIEWER__/persona.yaml` | Adversarial, read-only, SHA-bound verdicts (ADR-002 §4). Dev-SHAPED, not `dev` |
 | `merger` | `agents/__MERGER__/persona.yaml` | Holds the project's only `merge_pr` (ADR-002 §4). Dev-SHAPED, not `dev` |
+| `observer` | `agents/__OBSERVER__/persona.yaml` | Strictly read-only watcher: reads everything, writes only its own `observations/` zone; no numbering authority (ADR-029) |
 
 Adapters hydrate all of these the same way — the archetype changes the capability set and
-trigger, not the hydration mechanics. Read-only archetypes (librarian, reviewer, merger) gain
-the MOST from Tier-3 enforcement; cron/failover **live wiring** for `autonomous-*` triggers
+trigger, not the hydration mechanics. Read-only archetypes (librarian, reviewer, merger,
+observer) gain the MOST from Tier-3 enforcement; cron/failover **live wiring** for `autonomous-*` triggers
 remains external to the adapters (see `STATUS.md` deferred items).
 
 > Unknown `runtime.adapters.<runtime>` blocks are ignored by adapters that don't recognize

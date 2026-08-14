@@ -66,7 +66,9 @@ capabilities:
 
 Rationale: fewer verbs, composable, and the path scope is data not vocabulary. The adapter
 renders allowed scopes into the persona body and (where the runtime supports path-scoped
-tools) into enforcement. Named convenience scopes: `findings`, `_handoff`, `wiki`, `decisions`.
+tools) into enforcement. Named convenience scopes: `findings`, `_handoff`, `wiki`, `decisions`, `observations`.
+(Scopes are data, not vocabulary — adding one is not a vocabulary change. `observations`
+is the observer archetype's own zone; see ADR-029.)
 
 ### Q2 - repo as a separate axis vs per-repo verbs. RESOLVED: keep `code`/`collab` split.
 Observed use only ever needed two repos (code, collab) and the read verbs naturally carried
