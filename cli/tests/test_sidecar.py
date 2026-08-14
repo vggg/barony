@@ -283,10 +283,17 @@ def test_watch_cycles_a_cron_persona_and_sleeps_between(tmp_path: Path) -> None:
 
 
 def test_help_documents_the_surface() -> None:
-    result = runner.invoke(app, ["sidecar", "--help"])
-    assert result.exit_code == 0
-    assert "ADR-026" in result.output and "run" in result.output
-    detail = runner.invoke(app, ["sidecar", "run", "--help"])
-    assert detail.exit_code == 0
-    for flag in ("--cmd", "--watch", "--dry-run", "--trigger", "--force", "--no-push"):
-        assert flag in detail.output
+    assert runner.invoke(app, ["sidecar", "--help"]).exit_code == 0
+    assert runner.invoke(app, ["sidecar", "run", "--help"]).exit_code == 0
+    # Assert the FLAGS, not the rendered help: rich wraps to the terminal width,
+    # so an 80-column CI runner truncates option names a wide dev box shows whole.
+    import typer.main
+
+    command = typer.main.get_command(app).commands["sidecar"].commands["run"]
+    flags = {opt for param in command.params for opt in param.opts}
+    assert {
+        "--cmd", "--watch", "--interval", "--max-cycles", "--timeout",
+        "--trigger", "--force", "--no-push", "--dry-run", "--json", "--collab",
+    } <= flags
+    group = typer.main.get_command(app).commands["sidecar"]
+    assert "ADR-026" in (group.help or "")  # the surface names its decision record
