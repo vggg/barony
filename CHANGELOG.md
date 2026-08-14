@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `baron identity register|enroll|protect`: the ADR-027 runbook, mechanized (plugin 1.15.0 / CLI 0.15.0)
+
+`docs/runbooks/identity-signing.md` was a list of owner actions performed by clicking. Each is
+deterministic, and a hand-run checklist repeated once per persona is exactly the kind of thing
+that gets done inconsistently, or half-done, or skipped on persona seven. Three commands now
+perform them — **without moving the trust boundary** ([ADR-027 §7.5](docs/adr/ADR-027-agent-identity.md),
+amended in this PR):
+
+- **`baron identity register --persona <slug>`** — registers the persona's **public** key as a
+  GitHub **signing key** (`POST /user/ssh_signing_keys`). Signing key, not authentication key:
+  separate GitHub lists, and pasting into the wrong one is the likeliest way to do this step and
+  believe it worked. Idempotent — a key already on the account is detected and skipped; a title
+  collision with *different* key material warns rather than silently creating a second `carson`.
+- **`baron identity enroll --persona <slug>`** — branches, commits the `.barony/allowed_signers`
+  request line (plus `agents/<slug>/persona.yaml` when it exists, so the owner approves the key
+  and its declared capabilities in one look), pushes, and opens the PR. **It does not merge, and
+  there is no `--merge` flag** — `.barony/` is CODEOWNERS-owned so a persona cannot enroll
+  itself, and that one human approval is the whole trust root (ADR-027 §2/§7.2).
+- **`baron identity protect`** — creates the `main` ruleset of ADR-027 §2.2(c): require a PR with
+  **code-owner review** (what actually gives CODEOWNERS teeth over `.barony/`), require the
+  **`verify-identity`** status check (a check that is not *required* is a report, and a report
+  can be merged around), and **require signed commits**. `allowed_merge_methods` excludes
+  **rebase**, which adds head-branch commits to the base without verifying signatures and would
+  quietly defeat the signature rule beside it. Refuses to stack a second ruleset over its own.
+
+**Safety properties, all tested:**
+
+- **Dry run is the default for all three.** Each prints the exact `gh` argv and JSON payload and
+  exits. `--apply` is the only thing that executes. The dry-run rendering *is* the plan object,
+  so what is printed cannot drift from what is run.
+- **No credential is handled anywhere.** Calls run under the operator's existing `gh auth`. baron
+  accepts no `--token`, reads none from the environment, stores none, prints none. No forge
+  credential is introduced — ADR-027 §2's property is unchanged.
+- **Only the public key leaves the machine**; the private half is never read.
+- `protect` warns *before* applying about the two ways to brick a repo: requiring a check nothing
+  publishes, and enabling signatures before the personas are enrolled.
+- `cli/tests/test_onboard.py` (24 tests) drives the real planners against a recording fake. **No
+  test touches a live account** — a property of the design (planners are pure; one injected
+  runner spawns anything at all), not of the tests.
+
 ### Added — `baron memeval`: the governed-memory evaluation harness (plugin 1.14.0 / CLI 0.14.0, P3.3, [ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md), PROPOSED)
 
 P3.4 says the default *"remains git+markdown until 3.3 shows material retrieval or scale
