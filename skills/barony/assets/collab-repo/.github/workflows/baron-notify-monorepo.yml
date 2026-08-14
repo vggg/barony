@@ -1,0 +1,103 @@
+# baron-notify.yml (MONOREPO variant) — EMITTED by `baron init --layout monorepo`
+# at the coordination-monorepo ROOT (ADR-025 §3). The wake seam, project-routed.
+#
+# Identical in intent to the single-project `baron-notify.yml`: `baron notify` pushes a
+# _handoff/ to the DEFAULT BRANCH, then fires this repository_dispatch. Barony ships the
+# event, the gate and the seam; it NEVER ships `claude -p` — the `spawn` job is an
+# explicitly PROJECT-OWNED slot (ADR-007: the runtime owns the agent loop).
+#
+# The one difference: in a monorepo the handoff and the manifest live in a PROJECT
+# SUBDIR, so the payload carries `project` and the gate resolves everything relative to
+# it. There is no `paths:` scoping to be had here — `paths:` filters push/pull_request,
+# not repository_dispatch — so the scoping IS the cd: a wake for `barony` reads
+# barony/_handoff and barony/manifest.yaml and can see nothing else.
+#
+# The project name is UNTRUSTED input like every other payload field: it is used only to
+# choose a directory, is rejected unless it is a plain registered subdir name, and is
+# never the thing that authorizes the wake. Authorization stays where §5.5 put it — the
+# committed handoff `from:` checked against that project's manifest.
+name: baron-notify
+
+on:
+  repository_dispatch:
+    types: [baron-notify]
+
+# Stampede guard only — NOT a loop guard (ADR-010 §5.2). Keyed by project AND persona:
+# two projects' wakes are independent work and must not cancel or queue behind each other.
+concurrency:
+  group: baron-notify-${{ github.event.client_payload.project }}-${{ github.event.client_payload.persona }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    # Detection + audit, NOT authentication (§5.5): the acting persona is read from the
+    # COMMITTED handoff `from:`, never from client_payload. Fail-closed on every branch.
+    runs-on: ubuntu-latest
+    outputs:
+      allowed: ${{ steps.check.outputs.allowed }}
+      project: ${{ steps.check.outputs.project }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          set -euo pipefail
+          PROJECT='${{ github.event.client_payload.project }}'
+          STEM='${{ github.event.client_payload.handoff }}'
+          echo "allowed=false" >> "$GITHUB_OUTPUT"
+          # A plain subdir name, nothing else: no slashes, no dots, no traversal.
+          case "$PROJECT" in
+            ''|*/*|*.*|.*) echo "project '$PROJECT' is not a plain subdir name — fail closed"; exit 0 ;;
+          esac
+          if [ ! -f .baron-monorepo.yaml ]; then
+            echo "no .baron-monorepo.yaml at the root — this workflow belongs in a monorepo; fail closed"
+            exit 0
+          fi
+          if ! grep -qE "^[[:space:]]*-?[[:space:]]*dir:[[:space:]]*${PROJECT}[[:space:]]*$" .baron-monorepo.yaml; then
+            echo "project '$PROJECT' is not registered in .baron-monorepo.yaml — fail closed"
+            exit 0
+          fi
+          cd "$PROJECT"
+          F="_handoff/${STEM}.md"
+          if [ ! -f "$F" ]; then
+            echo "handoff $PROJECT/$F not found on the default branch — fail closed"
+            exit 0
+          fi
+          FROM=$(sed -n 's/^from:[[:space:]]*//p' "$F" | head -1)
+          DEPTH=$(sed -n 's/^wake_depth:[[:space:]]*//p' "$F" | head -1)
+          ALLOWED=$(python3 - "$FROM" <<'PY'
+          import sys, pathlib
+          try:
+              import yaml
+              m = yaml.safe_load(pathlib.Path("manifest.yaml").read_text()) or {}
+          except Exception:
+              print("false"); sys.exit(0)
+          allow = (m.get("notify") or {}).get("wake_allowed") or []
+          print("true" if sys.argv[1] in allow else "false")
+          PY
+          )
+          if [ "${DEPTH:-0}" -gt 2 ]; then ALLOWED=false; fi
+          echo "project=$PROJECT from=$FROM depth=${DEPTH:-0} allowed=$ALLOWED"
+          echo "allowed=$ALLOWED" >> "$GITHUB_OUTPUT"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+
+  spawn:
+    needs: gate
+    if: needs.gate.outputs.allowed == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # Every step below starts INSIDE the project subdir: the persona's whole world
+        # (manifest, handoffs, ledgers, agents/) is this directory.
+        working-directory: ${{ needs.gate.outputs.project }}
+    steps:
+      # `uses:` steps ignore defaults.run, so the checkout lands at the workspace root
+      # as usual; every `run:` step below then starts one level in, in the project.
+      - uses: actions/checkout@v4
+      # ┌────────────────────────────────────────────────────────────────────┐
+      # │ PROJECT-OWNED SLOT. Barony emits the seam; you fill it. Spawn your   │
+      # │ runtime here (e.g. headless `claude -p`) for                         │
+      # │ ${{ github.event.client_payload.persona }}, reading the handoff      │
+      # │ ${{ github.event.client_payload.handoff }} in                        │
+      # │ ${{ needs.gate.outputs.project }}/_handoff/.                         │
+      # └────────────────────────────────────────────────────────────────────┘
+      - run: echo "spawn ${{ github.event.client_payload.persona }} in ${{ needs.gate.outputs.project }} — project-owned slot"

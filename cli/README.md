@@ -117,6 +117,57 @@ Persona scope prose, `AGENT.md` manuals, and Tier-3 hydration (Claude
 subagents, code-puppy JSON agents) stay on the conversational path — init
 prints the pointers instead of pretending.
 
+### `baron init --layout monorepo` + `baron add-project <name>` ([ADR-025](../docs/adr/ADR-025-coordination-monorepo.md))
+
+`--layout repo` (the default) is everything above: one collab repo for this
+project, which is what buys multi-tenant isolation and an independent lifecycle.
+`--layout monorepo` emits the other topology — **one collab repo whose projects
+are subdirs** — for a single owner running a portfolio of fleets.
+
+```bash
+baron init fleet-coordination --layout monorepo    # root + the `_meta` project
+cd fleet-coordination
+baron add-project gardenkit --code-repo ../gardenkit --personas dev:fern,librarian:iris
+```
+
+```
+fleet-coordination/
+  .baron-monorepo.yaml     # the root marker + the project registry
+  .github/workflows/       # CI owned ONCE (baron-notify routes by project)
+  _meta/                   # the portfolio project — no code repo
+  gardenkit/               # a project — manifest.yaml agents/ _handoff/ ...
+```
+
+`init --layout monorepo` flags add `--first-project` (default `_meta`); `--dir`,
+`--personas`, `--runtime` and `--no-git` behave as above and apply to that first
+project. **`baron add-project <name>`** grafts a further subdir into an existing
+root: `--root` (default `.`), `--project-name` (when the project name must differ
+from the subdir), `--code-repo`, `--personas`, `--runtime`, `--no-git`. It reuses
+`init`'s emitters verbatim and refuses cleanly on a non-monorepo directory, a
+duplicate, or anything that is not a plain subdir name. The subdir gets **no
+`.github/` and no git repo of its own** — both belong to the root, which is where
+both commands commit.
+
+Run at the root, `baron status` and `baron health` go **portfolio-wide** (per
+project, then a total; `--json` gains `layout`/`projects`/`summary`) and
+`baron validate .` names the projects covered and warns on a manifest-carrying
+subdir the marker does not list. Run inside a project — monorepo subdir or
+standalone collab repo — every command behaves exactly as it always has.
+
+`baron notify` inside a subdir adds `project` to the `repository_dispatch`
+payload and does its git work at the root; the root's `baron-notify.yml`
+validates that project against the registry and `cd`s into it before resolving
+the handoff. Authorization is unchanged — the committed handoff `from:`, never
+the payload.
+
+Two shapes worth knowing: the project name is separate from the subdir name
+(`_meta`'s project is `meta`, because that name becomes the identity domain
+`<slug>@<project>.local`), and a project's `workspace.worktrees_root` resolves to
+`../../<project>-worktrees` so worktrees stay a sibling of the monorepo.
+
+**What it costs:** access is all-or-nothing — a monorepo cannot grant per-project
+access. That is why this is a mode and not a replacement.
+
 ### `baron validate [PATH]` (M1)
 
 Validate `persona.yaml` / `manifest.yaml` — a single file, or every one
@@ -223,7 +274,8 @@ reports, with severity:
 
 Use `--fetch` to refresh each working copy's origin refs first — without it,
 remote-side divergence (the `behind` class) is invisible. Exit 0 = green
-(warnings allowed) / 1 = any red (CI-usable).
+(warnings allowed) / 1 = any red (CI-usable). At a coordination-monorepo root
+this goes portfolio-wide — see `baron add-project` above.
 
 ### `baron finding new` / `baron decision new` (M3)
 

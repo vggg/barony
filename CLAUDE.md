@@ -105,8 +105,9 @@ skills/
         _failover-cron-sections/
       commands/           # slash command templates (e.g. vc.md)
   multi-agent-audit/      # sister skill — read-only project grading
-cli/                      # the baron CLI (ADR-003/004/006): init/validate/status/ledgers/guard/
-                          # lock/worktree/waivers + runtime hydrators (baron/runtimes/), the
+cli/                      # the baron CLI (ADR-003/004/006): init/add-project/validate/status/
+                          # ledgers/guard/lock/worktree/waivers + the coordination-monorepo
+                          # topology (baron/monorepo.py, ADR-025) + runtime hydrators (baron/runtimes/), the
                           # packaged capability-rules artifact + vendored templates (baron/data/,
                           # synced by cli/scripts/sync_templates.py); pytest suite
 legacy/                   # DEPRECATED v0.3 emit path (vault/, workspaces/, SKILL-v0.3.md)

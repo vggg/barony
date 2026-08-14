@@ -158,6 +158,31 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Shipped (unreleased) — the coordination monorepo (ADR-025)
+
+`baron init --layout monorepo` + `baron add-project <name>`, per
+[ADR-025](docs/adr/ADR-025-coordination-monorepo.md) and its §7 owner answers. A second
+**topology**, not a new tier: one collab repo whose projects are subdirs, each an ordinary
+Barony project. **Per-project-repo remains the default** (Q4) — a monorepo cannot grant
+per-project access, and that is a blocker for the multi-tenant case, so isolation stays the
+thing you get without asking.
+
+The portfolio tier is itself a project: the `_meta` subdir, no code repo, work items are the
+cross-project decisions. `baron status` / `baron health` go portfolio-wide at the root and are
+unchanged inside a project; `baron validate .` already recursed and now also **warns on a
+manifest-carrying subdir the marker does not list**, because a portfolio read would otherwise
+skip it silently. The wake carries `project` and the root's gate `cd`s into that subdir (Q2) —
+`paths:` cannot scope a `repository_dispatch`, so the `cd` is the scoping; authorization is
+unchanged and still reads the committed handoff, never the payload. Identity survives as
+`<slug>@<project>.local` (Q3).
+
+**Three design calls the ADR left open, made here and recorded in `monorepo.py`:** the root
+marker is a *file* (`.baron-monorepo.yaml`) rather than a root manifest, since the root is not
+itself a project; **subdir name and project name are separate fields** so the `_meta` subdir can
+carry the project name `meta` (that name becomes a hostname); and the registry is *declared and
+discovered*, so an unregistered subdir is reported rather than silently included or ignored.
+The control-plane pilot is the natural first `_meta` — not built here.
+
 ## Shipped (unreleased) — the persona sidecar (ADR-026, launcher form)
 
 `baron sidecar run <persona>` plus a per-persona `agents/<slug>/sidecar.sh` emitted by

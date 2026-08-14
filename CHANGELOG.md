@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — the coordination monorepo: `baron init --layout monorepo` + `baron add-project` ([ADR-025](docs/adr/ADR-025-coordination-monorepo.md))
+
+A second **topology**, not a new abstraction. `baron init` emits one collab repo per
+project (ADR-006); for a single owner running a portfolio of fleets that is N×2 repos
+and — the real cost — no cross-project view. ADR-025 adds the other shape: **one collab
+repo whose projects are subdirs**, each carrying its own `manifest.yaml`, `agents/`,
+`_handoff/`, `decisions/`, `findings/` and `wiki/`.
+
+- **`baron init <name> --layout monorepo`** scaffolds the coordination-monorepo root —
+  the `.baron-monorepo.yaml` marker + registry, a README, and the CI seam owned **once**
+  — with a first project as a subdir. That first project defaults to `_meta`, the
+  **portfolio project**: no code repo, its work items are the cross-project decisions.
+  The recursion is the point — the portfolio is a project that coordinates projects.
+- **Per-project-repo remains the DEFAULT** (ADR-025 §7 Q4). Adopters keep isolation;
+  monorepo is explicit, because a monorepo cannot grant per-project access and that is a
+  blocker for the multi-tenant case, not a detail.
+- **`baron add-project <name>`** grafts a subdir into an existing root, reusing `baron
+  init`'s emitters verbatim, then registers it in the marker. The subdir gets no
+  `.github/` and no repo of its own — CI and git belong to the root. It **refuses
+  cleanly** on a non-monorepo directory, a duplicate, or anything that is not a plain
+  subdir name.
+- **Portfolio-wide reads.** Run at a monorepo root, `baron status` and `baron health`
+  walk the registered subdirs and report per project plus a portfolio total (`--json`
+  gains `layout`/`projects`/`summary`); `baron validate .` already recursed, and now
+  names the projects covered and **warns on a manifest-carrying subdir the marker does
+  not list** — portfolio reads would otherwise skip it in silence. Run inside a single
+  project — monorepo subdir or standalone collab repo — behaviour is unchanged.
+- **Per-subdir wake routing** (§7 Q2). `baron notify` inside a subdir puts the `project`
+  in the `repository_dispatch` payload and does its git work (default-branch check,
+  push, dispatch) at the **root**, which is the actual git repo. The root's emitted
+  `baron-notify.yml` validates that project against the registry and `cd`s into it
+  before resolving the handoff and the manifest — `paths:` cannot scope a
+  `repository_dispatch`, so the `cd` *is* the scoping. Authorization is unchanged and
+  still comes from the committed handoff `from:`, never the payload; concurrency is now
+  keyed per project so two fleets' wakes never queue behind each other. `lock-guard` and
+  `strip-stale-verdict` act on the PR itself and are correctly repo-wide.
+- **Identity survives** (§7 Q3): `<slug>@<project>.local`, namespaced by subdir. The one
+  wrinkle handled explicitly — the portfolio subdir is `_meta` but its **project name is
+  `meta`**, because that name becomes a hostname and a leading underscore has no business
+  in one.
+- A project's `workspace.worktrees_root` resolves to `../../<project>-worktrees` in a
+  monorepo, keeping worktrees a sibling of the root rather than a stray directory inside
+  it; runtime kits point back through both levels (`../<monorepo>/<project>/...`).
+
 ### Added — the persona sidecar: `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh` ([ADR-026](docs/adr/ADR-026-persona-sidecar.md))
 
 ADR-026's launcher half, built. A persona becomes a **deployable unit**: the

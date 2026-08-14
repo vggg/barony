@@ -24,6 +24,7 @@ from . import (
     indexer,
     ledger,
     lock as lock_mod,
+    monorepo as monorepo_mod,
     notify as notify_mod,
     rules as rules_mod,
     runtimes,
@@ -113,6 +114,23 @@ def init(
         "--runtime",
         help="Runtime kit to emit per persona: " + " | ".join(scaffold_mod.RUNTIMES) + ".",
     ),
+    layout: str = typer.Option(
+        "repo",
+        "--layout",
+        help=(
+            "repo (default): one collab repo for this project — keeps per-project "
+            "isolation. monorepo: a coordination monorepo whose projects are subdirs "
+            "(ADR-025); grow it with `baron add-project`."
+        ),
+    ),
+    first_project: str = typer.Option(
+        monorepo_mod.META_DIR,
+        "--first-project",
+        help=(
+            "--layout monorepo only: the first project subdir (default: _meta, the "
+            "portfolio project — no code repo, its work items are cross-project decisions)."
+        ),
+    ),
     no_git: bool = typer.Option(False, "--no-git", help="Skip git init + first commit."),
 ) -> None:
     """Scaffold a new collab repo — the deterministic subset of canon/ORCHESTRATE.md.
@@ -125,6 +143,11 @@ def init(
     CODE repo, where most reviewed PRs live — see its header.
     Persona scope prose, AGENT.md manuals, and Tier-3 hydration stay on the
     conversational path (canon/ORCHESTRATE.md).
+
+    `--layout monorepo` emits the other topology instead (ADR-025): a coordination
+    monorepo root — marker, README and the shared .github/ seam — with the first
+    project (`_meta` by default) as a subdir. Per-project-repo stays the default;
+    the monorepo trades multi-tenant isolation for one clone with a portfolio view.
     """
     try:
         roster = scaffold_mod.parse_personas(personas)
@@ -133,10 +156,25 @@ def init(
                 f"unknown runtime {runtime!r} — pick from "
                 + ", ".join(scaffold_mod.RUNTIMES)
             )
+        if layout not in ("repo", "monorepo"):
+            raise scaffold_mod.ScaffoldError(
+                f"unknown --layout {layout!r} — pick from repo, monorepo"
+            )
     except scaffold_mod.ScaffoldError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2)
     dest = dir_ if dir_ is not None else Path(project_name)
+    if layout == "monorepo":
+        _init_monorepo(
+            project_name,
+            dest,
+            first_project=first_project,
+            code_repo=code_repo,
+            roster=roster,
+            runtime=runtime,
+            do_git=not no_git,
+        )
+        return
     try:
         report = scaffold_mod.scaffold(
             project_name,
@@ -184,6 +222,202 @@ def init(
     )
 
 
+# --- ADR-025: the coordination monorepo -------------------------------------------------
+
+
+def _commit_monorepo(root: Path, paths: list[str], message: str) -> tuple[bool, Optional[str]]:
+    """git-init (if needed) + commit ``paths`` at the monorepo root. (committed, note).
+
+    The monorepo root is the git repo — the project subdirs are not — so both
+    `init --layout monorepo` and `add-project` commit here rather than in the subdir.
+    """
+    import shutil
+
+    from . import gitutil
+
+    if shutil.which("git") is None:
+        return False, "git not found — nothing committed; run `git init -b main` later"
+    try:
+        if not gitutil.is_git_repo(root):
+            gitutil.git(root, "init", "-q", "-b", "main")
+        gitutil.git(root, "add", "--", *paths)
+        gitutil.git(root, "commit", "-q", "-m", message)
+    except gitutil.GitError as exc:
+        return False, f"git step incomplete ({exc}) — the files are all written"
+    return True, None
+
+
+def _init_monorepo(
+    name: str,
+    dest: Path,
+    *,
+    first_project: str,
+    code_repo: Optional[str],
+    roster: list,
+    runtime: str,
+    do_git: bool,
+) -> None:
+    """`baron init --layout monorepo`: root + first project subdir (ADR-025)."""
+    root = dest.resolve()
+    try:
+        created = monorepo_mod.create_root(
+            root, name, date=clock.today().isoformat()
+        )
+        project_name = (
+            monorepo_mod.META_PROJECT
+            if first_project == monorepo_mod.META_DIR
+            else first_project
+        )
+        ref, project_files = monorepo_mod.add_project(
+            root,
+            first_project,
+            project_name=project_name,
+            # The portfolio project has no code repo by definition (ADR-025 §2).
+            code_repo=None if first_project == monorepo_mod.META_DIR else code_repo,
+            personas=roster,
+            runtime=runtime,
+        )
+    except (monorepo_mod.MonorepoError, scaffold_mod.ScaffoldError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    created = sorted(set(created) | set(project_files))
+
+    typer.echo(
+        f"scaffolded coordination monorepo {name} at {root.as_posix()} "
+        f"({len(created)} files)"
+    )
+    typer.echo(f"first project: {ref.dir}/ (project name {ref.name})")
+    typer.echo(
+        "personas: " + ", ".join(f"{p.slug} ({p.archetype})" for p in roster)
+        + f" · runtime kit: {runtime}"
+    )
+    if do_git:
+        committed, note = _commit_monorepo(
+            root,
+            created,
+            f"baron: init | scaffold {name} coordination monorepo "
+            f"(layout monorepo, first project {ref.dir})",
+        )
+        typer.echo(
+            "git: initialized on branch main, first commit made"
+            if committed
+            else "git: NOT fully initialized — see note"
+        )
+        if note:
+            typer.echo(f"note: {note}")
+    if first_project == monorepo_mod.META_DIR and code_repo:
+        typer.echo(
+            f"note: --code-repo ignored for the {monorepo_mod.META_DIR} project "
+            "(the portfolio project has no code repo) — pass it to `baron add-project`"
+        )
+    typer.echo(
+        "\nnext steps:\n"
+        f"  1. cd {dest.as_posix()}\n"
+        "  2. baron add-project <name> --code-repo <path-or-url>   # graft each fleet in\n"
+        "  3. baron validate .        # every project's specs at once — expect 0 errors\n"
+        "  4. baron status            # portfolio-wide divergence/staleness\n"
+        f"  5. cd {first_project}/ and install the runtime kits as usual (agents/<slug>/runtime/)\n"
+        "\nnote: CI lives once, at the root — `.github/workflows/baron-notify.yml` routes\n"
+        "each wake into the project subdir named by the dispatch payload."
+    )
+
+
+@app.command("add-project")
+def add_project(
+    name: str = typer.Argument(
+        ..., help="Project subdir to graft into the monorepo (also the project name)."
+    ),
+    root_: Path = typer.Option(
+        Path("."), "--root", help="Coordination-monorepo root (default: current directory)."
+    ),
+    project_name: Optional[str] = typer.Option(
+        None,
+        "--project-name",
+        help="Project name if it must differ from the subdir (it becomes the git "
+        "identity domain <slug>@<project>.local).",
+    ),
+    code_repo: Optional[str] = typer.Option(
+        None,
+        "--code-repo",
+        help="Existing code repo — a local path or a git URL — recorded in this "
+        "project's manifest.yaml. Code repos stay separate and per-project.",
+    ),
+    personas: str = typer.Option(
+        "dev:dev,librarian:librarian",
+        "--personas",
+        help=(
+            "Comma-separated archetype:slug pairs. Archetypes: "
+            + ", ".join(sorted(scaffold_mod.ARCHETYPE_TEMPLATES))
+            + ". A librarian is added automatically if missing."
+        ),
+    ),
+    runtime: str = typer.Option(
+        "claude",
+        "--runtime",
+        help="Runtime kit to emit per persona: " + " | ".join(scaffold_mod.RUNTIMES) + ".",
+    ),
+    no_git: bool = typer.Option(False, "--no-git", help="Write the files; do not commit."),
+) -> None:
+    """Graft a new project subdir into an existing coordination monorepo (ADR-025).
+
+    Emits `<root>/<name>/` with its own manifest.yaml, agents/, _handoff/, decisions/,
+    findings/ and wiki/ — the same scaffold `baron init` writes — then registers it in
+    the root's `.baron-monorepo.yaml`. CI and git stay at the root: the subdir gets no
+    `.github/` of its own and no repo of its own.
+
+    Refuses cleanly when --root is not a monorepo root; use
+    `baron init <name> --layout monorepo` to create one.
+    """
+    root = root_.resolve()
+    try:
+        roster = scaffold_mod.parse_personas(personas)
+        if runtime not in scaffold_mod.RUNTIMES:
+            raise scaffold_mod.ScaffoldError(
+                f"unknown runtime {runtime!r} — pick from " + ", ".join(scaffold_mod.RUNTIMES)
+            )
+    except scaffold_mod.ScaffoldError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    try:
+        ref, created = monorepo_mod.add_project(
+            root,
+            name,
+            project_name=project_name,
+            code_repo=code_repo,
+            personas=roster,
+            runtime=runtime,
+        )
+    except monorepo_mod.MonorepoError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    except scaffold_mod.ScaffoldError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"grafted {ref.dir}/ into {root.as_posix()} ({len(created)} files)")
+    typer.echo(
+        "personas: " + ", ".join(f"{p.slug} ({p.archetype})" for p in roster)
+        + f" · runtime kit: {runtime}"
+    )
+    if not no_git:
+        committed, note = _commit_monorepo(
+            root,
+            created,
+            f"baron: init | add project {ref.dir} to the coordination monorepo",
+        )
+        typer.echo("git: committed at the monorepo root" if committed else "git: NOT committed")
+        if note:
+            typer.echo(f"note: {note}")
+    typer.echo(
+        "\nnext steps:\n"
+        f"  1. baron validate {ref.dir}       # this project's specs — expect 0 errors\n"
+        "  2. baron status                  # portfolio-wide, from the root\n"
+        f"  3. install {ref.dir}/agents/<slug>/runtime/ where each runtime starts\n"
+        "     (generating a kit is not installing it — see `baron init`'s note)\n"
+        f"  4. edit {ref.dir}/manifest.yaml description and the persona scope blocks"
+    )
+
+
 # --- M1: validate ---------------------------------------------------------------------
 
 
@@ -219,6 +453,12 @@ def validate(
     persona on the pilot. All-or-nothing is silent: zero registered is the correct
     state for Tier-1/Tier-2 projects and for a fresh scaffold. An explicit
     `adapters.claude.tier: 2` is never checked. `--no-runtime-drift` skips it.
+
+    Directory validation already recurses, so pointing it at a coordination-monorepo
+    root (ADR-025) validates every project's specs in one pass; the report then names
+    the projects covered, and any subdir carrying a manifest.yaml without being
+    registered in `.baron-monorepo.yaml` is reported as a warning (portfolio reads
+    would skip it silently otherwise).
     """
     if not path.exists():
         typer.echo(f"error: {path} does not exist", err=True)
@@ -226,22 +466,45 @@ def validate(
     findings, files, skipped = validate_mod.validate_path(
         path, runtime_drift=runtime_drift
     )
+    projects: list[str] = []
+    if path.is_dir() and monorepo_mod.is_root(path.resolve()):
+        repo = monorepo_mod.load(path.resolve())
+        projects = [p.dir for p in repo.projects]
+        for unregistered in repo.unregistered:
+            findings.append(
+                validate_mod.Finding(
+                    file=f"{unregistered}/manifest.yaml",
+                    kind="manifest",
+                    severity="warning",
+                    check="unregistered-project",
+                    message=(
+                        f"{unregistered}/ holds a manifest.yaml but is not listed in "
+                        f"{monorepo_mod.MARKER} — portfolio status/health skip it"
+                    ),
+                )
+            )
     errors = [f for f in findings if f.severity == "error"]
     warnings = [f for f in findings if f.severity == "warning"]
     if json_out:
-        _echo_json(
-            {
-                "files_checked": [f.as_posix() for f in files],
-                "templates_skipped": [f.as_posix() for f in skipped],
-                "findings": [f.to_dict() for f in findings],
-                "summary": {"errors": len(errors), "warnings": len(warnings)},
-            }
-        )
+        payload: dict = {
+            "files_checked": [f.as_posix() for f in files],
+            "templates_skipped": [f.as_posix() for f in skipped],
+            "findings": [f.to_dict() for f in findings],
+            "summary": {"errors": len(errors), "warnings": len(warnings)},
+        }
+        if projects:
+            payload["layout"] = "monorepo"
+            payload["projects"] = projects
+        _echo_json(payload)
     else:
         for f in findings:
             typer.echo(f"{f.severity.upper():7s} {f.file}: [{f.check}] {f.message}")
         if skipped:
             typer.echo(f"skipped {len(skipped)} template file(s) (assets/collab-repo, legacy)")
+        if projects:
+            typer.echo(
+                f"coordination monorepo: {len(projects)} project(s) — " + ", ".join(projects)
+            )
         typer.echo(
             f"{len(files)} file(s) checked: {len(errors)} error(s), {len(warnings)} warning(s)"
         )
@@ -267,7 +530,27 @@ def status(
     local branches with age, open handoffs past SLA, ledger staleness vs
     code-repo activity (heuristic), and a stale wiki/status.md. Exit 0 = green
     (warnings allowed); exit 1 = at least one red finding (CI-usable).
+
+    Run at a coordination-monorepo root (ADR-025) it goes PORTFOLIO-WIDE: every
+    registered project subdir is walked and the findings are reported per project
+    with a portfolio total. Inside a single project — monorepo subdir or standalone
+    collab repo alike — behaviour is unchanged.
     """
+    collab_root = collab.resolve()
+    if monorepo_mod.is_root(collab_root):
+        try:
+            portfolio = monorepo_mod.collect_status(collab_root, fetch=fetch, sla_days=sla)
+        except monorepo_mod.MonorepoError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2)
+        if json_out:
+            payload = portfolio.to_dict()
+            payload["generated"] = clock.today().isoformat()
+            payload["sla_days"] = sla
+            _echo_json(payload)
+        else:
+            typer.echo(monorepo_mod.render_status(portfolio))
+        raise typer.Exit(1 if portfolio.reds else 0)
     try:
         findings = status_mod.collect(collab.resolve(), fetch=fetch, sla_days=sla)
     except (FileNotFoundError, ValueError) as exc:
@@ -1705,7 +1988,11 @@ def notify_cmd(
         raise typer.Exit(1)
     typer.echo(result.handoff.as_posix())
     if result.woke:
-        typer.echo(f"woke {persona}: repository_dispatch fired (wake_depth {result.wake_depth}).")
+        routed = f" -> project {result.project}" if result.project else ""
+        typer.echo(
+            f"woke {persona}{routed}: repository_dispatch fired "
+            f"(wake_depth {result.wake_depth})."
+        )
     else:
         typer.echo(f"delivered; no wake — {result.suppressed}")
 
@@ -1834,8 +2121,23 @@ def health_cmd(
     """Fleet-health rollup: reviewer-quality metrics from the plane + baron status stalls (ADR-024).
 
     Read-only. Measures what was emitted, not what happened — a fleet that records no
-    verdicts shows a clean board, so the report states its coverage."""
-    rep = health_mod.collect(collab.resolve(), since=since)
+    verdicts shows a clean board, so the report states its coverage.
+
+    At a coordination-monorepo root (ADR-025) this is portfolio-wide: one report per
+    project subdir plus a rolled-up total. The honest bound rolls up with it."""
+    collab_root = collab.resolve()
+    if monorepo_mod.is_root(collab_root):
+        try:
+            portfolio = monorepo_mod.collect_health(collab_root, since=since)
+        except monorepo_mod.MonorepoError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2)
+        if json_out:
+            _echo_json(portfolio.to_dict())
+        else:
+            typer.echo(monorepo_mod.render_health(portfolio))
+        return
+    rep = health_mod.collect(collab_root, since=since)
     if json_out:
         _echo_json(rep.to_dict())
     else:
