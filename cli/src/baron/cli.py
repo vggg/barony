@@ -21,6 +21,7 @@ from . import (
     guard as guard_mod,
     handoff as handoff_mod,
     health as health_mod,
+    identity as identity_mod,
     indexer,
     ledger,
     lock as lock_mod,
@@ -535,6 +536,13 @@ def validate(
         "--runtime-drift/--no-runtime-drift",
         help="Also check declared personas against the runtime's agent registry (P2.3).",
     ),
+    require_identity: bool = typer.Option(
+        False,
+        "--require-identity",
+        help="Promote ADR-027's missing-identity.forge warning to an error: every "
+        "persona holding a forge verb must declare who it acts as. Implied by "
+        "manifest `identity.require_forge: true`.",
+    ),
 ) -> None:
     """Validate persona.yaml / manifest.yaml against the canonical v1 schemas.
 
@@ -566,7 +574,7 @@ def validate(
         typer.echo(f"error: {path} does not exist", err=True)
         raise typer.Exit(2)
     findings, files, skipped = validate_mod.validate_path(
-        path, runtime_drift=runtime_drift
+        path, runtime_drift=runtime_drift, require_identity=require_identity
     )
     projects: list[str] = []
     if path.is_dir() and monorepo_mod.is_root(path.resolve()):
@@ -2139,6 +2147,13 @@ def sidecar_run(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Plan + brief only: no sync, no runtime, nothing landed."
     ),
+    require_identity: bool = typer.Option(
+        False,
+        "--require-identity",
+        envvar=identity_mod.REQUIRE_ENV,
+        help="Refuse the cycle unless this persona's own forge credential resolves "
+        "(ADR-027) — the fail-closed posture an autonomous merger should deploy with.",
+    ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
     """One sidecar cycle for <persona>: sync the collab repo, sweep _handoff/ (review
@@ -2156,6 +2171,7 @@ def sidecar_run(
         force=force,
         push=not no_push,
         timeout=timeout,
+        require_identity=require_identity,
     )
 
     def emit(report: sidecar_mod.CycleReport) -> None:
@@ -2181,6 +2197,88 @@ def sidecar_run(
         raise typer.Exit(2)
     emit(report)
     raise typer.Exit(0 if report.ok else 1)
+
+
+@app.command("identity")
+def identity_cmd(
+    collab: Path = _COLLAB_OPT,
+    persona: Optional[str] = typer.Option(
+        None, "--persona", help="Report one persona instead of the whole roster."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Who each persona acts as — git author, forge handle, and whether its own forge
+    credential is currently available (ADR-027).
+
+    Reports the credential variable's NAME and a boolean. It never prints a value, not
+    even a prefix: a prefix is a value. Run this after provisioning (see
+    docs/runbooks/forge-identity.md) to confirm the fleet is wired.
+
+    Exit 0 always — an unresolved credential is a state to report, not a failure here;
+    the fail-closed gate is `baron sidecar run --require-identity`.
+    """
+    root = collab.resolve()
+    try:
+        manifest = status_mod.load_manifest(root)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    slugs = [
+        str(e.get("slug"))
+        for e in (manifest.get("personas") or [])
+        if isinstance(e, dict) and e.get("slug")
+    ]
+    if persona:
+        if persona not in slugs:
+            typer.echo(
+                f"error: {persona!r} is not a persona of this project "
+                f"(personas: {', '.join(slugs) or 'none'})",
+                err=True,
+            )
+            raise typer.Exit(2)
+        slugs = [persona]
+    resolved = [
+        identity_mod.resolve(
+            sidecar_mod.persona_data(root, manifest, slug), slug
+        )
+        for slug in slugs
+    ]
+    if json_out:
+        _echo_json({"collab": root.as_posix(), "personas": [i.to_dict() for i in resolved]})
+        raise typer.Exit(0)
+    typer.echo(f"identity — {root.as_posix()}")
+    for ident in resolved:
+        typer.echo(f"  {identity_mod.describe(ident)}")
+    missing = [i for i in resolved if i.declared and not i.resolved]
+    undeclared = [
+        i for i in resolved
+        if not i.declared
+        and identity_mod.FORGE_VERBS
+        & _allowed_forge_verbs(sidecar_mod.persona_data(root, manifest, i.slug))
+    ]
+    if undeclared:
+        typer.echo("")
+        typer.echo(
+            "note: these personas may act on the forge but declare no identity.forge, "
+            "so they act as whoever is logged in: "
+            + ", ".join(i.slug for i in undeclared)
+        )
+    if missing:
+        typer.echo("")
+        typer.echo(
+            "note: unset credential variable(s): "
+            + ", ".join(f"${i.token_env}" for i in missing)
+            + " — see docs/runbooks/forge-identity.md"
+        )
+    raise typer.Exit(0)
+
+
+def _allowed_forge_verbs(data: dict) -> set[str]:
+    caps = data.get("capabilities")
+    entries = caps.get("allow") if isinstance(caps, dict) else None
+    if not isinstance(entries, list):
+        return set()
+    return {e for e in entries if isinstance(e, str)} & identity_mod.FORGE_VERBS
 
 
 verdict_app = typer.Typer(

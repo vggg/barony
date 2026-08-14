@@ -232,6 +232,18 @@ Checks: YAML parse, missing/unknown fields, types, verbs outside the vocabulary,
 allow/deny overlap (including `write_path` scope overlap), unfilled
 `{{PLACEHOLDER}}` tokens.
 
+**Forge identity (ADR-027, since 0.10.0).** A persona whose `capabilities.allow`
+holds a forge verb (`open_pr`, `merge_pr`, `push_main`, `force_push`) but declares no
+`identity.forge` block acts on the code host as *whoever is ambiently logged in* —
+reported as a **warning**. `--require-identity`, or `identity.require_forge: true` in
+the manifest, promotes it to an **error** once a project has finished provisioning.
+The warning default is deliberate: "no `identity.forge`" describes every project
+predating ADR-027, and erroring by default would fail a working fleet over a
+credential the owner has not been asked for yet. A *declared* block missing `login` is
+always an error, and two personas sharing one `login` warns — it silently collapses
+the attribution the block exists to provide. Whether a credential variable is **set**
+is machine-local and is not checked here; that is `baron identity`'s question.
+
 **Template rule:** directory discovery skips files whose path contains a
 template marker directory (`assets/collab-repo/` or `legacy/`) — emit-time
 templates legitimately carry placeholders and often aren't valid YAML at all.
@@ -754,15 +766,62 @@ baron sidecar run iris --collab . --watch --interval 900   # long-running (cron/
 baron syncs, sweeps, commits and pushes — it does not own the agent loop
 ([ADR-007](../docs/adr/ADR-007-session-boundary.md)).
 
+**The whole cycle acts AS the persona** ([ADR-027](../docs/adr/ADR-027-agent-identity.md)):
+its git authorship and, when one resolves, its own forge token are applied to the
+process environment for the cycle's duration — so baron's commits, the push, the
+runtime subprocess, and any `gh` that subprocess spawns all attribute to the same
+actor. The cycle report names who that was, and never the credential:
+
+```
+acting as: mo: git Mo <mo@acmeproj.local> · forge github:acmeproj-mo via $BARON_FORGE_TOKEN_MO resolved · required
+```
+
+An unresolved credential **degrades and says so** (the cycle proceeds under ambient
+credentials, with a note naming the unset variable). `--require-identity` — or
+`identity.forge.required: true` in the persona spec — makes it refuse instead, which
+is the posture an autonomous merger should deploy with.
+
 Flags: `--collab`, `--cmd`, `--trigger interactive|event|cron` (override the
 persona spec), `--watch` + `--interval` + `--max-cycles`, `--timeout`,
-`--force`, `--no-push`, `--dry-run`, `--json`. Exit 0 green / 1 if the runtime
+`--force`, `--no-push`, `--dry-run`, `--require-identity`, `--json`. Exit 0 green / 1 if the runtime
 failed / 2 on usage. `runtime.trigger` decides the loop form (ADR-026 §6 Q2):
 `interactive` is one-shot by hand and **refuses `--watch`** (that loop is the
 human's session), `event` is one-shot spawned by the wake
 (`baron notify` → `baron-notify.yml`), `cron` is scheduler-driven and may watch.
 A watching sidecar stays **stateless per task** — every cycle re-reads git as
 truth, which is what keeps audit-by-diff true (ADR-026 §4).
+
+### `baron identity [--persona SLUG] [--json]` — who each persona acts as (ADR-027)
+
+Git identity already answered *who wrote the commit*. This answers **who opened the
+PR, posted the verdict, and merged it** — previously unanswerable, because every
+persona shared one ambient `gh` credential and so all of it attributed to the human
+owner. That is what made an autonomous merger untrustworthy: it merged with the
+owner's authority, indistinguishable from the owner.
+
+```console
+$ baron identity --collab .
+identity — /path/to/acmeproj-collab
+  rex: git Rex <rex@acmeproj.local> · forge github:acmeproj-rex via $BARON_FORGE_TOKEN_REX UNRESOLVED (unset — acts under ambient credentials)
+  mo: git Mo <mo@acmeproj.local> · forge github:acmeproj-mo via $BARON_FORGE_TOKEN_MO resolved · required
+
+note: unset credential variable(s): $BARON_FORGE_TOKEN_REX — see docs/runbooks/forge-identity.md
+```
+
+**Baron consumes credentials by NAME and never by value.** The persona spec carries
+`identity.forge.token_env` — the *name* of an environment variable; the value lives
+only in the process environment of the acting cycle. This command reports the name
+and a boolean. It never prints a value, **not even a prefix** — a prefix is a value.
+
+Whether the variable holds a machine-account fine-grained PAT or a GitHub App
+installation token is invisible to baron, so moving from one to the other is a
+provisioning change, not a code change. Baron does not create accounts or apps, does
+not mint or refresh tokens, and stores nothing on disk — provisioning is the owner's
+(`../docs/runbooks/forge-identity.md`), deliberately
+([ADR-007](../docs/adr/ADR-007-session-boundary.md) boundary).
+
+Exit 0 always: an unresolved credential is a state to report here, not a failure. The
+gates live elsewhere — `baron validate` on the config, `--require-identity` on a cycle.
 
 ### `baron hydrate pydantic-ai --persona-file F [--out agent_setup.py]`
 

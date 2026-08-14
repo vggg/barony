@@ -40,7 +40,7 @@ from pathlib import Path
 
 import yaml
 
-from . import clock, validate as validate_mod
+from . import clock, identity as identity_mod, validate as validate_mod
 from .gitutil import GitError, git, is_git_repo
 from .runtimes import render_pydantic_ai_bootstrap
 from .templates import read_template
@@ -306,6 +306,14 @@ def _hydrate_persona(persona: Persona, ctx: _Context) -> str:
             "PERSONA_SLUG": persona.slug,
             "IDENTITY_DOMAIN": ctx.identity_domain,
             "PROJECT_NAME": ctx.project,
+            # ADR-027: the scaffold PROPOSES the machine-account handle and the
+            # credential variable name, so `baron identity` reads back as a
+            # provisioning checklist. Neither is a secret; the token itself is the
+            # owner's to create and export (docs/runbooks/forge-identity.md).
+            "FORGE_LOGIN": f"{ctx.project}-{persona.slug}",
+            "PERSONA_SLUG_UPPER": identity_mod.token_env_name(persona.slug).removeprefix(
+                identity_mod.TOKEN_ENV_PREFIX
+            ),
             "PERSONA_SCOPE_SUMMARY": scope_note,
             "PERSONA_PURPOSE_PARAGRAPH": scope_note,
             "PERSONA_SCOPE_LINE_1": f"Claim backlog items labelled agent-{persona.slug}",

@@ -76,12 +76,17 @@ PATH_STRATEGIES: tuple[str, ...] = ("relative", "absolute")
 REPO_ROLES: tuple[str, ...] = ("code", "collab")
 BACKLOG_SOURCES: tuple[str, ...] = ("file", "github_issues", "jira")
 
+#: `identity.forge.provider` (ADR-027). Open enum (warning severity) — a project on a
+#: forge baron has no built-in for still names it honestly, and the credential
+#: indirection is provider-agnostic anyway.
+FORGE_PROVIDERS: tuple[str, ...] = ("github", "gitlab", "gitea")
+
 
 @dataclass(frozen=True)
 class Node:
     """One declarative schema node.
 
-    kind: "str" | "map" | "list" | "any"
+    kind: "str" | "bool" | "map" | "list" | "any"
     """
 
     kind: str
@@ -109,6 +114,22 @@ PERSONA_SPEC: Node = _map(
                 "git_email": Node("str"),
                 "commit_prefix": Node("str"),
                 "routing_label": Node("str"),
+                # v1.3 (ADR-027): the FORGE half of identity. Optional and additive —
+                # absent means "acts under ambient credentials", which is every
+                # pre-ADR-027 project. `login` is a public handle; `token_env` NAMES
+                # the variable that holds the credential. No value ever lands here.
+                "forge": _map(
+                    {
+                        "provider": Node(
+                            "str", required=False, enum=FORGE_PROVIDERS,
+                            enum_severity="warning",
+                        ),
+                        "login": Node("str", required=False),
+                        "token_env": Node("str", required=False),
+                        "required": Node("bool", required=False),
+                    },
+                    required=False,
+                ),
             }
         ),
         "capabilities": _map(
@@ -200,6 +221,16 @@ MANIFEST_SPEC: Node = _map(
         "notify": _map(
             {
                 "wake_allowed": Node("list", required=False, item=Node("str")),
+            },
+            required=False,
+        ),
+        # Identity posture (ADR-027 §3.4). `require_forge: true` promotes the
+        # missing-`identity.forge` warning to an error for every persona in the tree
+        # — the declaration a project makes once provisioning is done, so the strong
+        # posture does not depend on every caller remembering `--require-identity`.
+        "identity": _map(
+            {
+                "require_forge": Node("bool", required=False),
             },
             required=False,
         ),

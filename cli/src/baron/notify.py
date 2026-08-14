@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import gitutil, handoff
+from . import identity as identity_mod
 from .forge.base import supports
 from .frontmatter import split_frontmatter
 
@@ -59,6 +60,24 @@ class NotifyResult:
     wake_origin: str
     suppressed: str | None  # human-readable reason a wake did NOT fire, or None
     project: str | None = None  # monorepo subdir this wake routes to (ADR-025), if any
+    #: Identity the push + dispatch acted under (ADR-027). Carries no credential value.
+    identity: "identity_mod.Identity | None" = None
+
+
+def _from_identity(collab: Path, from_: str) -> "identity_mod.Identity":
+    """The acting persona's identity, best-effort.
+
+    A manifest that does not list ``from_`` (or a collab dir with no manifest) is not
+    an error here — notify's own gate is ``wake_allowed``, and an unknown persona
+    simply resolves to an undeclared identity that acts ambiently, exactly as before.
+    """
+    try:
+        from . import sidecar as sidecar_mod, status as status_mod
+
+        data = sidecar_mod.persona_data(collab, status_mod.load_manifest(collab), from_)
+    except Exception:
+        data = {}
+    return identity_mod.resolve(data, from_)
 
 
 def _read_parent(collab: Path, stem: str) -> dict[str, str]:
@@ -104,6 +123,40 @@ def notify(
     wake: bool = True,
     forge: object | None = None,
     remote: str = "origin",
+) -> NotifyResult:
+    """Deliver, push, wake — the whole of it acting as ``from_`` (ADR-027).
+
+    ``--from`` is what the wake is attributed to and what ``wake_allowed`` gates on,
+    so it is also the identity the handoff commit, the push and the dispatch run
+    under. With per-persona forge accounts provisioned, the dispatch is finally fired
+    by the persona rather than by the owner — which is the precondition for the
+    ADR-010 §5.5 gate ever becoming authentication instead of detection.
+    """
+    ident = _from_identity(collab, from_)
+    identity_mod.require(ident)
+    with identity_mod.acting_as(ident):
+        result = _notify_inner(
+            collab, persona=persona, title=title, from_=from_, body=body,
+            in_reply_to=in_reply_to, max_depth=max_depth, wake=wake,
+            forge=forge, remote=remote, ident=ident,
+        )
+    result.identity = ident
+    return result
+
+
+def _notify_inner(
+    collab: Path,
+    *,
+    persona: str,
+    title: str,
+    from_: str,
+    body: str | None,
+    in_reply_to: str | None,
+    max_depth: int,
+    wake: bool,
+    forge: object | None,
+    remote: str,
+    ident: identity_mod.Identity,
 ) -> NotifyResult:
     # --- 0. depth / origin from the substrate (ADR-010 §5.1) ---
     if in_reply_to:
@@ -173,7 +226,10 @@ def notify(
         return result
 
     # --- 3. push BEFORE dispatch; a rejection aborts (no force, no retry) ---
-    push = gitutil.git(git_root, "push", remote, current, check=False)
+    push = gitutil.git(
+        git_root, "push", remote, current,
+        check=False, config=identity_mod.credential_config(ident),
+    )
     if push.returncode != 0:
         result.suppressed = (
             "push to the default branch was rejected — handoff is committed "

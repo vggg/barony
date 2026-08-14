@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — agent identity: per-persona forge credentials (CLI 0.10.0, [ADR-027](docs/adr/ADR-027-agent-identity.md))
+
+Git-commit identity was already solved; **forge identity was the gap.** Every persona
+ran under one ambient `gh` token, so who opened the PR, who posted the verdict and —
+worst — **who merged** all read as the human owner. That made an autonomous merger
+untrustworthy (it merged with the owner's authority, indistinguishable from the owner)
+and destroyed per-actor attribution across the pipeline. It is also why
+[ADR-010 §5.5](docs/adr/ADR-010-baron-notify-wake.md)'s wake gate had to describe itself
+as detection rather than authentication.
+
+**Recommended posture (ADR-027 §3.1): a per-persona machine account + fine-grained PAT
+as the default, a GitHub App as the production-grade target.** Fine-grained PATs under a
+*single* account were evaluated and rejected — they narrow *what* a persona may do while
+leaving *who did it* unchanged, which is the entire problem.
+
+**Baron consumes credentials by NAME and never by value.** It does not create accounts
+or apps, does not mint or refresh tokens, stores nothing on disk, and never prints a
+value — not even a prefix. Provisioning is the owner's, deliberately (ADR-007 boundary);
+the new runbook says exactly what to create.
+
+- **`identity.forge` in `persona.yaml`** (schema v1.3): `provider`, `login` (the public
+  handle), `token_env` (the **name** of the variable holding the token; default
+  `BARON_FORGE_TOKEN_<SLUG>`), and `required`. Whether that variable holds a PAT or a
+  GitHub App installation token is invisible to baron — which is what makes ADR-027's
+  PAT-first recommendation reversible to an App at **zero code cost**.
+- **Resolution at cycle start.** A sidecar cycle now runs *as* its persona: git
+  authorship plus, when it resolves, the persona's own forge token are applied to the
+  process environment for the cycle — so baron's commits, the push, the runtime
+  subprocess and any `gh` **that subprocess spawns** all attribute to one actor. HTTPS
+  pushes authenticate through a per-invocation credential helper that interpolates the
+  variable **by name**, so no secret reaches `argv`, a config file, or disk.
+  `baron notify` likewise delivers, pushes and dispatches as `--from`.
+- **Degrade, but say so.** An unset variable is a *state*, not a crash: the cycle
+  proceeds under ambient credentials and the report names the unset variable.
+  `identity.forge.required: true` / `--require-identity` / `$BARON_REQUIRE_IDENTITY`
+  turn that into a refusal — the posture an autonomous merger should deploy with, and
+  the one the scaffolded `merger` archetype now ships.
+- **`baron identity [--persona] [--json]`** — who each persona acts as: git author,
+  forge handle, the variable **name**, and whether it is set. Never a value.
+- **`baron validate`** flags a persona holding a forge verb (`open_pr`, `merge_pr`,
+  `push_main`, `force_push`) with no `identity.forge`. **Warning by default** —
+  that describes every project predating this ADR, and an earlier draft that errored
+  broke 101 of baron's own tests, a faithful preview of what it would do to a user's
+  fleet on upgrade. `--require-identity`, or `identity.require_forge: true` in the
+  manifest (schema v1.5), promotes it once provisioning is done. A *declared* block
+  missing `login` is always an error; a `login` shared by two personas warns.
+- **`baron init` proposes the provisioning**: each emitted persona carries a
+  `forge.login` of `<project>-<slug>` and the credential variable's name in a comment,
+  so `baron identity` reads back as a provisioning checklist.
+- **[`docs/runbooks/forge-identity.md`](docs/runbooks/forge-identity.md)** — what the
+  owner creates: accounts, repo roles and PAT scopes per archetype, the variables to
+  export, and the step that turns attribution into *enforcement* (branch protection
+  restricting merges to the merger account).
+
+Existing projects are unaffected until they opt in: absent config, absent variables,
+unchanged behaviour, one honest line in the report. Per-persona **commit signing** stays
+deferred (ADR-027 §6) — it proves key custody, which is a different claim from "who
+merged"; ADR-026 §6 Q4's pointer at it as the identity answer is superseded here.
+
 ### Fixed — `baron health` read a plane nobody writes to in a monorepo (CLI 0.9.0, [ADR-025 §6.8](docs/adr/ADR-025-coordination-monorepo.md))
 
 Stage 2 of the same dogfood, and the defect §6.3's generalisation predicted. The disk sink

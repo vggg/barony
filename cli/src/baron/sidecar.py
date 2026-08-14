@@ -38,12 +38,12 @@ import shlex
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
 
-from . import session as session_mod, status as status_mod
+from . import identity as identity_mod, session as session_mod, status as status_mod
 from .gitutil import GitError, current_branch, git, has_remote, is_git_repo
 from .handoff import Handoff
 
@@ -231,6 +231,7 @@ class CycleReport:
     push_detail: str = ""
     brief: str = ""
     notes: list[str] = field(default_factory=list)
+    identity: identity_mod.Identity | None = None
 
     @property
     def ok(self) -> bool:
@@ -253,6 +254,9 @@ class CycleReport:
             "pushed": self.pushed,
             "push_detail": self.push_detail,
             "notes": self.notes,
+            # Never carries a credential value — only the variable NAME and whether
+            # it is set (ADR-027 §3.5).
+            "identity": self.identity.to_dict() if self.identity else None,
         }
 
 
@@ -311,10 +315,14 @@ def _invoke(cmd: str, brief: str, *, cwd: Path, collab: Path, persona: str,
         brief_path.unlink(missing_ok=True)
 
 
-def _push(collab: Path) -> tuple[bool, str]:
+def _push(collab: Path, ident: identity_mod.Identity | None = None) -> tuple[bool, str]:
     """Plain ``git push`` of the collab repo. No force, no retry (ADR-010's
     discipline): a rejected push means someone else moved, which is a decision,
-    not a race to win."""
+    not a race to win.
+
+    Pushes under the persona's own forge credential when one resolves (ADR-027) —
+    otherwise ambient, exactly as before.
+    """
     if not is_git_repo(collab):
         return False, "not a git working copy"
     if not has_remote(collab):
@@ -322,7 +330,8 @@ def _push(collab: Path) -> tuple[bool, str]:
     branch = current_branch(collab)
     if branch is None:
         return False, "detached HEAD"
-    proc = git(collab, "push", "origin", branch, check=False)
+    config = identity_mod.credential_config(ident) if ident else None
+    proc = git(collab, "push", "origin", branch, check=False, config=config)
     if proc.returncode == 0:
         detail = (proc.stderr.strip() or proc.stdout.strip() or "pushed").splitlines()[-1]
         return True, detail
@@ -340,8 +349,15 @@ def run_cycle(
     force: bool = False,
     push: bool = True,
     timeout: int | None = None,
+    require_identity: bool = False,
 ) -> CycleReport:
-    """One sidecar cycle: sync → sweep → invoke → land. See the module docstring."""
+    """One sidecar cycle: sync → sweep → invoke → land. See the module docstring.
+
+    The whole cycle runs **as the persona** (ADR-027): its git authorship and, when a
+    credential resolves, its own forge token are applied to the process environment
+    for the duration, so baron's commits, the runtime subprocess, and any `gh` that
+    subprocess spawns all attribute to the same actor.
+    """
     try:
         manifest = status_mod.load_manifest(collab)
     except (FileNotFoundError, ValueError) as exc:
@@ -353,9 +369,57 @@ def run_cycle(
             "(or its spec is missing) — a sidecar deploys a declared persona"
         )
     resolved_trigger = resolve_trigger(data, trigger)
+    ident = identity_mod.resolve(data, persona)
+    if require_identity:
+        ident = replace(ident, required=True)
+    if not dry_run:
+        try:
+            identity_mod.require(ident)
+        except identity_mod.IdentityError as exc:
+            raise SidecarError(str(exc)) from exc
+    with identity_mod.acting_as(ident):
+        report = _cycle_body(
+            collab, persona, manifest, data, ident, resolved_trigger,
+            cmd=cmd, dry_run=dry_run, force=force, push=push, timeout=timeout,
+        )
+    return report
+
+
+def _cycle_body(
+    collab: Path,
+    persona: str,
+    manifest: dict,
+    data: dict,
+    ident: identity_mod.Identity,
+    resolved_trigger: str,
+    *,
+    cmd: str | None,
+    dry_run: bool,
+    force: bool,
+    push: bool,
+    timeout: int | None,
+) -> CycleReport:
+    """The cycle proper, run inside :func:`baron.identity.acting_as`."""
     report = CycleReport(
-        collab=collab, persona=persona, trigger=resolved_trigger, dry_run=dry_run
+        collab=collab, persona=persona, trigger=resolved_trigger, dry_run=dry_run,
+        identity=ident,
     )
+    if ident.declared and not ident.resolved:
+        report.notes.append(
+            f"forge identity UNRESOLVED (${ident.token_env} unset) — forge actions "
+            "this cycle attribute to whoever is ambiently logged in, not to "
+            f"{ident.login or persona} (ADR-027; see docs/runbooks/forge-identity.md)"
+        )
+        if ident.required:
+            report.notes.append(
+                "this persona sets identity.forge.required — a non-dry-run cycle "
+                "would refuse to run"
+            )
+    elif not ident.declared:
+        report.notes.append(
+            "no identity.forge declared — this persona acts on the forge under "
+            "ambient credentials (ADR-027)"
+        )
 
     # 1. sync + 2. sweep — session start does both reads in one pass.
     brief_data = session_mod.start(collab, persona=persona, sync=not dry_run)
@@ -409,7 +473,7 @@ def run_cycle(
     report.committed_paths = end.committed_paths
     if push:
         try:
-            report.pushed, report.push_detail = _push(collab)
+            report.pushed, report.push_detail = _push(collab, ident)
         except GitError as exc:  # pragma: no cover - git wrapper already soft-fails
             report.pushed, report.push_detail = False, str(exc)
         if not report.pushed:
@@ -462,6 +526,8 @@ def render_cycle(report: CycleReport) -> str:
         f"sidecar cycle — {report.persona} · trigger {report.trigger} · "
         f"{report.collab.as_posix()}" + (" · DRY RUN" if report.dry_run else "")
     ]
+    if report.identity is not None:
+        lines.append(f"acting as: {identity_mod.describe(report.identity)}")
     if report.synced:
         for s in report.synced:
             lines.append(f"  {'ok ' if s.ok else 'ERR'} sync {s.label}: {s.detail}")

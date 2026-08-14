@@ -19,6 +19,7 @@ from typing import Iterable
 import yaml
 
 from . import drift
+from . import identity as identity_mod
 from .schemas import (
     CAPABILITY_VERBS,
     MANIFEST_SPEC,
@@ -99,7 +100,7 @@ def detect_kind(path: Path, data: object) -> str:
 
 # --- generic declarative walker -------------------------------------------------------
 
-_TYPE_NAMES = {"str": "string", "map": "mapping", "list": "list"}
+_TYPE_NAMES = {"str": "string", "bool": "boolean", "map": "mapping", "list": "list"}
 
 
 def _walk(
@@ -122,6 +123,10 @@ def _walk(
                 "enum",
                 f"{path}: {value!r} not in documented set {list(node.enum)}",
             )
+        return
+    if node.kind == "bool":
+        if not isinstance(value, bool):
+            add("error", "type", f"{path}: expected boolean, got {type(value).__name__}")
         return
     if node.kind == "list":
         if not isinstance(value, list):
@@ -215,10 +220,100 @@ def _check_capabilities(data: dict, out: list[Finding], file: str) -> None:
         add("capabilities: bare write_path on one side overlaps write_path on the other")
 
 
+# --- forge identity (ADR-027) ---------------------------------------------------------
+
+
+def _allowed_verbs(data: dict) -> set[str]:
+    """Plain verb names on the allow side (parametric entries carry no forge verb)."""
+    caps = data.get("capabilities")
+    entries = caps.get("allow") if isinstance(caps, dict) else None
+    if not isinstance(entries, list):
+        return set()
+    return {e for e in entries if isinstance(e, str)}
+
+
+def _check_forge_identity(
+    data: dict, out: list[Finding], file: str, *, require: bool = False
+) -> None:
+    """A persona that may act on the forge should declare WHO it acts as (ADR-027 §3.4).
+
+    **Severity follows ADR-027 §3.3's posture, deliberately.** A missing
+    ``identity.forge`` is a **warning**: it describes every project that predates this
+    ADR, and erroring by default would make baron's first act after shipping identity
+    a fleet that fails `validate` over a credential the owner has not been asked for
+    yet. ``require`` (``--require-identity``, or ``manifest.identity.require_forge``)
+    promotes it to an error — the fail-closed posture, opted into.
+
+    A **declared** block missing ``login`` is always an error: that is a malformed
+    declaration, not an un-migrated one, so no existing project can trip it.
+
+    Config-level only. Whether the credential variable is *set* is machine-local and
+    deliberately NOT checked here — that is `baron identity`'s question, for the same
+    reason the runtime-drift check is separately gated.
+    """
+    forge_verbs = sorted(_allowed_verbs(data) & identity_mod.FORGE_VERBS)
+    if not forge_verbs:
+        return
+    ident = data.get("identity")
+    block = ident.get("forge") if isinstance(ident, dict) else None
+    slug = str(data.get("slug") or "?")
+    if not isinstance(block, dict):
+        out.append(
+            Finding(
+                file, "persona", "error" if require else "warning", "forge-identity",
+                f"identity.forge: missing, but capabilities.allow grants forge "
+                f"verb(s) {forge_verbs} — such a persona acts on the code host under "
+                "SOME account, and without this block that account is whoever is "
+                f"ambiently logged in (ADR-027). Declare identity.forge.login and, if "
+                f"it differs from the default, token_env "
+                f"(default ${identity_mod.token_env_name(slug)}).",
+            )
+        )
+        return
+    if not str(block.get("login") or "").strip():
+        out.append(
+            Finding(
+                file, "persona", "error", "forge-identity",
+                "identity.forge.login: missing — the forge handle is what makes an "
+                "action attributable to this persona rather than to the owner "
+                "(ADR-027 §3.2). It is a public handle, never a credential.",
+            )
+        )
+
+
+def _check_forge_login_collisions(
+    parsed: list[tuple[Path, dict]], out: list[Finding]
+) -> None:
+    """Two personas sharing one forge handle collapse the attribution ADR-027 buys.
+
+    Legal (a shared bot across projects is a real configuration), so: warning.
+    """
+    by_login: dict[str, list[Path]] = {}
+    for path, data in parsed:
+        ident = data.get("identity")
+        block = ident.get("forge") if isinstance(ident, dict) else None
+        login = str(block.get("login") or "").strip() if isinstance(block, dict) else ""
+        if login:
+            by_login.setdefault(login, []).append(path)
+    for login, paths in sorted(by_login.items()):
+        if len(paths) < 2:
+            continue
+        others = ", ".join(_posix(p) for p in sorted(paths))
+        for path in paths:
+            out.append(
+                Finding(
+                    _posix(path), "persona", "warning", "forge-identity",
+                    f"identity.forge.login {login!r} is shared by {len(paths)} personas "
+                    f"({others}) — forge actions from them are indistinguishable, which "
+                    "is the attribution ADR-027 exists to provide.",
+                )
+            )
+
+
 # --- file / tree entry points ---------------------------------------------------------
 
 
-def validate_file(path: Path) -> list[Finding]:
+def validate_file(path: Path, *, require_identity: bool = False) -> list[Finding]:
     file = _posix(path)
     out: list[Finding] = []
     try:
@@ -245,6 +340,7 @@ def validate_file(path: Path) -> list[Finding]:
         _walk(PERSONA_SPEC, data, "persona", out, file, kind)
         if isinstance(data, dict):
             _check_capabilities(data, out, file)
+            _check_forge_identity(data, out, file, require=require_identity)
     elif kind == "manifest":
         _walk(MANIFEST_SPEC, data, "manifest", out, file, kind)
     else:
@@ -254,8 +350,29 @@ def validate_file(path: Path) -> list[Finding]:
     return out
 
 
+def _manifest_requires_forge(target: Path) -> bool:
+    """``manifest.identity.require_forge`` at the tree root (ADR-027 §3.4).
+
+    A project that has finished provisioning declares the strong posture once, in the
+    substrate, instead of relying on every caller remembering a flag.
+    """
+    path = target / "manifest.yaml"
+    if not path.is_file():
+        return False
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return False
+    block = data.get("identity") if isinstance(data, dict) else None
+    return bool(block.get("require_forge")) if isinstance(block, dict) else False
+
+
 def validate_path(
-    target: Path, *, runtime_drift: bool = True, home: Path | None = None
+    target: Path,
+    *,
+    runtime_drift: bool = True,
+    home: Path | None = None,
+    require_identity: bool = False,
 ) -> tuple[list[Finding], list[Path], list[Path]]:
     """Validate a file or a tree. Returns (findings, files_checked, skipped_templates).
 
@@ -264,16 +381,39 @@ def validate_path(
     :mod:`baron.drift`). Pass ``runtime_drift=False`` to skip that — the rest of
     validate reads only spec files, while the drift check reads machine-local
     state, so it is the one part that can legitimately differ between machines.
+
+    ``require_identity`` promotes ADR-027's missing-``identity.forge`` warning to an
+    error; a tree whose manifest sets ``identity.require_forge: true`` does the same
+    without the flag.
     """
     if target.is_file():
-        return validate_file(target), [target], []
+        return validate_file(target, require_identity=require_identity), [target], []
+    require_identity = require_identity or _manifest_requires_forge(target)
     files, skipped = discover(target)
     findings: list[Finding] = []
     for f in files:
-        findings.extend(validate_file(f))
+        findings.extend(validate_file(f, require_identity=require_identity))
+    findings.extend(_forge_login_findings(files))
     if runtime_drift:
         findings.extend(_runtime_drift_findings(files, home))
     return findings, files, skipped
+
+
+def _forge_login_findings(files: Iterable[Path]) -> list[Finding]:
+    """Cross-persona forge-handle collision check over one discovery pass."""
+    parsed: list[tuple[Path, dict]] = []
+    for path in files:
+        if path.name != "persona.yaml":
+            continue
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue  # the per-file pass already reported this
+        if isinstance(data, dict):
+            parsed.append((path, data))
+    out: list[Finding] = []
+    _check_forge_login_collisions(parsed, out)
+    return out
 
 
 def _runtime_drift_findings(files: Iterable[Path], home: Path | None) -> list[Finding]:

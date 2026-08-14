@@ -235,7 +235,42 @@ one is a usage error, never a default. ADR-007 is visible in the surface, not ju
 the human's session), `event` is spawned by the ADR-010 wake, `cron` is scheduler-driven or
 self-paced. A watching sidecar re-reads git as truth every cycle — stateless per task, so
 audit-by-diff survives a process that outlives one unit of work (§4). Containers stay deferred
-per the ADR; so do the per-persona signing keys the identity answer (§6 Q4) waits on.
+per the ADR. **§6 Q4 (identity) is now answered — by [ADR-027](docs/adr/ADR-027-agent-identity.md),
+not by the signing keys it pointed at (see below).**
+
+## Shipped (unreleased) — agent identity (ADR-027, CLI 0.10.0)
+
+The critical-path dependency for the autonomous merge-only agent and the self-driving dev
+loop. Git-commit identity was solved; **forge identity was the gap** — one ambient `gh`
+token meant the PR author, the verdict author and the merger all read as the human owner,
+so an autonomous merger merged with the owner's authority and was indistinguishable from
+them. Recommended posture, owner-approved: **per-persona machine account + fine-grained PAT
+now, GitHub App as the production-grade target**; fine-grained PATs under a *single* account
+were evaluated and rejected (they scope *what*, not *who*).
+
+Shipped: `identity.forge` in the persona schema (v1.3) referencing a credential by
+environment-variable **NAME**; cycle-start resolution that makes a whole sidecar cycle act as
+its persona (git authorship + `GH_TOKEN`/`GITHUB_TOKEN` + an HTTPS push credential helper that
+interpolates the variable by name, so no secret reaches argv or disk); the same for
+`baron notify --from`; `baron identity`; a `baron validate` gate; `manifest.identity.require_forge`
+(schema v1.5); and `docs/runbooks/forge-identity.md`.
+
+**Two deliberate calls worth keeping visible.** The missing-`identity.forge` check is a
+**warning**, not an error — the drafted error broke 101 of baron's own tests, which is what
+it would do to any fleet on upgrade; the strong posture is opt-in per project. And baron
+**never mints or stores a credential** — if it ever grows a token-minting path it has become
+a credential broker and crossed ADR-007.
+
+**Still deferred: per-persona commit signing.** ADR-026 §6 Q4 pointed at signing keys as the
+identity answer; ADR-027 §6 supersedes that pointer. Signing proves key custody, which is a
+different claim from "who merged", and every persona currently runs on one machine under one
+operator. Revisit when personas run on separate hosts.
+
+**Follow-on this unblocks, deliberately not taken here:** with distinct forge accounts
+provisioned, ADR-010 §5.5's wake gate could read `github.actor` and become genuine
+authentication instead of detection. That is a change to the emitted workflow with its own
+failure modes, and it should land against a fleet that has actually provisioned the accounts
+(ADR-027 §6).
 
 ## Shipped (unreleased) — P2.1 `baron decision` (park only, CLI 0.8.0)
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Sequence
 
 
 class GitError(RuntimeError):
@@ -15,14 +16,22 @@ class GitError(RuntimeError):
 
 
 def git(
-    repo: Path | str, *args: str, check: bool = True
+    repo: Path | str,
+    *args: str,
+    check: bool = True,
+    config: Sequence[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``git -C <repo> <args>`` with captured text output.
+    """Run ``git -C <repo> [config] <args>`` with captured text output.
+
+    ``config`` is a pre-built list of ``-c key=value`` arguments applied to this
+    invocation only. Its one consumer is ADR-027's per-persona push credential, whose
+    helper interpolates the token variable **by name** — so nothing secret ever
+    reaches this argv (see :func:`baron.identity.credential_config`).
 
     Raises :class:`GitError` on non-zero exit when ``check`` is true.
     """
     proc = subprocess.run(
-        ["git", "-C", str(repo), *args],
+        ["git", "-C", str(repo), *(config or ()), *args],
         capture_output=True,
         text=True,
     )

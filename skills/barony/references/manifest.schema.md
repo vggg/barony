@@ -133,6 +133,32 @@ command is never useless without this block.
 > which the same actor wrote. This is **detection and audit, not authentication** — it stops the
 > accidental case and turns a bypass into an attributable git artifact. Per-persona commit signing
 > (ADR-011) is what would make it a fact.
+>
+> ADR-027 changes the ingredients, not (yet) this gate: with distinct per-persona forge accounts
+> provisioned, `github.actor` finally differs per persona and the gate *could* become genuine
+> authentication. ADR-027 §6 deliberately leaves the workflow unchanged until a fleet has
+> actually provisioned them.
+
+### identity (optional, ADR-027)
+
+The project's **identity posture**. One field, declared once provisioning is done:
+
+| Field | Req | Notes |
+|---|---|---|
+| `identity.require_forge` | no | `true` = every persona holding a forge verb (`open_pr`, `merge_pr`, `push_main`, `force_push`) **must** declare `identity.forge` (persona schema v1.3), or `baron validate` errors |
+
+```yaml
+identity:
+  require_forge: true
+```
+
+Absent (the default) the same check is a **warning** — because "no `identity.forge`" describes
+every project predating ADR-027, and erroring by default would fail a working fleet over a
+credential the owner has not been asked for yet. The strong posture is one line, in the
+substrate, rather than a `--require-identity` flag every caller must remember.
+
+**No credential ever appears in this file.** Personas reference tokens by environment-variable
+NAME (`persona.schema.md § Forge identity`); provisioning is `docs/runbooks/forge-identity.md`.
 
 ## Example (tasklib-agents, derived from the Phase 2 dogfood)
 
@@ -174,6 +200,9 @@ adapters:                     # optional; runtime-neutral envelope
   at `paths.root`; discovery and relative paths resolve from there.
 
 ## Changelog
+
+- **v1.5** (ADR-027): added the optional `identity` block (`require_forge`). Additive — a
+  manifest without it validates unchanged and the forge-identity check stays a warning.
 
 - **v1.4** (ADR-010 §5.5): added the optional `notify` block (`wake_allowed`) gating who may
   fire a wake. Additive — a manifest without it validates unchanged, and the gate then refuses

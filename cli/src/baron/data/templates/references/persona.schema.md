@@ -18,6 +18,7 @@
 | `identity.git_email` | yes | str | git author email (may use `{{IDENTITY_DOMAIN}}`) |
 | `identity.commit_prefix` | yes | str | e.g. `tess:` |
 | `identity.routing_label` | yes | str | e.g. `agent-tess` |
+| `identity.forge` | no | map | **who this persona is on the CODE HOST** (ADR-027). See below. |
 | `capabilities.allow` | yes | list | v1 verbs (see capability-vocab.v1.md); `write_path` is parametric |
 | `capabilities.deny` | yes | list | v1 verbs; sub-tool denials become persona-body instructions |
 | `scope.summary` | yes | str | one-paragraph mission |
@@ -26,6 +27,51 @@
 | `runtime.trigger` | no | enum | `interactive` (default) \| `event` \| `cron` |
 | `runtime.model_hint` | no | str | optional model pin; adapter may apply (code-puppy does) |
 | `runtime.adapters` | no | map | per-runtime per-persona overrides; runtime-neutral envelope (see below) |
+
+## Forge identity (`identity.forge`) — v1.3, ADR-027
+
+`identity.git_*` answers *who wrote the commit*. `identity.forge` answers **who opened
+the PR, posted the verdict, and merged it** — which was previously unanswerable: every
+persona shared one ambient `gh` credential, so all of it attributed to the human owner.
+That is what made an autonomous merger untrustworthy (it merged with the owner's
+authority) and what forced ADR-010 §5.5's wake gate to be detection rather than
+authentication.
+
+| Field | Req | Type | Notes |
+|---|---|---|---|
+| `identity.forge.provider` | no | enum | `github` (default) \| `gitlab` \| `gitea`. Open enum — an unlisted value warns, never errors. |
+| `identity.forge.login` | yes* | str | The account / app handle, e.g. `acmeproj-mo`. **Public attribution data, never a credential.** \*Required once the block is present. |
+| `identity.forge.token_env` | no | str | The **NAME** of the environment variable holding this persona's token. Default: `BARON_FORGE_TOKEN_<SLUG>` (slug upper-cased, non-alphanumerics → `_`). |
+| `identity.forge.required` | no | bool | `true` = a cycle **refuses to run** when the credential does not resolve, instead of degrading to ambient. Default `false`. |
+
+> **No credential value ever appears in this file, or in any file.** The spec carries the
+> variable's *name*; the value lives only in the process environment of the acting cycle.
+> Baron resolves the name, injects it for one cycle, and reports the name plus a boolean
+> — never a value, not even a prefix.
+
+Whether that variable holds a machine-account fine-grained PAT or a GitHub App
+installation token is **invisible to baron**, which is what makes the two
+interchangeable without a code change. Provisioning is the owner's — see
+`docs/runbooks/forge-identity.md`.
+
+**Absence is legal and non-breaking.** A persona with no `identity.forge` acts under
+ambient credentials exactly as before; `baron validate` warns (not errors) when such a
+persona holds a forge verb (`open_pr`, `merge_pr`, `push_main`, `force_push`), and
+`baron validate --require-identity` — or `manifest.identity.require_forge: true` —
+promotes that warning to an error once a project has finished provisioning.
+
+```yaml
+identity:
+  git_name: Mo
+  git_email: mo@acmeproj.local
+  commit_prefix: "mo:"
+  routing_label: agent-mo
+  forge:
+    provider: github
+    login: acmeproj-mo          # public handle, NOT a secret
+    # token_env: BARON_FORGE_TOKEN_MO   # the default; override only if yours differs
+    required: true              # the merger archetype should fail closed
+```
 
 ## Per-persona adapter overrides (`runtime.adapters`)
 
@@ -139,3 +185,7 @@ the yaml and re-derive. Adapters likewise read the yaml, not the md.
 - **v1.2** (ways-of-working 2026-07-31, ADR-008): added the `check_review_feedback` session-ritual
   token, resolving before `check_backlog`. Additive — a persona whose ritual omits it behaves
   exactly as before; unknown tokens were already a warning, not an error.
+- **v1.3** (agent identity, ADR-027): added the optional `identity.forge` block — the forge
+  half of identity, referencing a credential by variable NAME and never by value. Additive:
+  a persona without it acts under ambient credentials exactly as before, and the
+  missing-block check is a warning until a project opts into `require_forge`.

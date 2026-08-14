@@ -15,6 +15,17 @@ identity:
   git_email: librarian@{{IDENTITY_DOMAIN}}
   commit_prefix: "librarian:"
   routing_label: agent-librarian
+  # ADR-027 — who this persona is ON THE CODE HOST. git identity above answers
+  # "who wrote the commit"; this answers "who opened the PR / posted the verdict /
+  # merged it". Without it, every forge action attributes to whoever is ambiently
+  # logged in — i.e. the human owner. Provision the account and export the token:
+  # docs/runbooks/forge-identity.md. NEVER put a credential in this file.
+  forge:
+    provider: github
+    login: {{FORGE_LOGIN}}        # the machine account / app handle (public, not a secret)
+    # token_env: defaults to BARON_FORGE_TOKEN_{{PERSONA_SLUG_UPPER}} — the NAME of the
+    # environment variable holding this persona's token. Override only if yours differs.
+    required: false
 capabilities:
   allow:
     - read_code

@@ -39,6 +39,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [024](ADR-024-fleet-health.md) | `baron health` — a fleet-health surface from the substrate, not a bespoke script | Accepted 2026-08-13 | Sits BESIDE `baron status` and calls into it. §5 states the honest bound: it measures what was emitted. Goes portfolio-wide under ADR-025. |
 | [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
 | [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
+| [027](ADR-027-agent-identity.md) | Agent identity — per-persona forge credentials via named indirection | Accepted 2026-08-14 | Answers ADR-026 §6 Q4 (and supersedes its pointer at signing keys). Per-persona machine account + fine-grained PAT now, GitHub App as the target; baron consumes credentials by NAME only and never mints or stores one (ADR-007). |
 
 ## Where the owner decisions landed
 
