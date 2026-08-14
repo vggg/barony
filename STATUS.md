@@ -26,6 +26,38 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+## Shipped (unreleased) — the prior-art gate: `baron adr check` (plugin 1.12.0 / CLI 0.12.0, [ADR-029](docs/adr/ADR-029-prior-art-gate.md))
+
+**Accepted 2026-08-14.** Barony's own thesis (*instructed → enforced*) applied to its own
+governance process, on a first-party incident: an ADR-027 session re-derived an identity design
+a **2026-08-04 vault spike had already decided against**. The prior art was written down and
+findable; nothing in the ADR path ever asked whether it had been consulted.
+
+Two rules — **(a) one canonical home** (a decision is canonical only once promoted to an
+accepted ADR here; vault notes are inputs) and **(b) a recorded prior-art sweep** on every ADR
+reaching `status: accepted`. Rule (b) is mechanized: **`baron adr check [docs/adr]` is
+fail-closed** — missing/malformed block, empty `searched:`, a required corpus unsearched, an
+omitted `hits:` key, or a malformed hit all exit **1**. Rule (a) is instructed, and §6 says so.
+
+Landed with it: `docs/adr/ADR-TEMPLATE.md` + the emitted `decisions/ADR-TEMPLATE.md` (so
+`baron init` scaffolds the section), step 0 of the `CONVENTIONS.md` decision/ADR-intake rule,
+the `COORDINATION.md` ADR rules, `baron adr scaffold`, 40 tests, and a **CI step gating this
+repo's own `docs/adr/`** — ADR-029 included, gated by its own rule rather than grandfathered.
+
+**Honest bound (in the record, the README, and the templates):** the gate enforces that a
+search was **recorded**, not that it was **thorough**. Recall quality is a separate axis — the
+P3.3/P3.4 memory work. It converts "I forgot to check" from silent to blocked, and no more.
+
+**Residual owner-decision points (§8):** ADR-027/028 sit on unmerged branches dated 2026-08-14,
+so the gate binds them on merge and each needs a block added (alternative: `--since 2026-08-15`,
+which would also exempt ADR-029 from its own rule); whether `vault` is the right *default*
+required corpus for emitted projects; whether `status: proposed` should be gated too.
+
+Related, still open: the Irisidian **claims ladder** (2026-08-05) is the other convention
+awaiting template promotion — ADR-023 §8 Q2 named a combined `ways-of-working-2026-08` ADR as
+the likely host. **This ADR did not absorb it**: the claims ladder is a separate promotion with
+its own evidence, and bundling it would have made one decision out of two. The scope call
+remains the owner's.
 ## Shipped (unreleased) — the merge gate: `baron merge check` (CLI 0.11.0)
 
 [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md). P1.3 hardened the `__MERGER__`

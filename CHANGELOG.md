@@ -6,6 +6,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — the prior-art gate: `baron adr check` (plugin 1.12.0 / CLI 0.12.0, [ADR-029](docs/adr/ADR-029-prior-art-gate.md))
+
+Barony's enforcement thesis — *instructed → enforced*, the FM4 lesson — applied to its own
+governance process. **Incident (2026-08-14, first-party):** an ADR-027 session re-derived an
+identity design that a **2026-08-04 vault spike had already decided against**. The prior art
+was written down, findable, and in the corpus the owner maintains for exactly this. No step in
+the ADR-authoring path ever *asked* whether it had been consulted, so it never was.
+
+Two rules; one of them mechanized:
+
+- **One canonical home** — a decision is canonical only once promoted to an **accepted ADR in
+  the repo**. Vault notes and spikes are *inputs*; the promotion step is required. Instructed
+  tier, and ADR-029 §6 says so rather than borrowing the mechanized half's credibility.
+- **A recorded prior-art sweep** — every ADR reaching `status: accepted` carries a
+  **Supersedes / Prior art** block naming the corpora searched (repo `docs/adr/` **and** the
+  owner's vault), with query and date, citing or explicitly superseding every hit.
+
+**`baron adr check [docs/adr]` is fail-closed**: missing block, malformed block, empty
+`searched:`, a required corpus unsearched, an omitted `hits:` key, or a malformed hit are all
+**errors → exit 1**. Not a warn-and-continue lint. `baron adr scaffold` prints the block.
+Storage is the ADR-009 §3 marker region inside the record itself (the substrate is the
+database, ADR-003 §2.2); a malformed block is *reported*, never rewritten (§2.6). Design
+choices that carry weight: `corpus` is a **closed vocabulary** (a free-text field would let
+`corpus: "had a think about it"` pass); `hits: []` must be **written**, because omission is
+indistinguishable from never having looked; and pre-2026-08-14 records are **exempt, never
+reported as passing** — failing 26 legacy ADRs on day one is how a gate teaches people to
+ignore it (the ADR-009 §10 Q4 call, reapplied).
+
+Landed with it: `docs/adr/ADR-TEMPLATE.md` and the emitted
+`decisions/ADR-TEMPLATE.md` (so `baron init` scaffolds the required section), step 0 of the
+`CONVENTIONS.md` decision/ADR-intake rule, the `COORDINATION.md § ADR rules` update, and a CI
+step running the gate on **this repo's own corpus** — including ADR-029, which is gated by its
+own rule rather than grandfathered.
+
+> **Honest bound, stated in the record and in every surface:** the gate enforces that a search
+> was **recorded**, not that it was **thorough**. Recall quality is a separate axis (P3.3/P3.4).
+> It converts "I forgot to check" from silent to blocked — nothing more. A determined author
+> can still record a sweep they never ran.
+
+**Residual owner-decision points** (ADR-029 §8): point 1 is **resolved** — ADR-027 and ADR-028
+merge ahead of this and carry populated blocks (§10 and §8), so `--since 2026-08-15` was not
+needed and the effective date stays 2026-08-14, leaving ADR-029 gated by its own rule. Writing
+ADR-028's block is what caught that its §4 rested on a rejected ADR-027 — the gate found a
+defect on first use. Still open: whether `vault` is the right default requirement for *emitted*
+projects; and whether `status: proposed` should be gated too.
 ### Added — `baron merge check`: the merge decision becomes a fail-closed gate (CLI 0.11.0, [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md))
 
 The `__MERGER__` archetype was always specified as *a gate, not a button* — but the gate

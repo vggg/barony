@@ -40,7 +40,8 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
 | [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
 | [027](ADR-027-agent-identity.md) | Agent identity — per-persona SSH signing keys enrolled in the repo | Accepted 2026-08-14 | Promotes the 2026-08-04 vault spike. `baron identity init` / `baron verify identity`; `.barony/allowed_signers` is the registry, CODEOWNERS the human gate. Agents still push under the OWNER's forge identity — attribution is the KEY. **Supersedes ADR-026 §6 Q4** and **ADR-011** (PR #32 — the same design, re-derived; closed as superseded, see §9). |
-| [028](ADR-028-mechanized-merge-gate.md) | `baron merge check` — the merge decision becomes a fail-closed gate | **Proposed** (2026-08-14) | Mechanizes ADR-002 §4 + ADR-008 §1/§3. Bounded by ADR-007 (checks, never merges) and by ADR-027 (§4 — the gate cannot attest *who* posted a verdict until identity lands). |
+| [028](ADR-028-mechanized-merge-gate.md) | `baron merge check` — the merge decision becomes a fail-closed gate | **Proposed** (2026-08-14) | Mechanizes ADR-002 §4 + ADR-008 §1/§3. Bounded by ADR-007 (checks, never merges). §4 **corrected at integration**: ADR-027 (SSH signing) does **not** unblock the autonomous merger — it attributes commits, and a verdict is a PR comment. §7 Q4 carries the real blocker. |
+| [029](ADR-029-prior-art-gate.md) | The prior-art gate — one canonical home, and a recorded sweep before acceptance | Accepted 2026-08-14 | Joins the ways-of-working family (002 → 008 → 023). Extends ADR-009 / the `CONVENTIONS.md` decision-intake rule one step earlier. Mechanized by `baron adr check`, which gates **this directory in CI**. |
 
 ## Where the owner decisions landed
 
@@ -61,12 +62,15 @@ ADR numbers are never reused. Two are absent from this directory on purpose:
 
 - **010** was claimed by a branch that is still unmerged (PR #29). ADR-013's header carries
   the same note.
-- **011** was claimed by PR #32 and is **superseded by ADR-027** — the two are the same design,
-  re-derived ten days apart. PR #32 is closed; ADR-011 was never merged and its number is not
-  reused. This is the case the prior-art gate (ADR-029) exists to catch, and it is recorded
-  here rather than quietly dropped.
-- Anyone opening a new ADR should start at **029** (**028** is claimed by the merge-gate
-  branch, PR #46).
+- **011** was claimed by PR #32 and is **superseded by [ADR-027](ADR-027-agent-identity.md)** —
+  the two are the same design, re-derived ten days apart from the same 2026-08-04 spike,
+  neither citing the other. PR #32 is closed; ADR-011 was never merged and its number is not
+  reused. **This is the exact failure ADR-029 exists to catch**, and it is recorded here
+  rather than quietly dropped.
+- Anyone opening a new ADR should start at **030** — and **check the branches, not just this
+  directory**: a number free here may already be taken in flight. The 011/027 re-derivation
+  is the reason that sentence is in this file. `baron adr check` gates the *records*; it
+  cannot see a number claimed on a branch.
 - Three workstreams of the ops-plane consolidation each independently wrote an `ADR-018`.
   The number stayed with `harden/d1-semantics` because ADR-019 was already written against
   it by number; the other two were renumbered **020** and **021**. Only identifiers changed

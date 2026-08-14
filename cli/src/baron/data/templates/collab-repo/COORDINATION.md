@@ -147,7 +147,14 @@ File an ADR when:
 - Deciding to break from a pattern established in a prior ADR
 - Making an infrastructure or schema change that can't easily be reversed
 
-**Format:** Full ADR lives in the code repo at `docs/adr/ADR-NNN-slug.md`. This collab repo holds a pointer stub:
+**Prior art is a gate, not a nicety.** Every ADR carries a **Supersedes / Prior art** section
+recording the sweep you performed — which corpora, which terms, which date — and citing or
+superseding every hit. `baron adr check docs/adr` **refuses** an ADR marked `status: accepted`
+without one (exit 1); wire it into the code repo's CI. Start from `decisions/ADR-TEMPLATE.md`
+or run `baron adr scaffold`. It verifies the sweep was *recorded*, not that it was thorough.
+
+**Format:** Full ADR lives in the code repo at `docs/adr/ADR-NNN-slug.md`, started from
+`decisions/ADR-TEMPLATE.md`. This collab repo holds a pointer stub:
 
 ```markdown
 projects/decisions/ADR-NNN-slug.md

@@ -353,6 +353,54 @@ records rex as the proposer while the commit is authored by the librarian who
 holds the write scope. Attribution (who reasoned it) and authorship (who
 committed it) are separate on purpose.
 
+### `baron adr check|scaffold` — the prior-art gate ([ADR-029](../docs/adr/ADR-029-prior-art-gate.md))
+
+```bash
+baron adr check docs/adr                        # the gate — exit 1 blocks
+baron adr check docs/adr --require repo-adr     # a project with no research vault
+baron adr check docs/adr --since 1970-01-01     # audit the WHOLE corpus, not just new records
+baron adr scaffold                              # print the section to paste into a new ADR
+```
+
+**Fail-closed, not a lint.** An ADR marked `status: accepted` must carry a populated
+prior-art block; a missing, malformed, or incomplete one exits **1**. Wire it into CI —
+this repo does (`.github/workflows/ci.yml`).
+
+```markdown
+## Supersedes / Prior art
+
+<!-- BEGIN BARON PRIOR-ART -->
+searched:
+  - corpus: repo-adr          # closed vocabulary: repo-adr | repo-decisions | vault | external
+    location: docs/adr
+    query: "identity, spawn credentials"
+    date: 2026-08-14
+  - corpus: vault
+    location: /Users/vikram/Obsidian/Brain
+    query: "agent identity spike"
+    date: 2026-08-14
+hits: []                      # `[]` means "found nothing" — say it; an omitted key is an ERROR
+<!-- END BARON PRIOR-ART -->
+```
+
+Each hit carries `ref` plus a `disposition` of `supersedes` / `cites` / `distinct`, and
+`distinct` **must** carry a `note` — it is the only disposition that discharges a hit by
+assertion. Errors: block missing, block malformed (unclosed marker or bad YAML — *never*
+silently rewritten, ADR-003 §2.6), `searched:` empty, an entry missing a known `corpus` /
+`query` / ISO `date`, a **required corpus not searched** (default `repo-adr` **and**
+`vault`), `hits:` omitted, or a malformed hit. Warnings (do not block): a sweep dated >90
+days before acceptance, a block with no prior-art heading, a `supersedes` ref naming an ADR
+absent from the directory (legitimate for the reserved-but-unmerged numbers).
+
+**Retrofit.** Only ADRs dated on/after **2026-08-14** are gated; earlier records report
+`exempt` — never as *passing* — because failing 26 legacy records on day one is how a gate
+teaches people to ignore it (the ADR-009 §10 Q4 call, reapplied).
+
+> **Honest bound.** This enforces that a search was **recorded**, not that it was
+> **thorough**. Recall quality is a separate axis (the memory work, AGENT-TASKS P3.3/P3.4).
+> It converts *"I forgot to check"* from silent into blocked; it cannot tell you the
+> searcher found everything, and a determined author can record a sweep they never ran.
+
 ### `baron handoff create|close|list` (M3)
 
 ```bash

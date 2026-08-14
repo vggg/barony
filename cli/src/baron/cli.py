@@ -14,6 +14,7 @@ from typing import Optional
 import typer
 
 from . import (
+    adr as adr_mod,
     clock,
     decision as decision_mod,
     export as export_mod,
@@ -876,6 +877,111 @@ def decision_new(
     """Allocate the next D-number and append a house-style entry (same race-safe
     push-retry allocation as `baron finding new`)."""
     _ledger_new("decision", collab, title, author, body_file, no_push, retries)
+
+
+# --- ADR-029: the prior-art gate --------------------------------------------------------
+
+adr_app = typer.Typer(
+    help="ADR records: the prior-art gate (ADR-029).",
+    no_args_is_help=True,
+)
+app.add_typer(adr_app, name="adr")
+
+
+@adr_app.command("check")
+def adr_check(
+    path: Path = typer.Argument(
+        Path("docs/adr"), help="Directory of ADR records (default: docs/adr)."
+    ),
+    since: str = typer.Option(
+        adr_mod.DEFAULT_SINCE.isoformat(),
+        "--since",
+        help="Gate ADRs dated on/after this ISO date. Earlier ones are reported exempt. "
+        "Pass 1970-01-01 to audit the whole corpus.",
+    ),
+    require: str = typer.Option(
+        ",".join(adr_mod.DEFAULT_REQUIRED),
+        "--require",
+        help=f"Comma-separated corpora that MUST appear in `searched:` "
+        f"(known: {', '.join(adr_mod.CORPORA)}).",
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Refuse an accepted ADR whose prior-art sweep was never recorded (ADR-029 §4b).
+
+    Fail-closed: a missing block, a malformed block, a `searched:` list that omits a
+    required corpus, or a `hits:` key left off entirely are all ERRORS, and errors
+    exit 1. There is no warn-and-continue path — this is a gate, not a lint.
+
+    HONEST BOUND: this verifies that a search was RECORDED, not that it was
+    thorough. Recall quality is a separate axis. It converts "I forgot to check"
+    from silent to blocked; it cannot tell you the searcher found everything.
+
+    Exit 0 = no errors (warnings allowed), 1 = gate violation, 2 = usage error.
+    """
+    from datetime import date as _date
+
+    try:
+        since_date = _date.fromisoformat(since.strip())
+    except ValueError:
+        typer.echo(f"error: --since {since!r} is not an ISO date (YYYY-MM-DD)", err=True)
+        raise typer.Exit(2)
+    required = tuple(c.strip() for c in require.split(",") if c.strip())
+    try:
+        records = adr_mod.check_dir(path, since=since_date, required=required)
+    except adr_mod.AdrError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+
+    errors = adr_mod.errors_of(records)
+    warnings = adr_mod.warnings_of(records)
+    gated = [r for r in records if r.gated]
+
+    if json_out:
+        _echo_json({
+            "adr_dir": path.as_posix(),
+            "since": since_date.isoformat(),
+            "required_corpora": list(required),
+            "records": [
+                {
+                    "file": r.rel,
+                    "number": r.number,
+                    "status": r.status,
+                    "date": r.dated.isoformat() if r.dated else None,
+                    "gated": r.gated,
+                    "exempt_reason": r.exempt_reason,
+                    "findings": [f.to_dict() for f in r.findings],
+                }
+                for r in records
+            ],
+            "summary": {
+                "records": len(records),
+                "gated": len(gated),
+                "exempt": len(records) - len(gated),
+                "errors": len(errors),
+                "warnings": len(warnings),
+            },
+        })
+    else:
+        for f in errors + warnings:
+            typer.echo(f"{f.severity.upper():7s} {f.file}: [{f.check}] {f.message}")
+        typer.echo(
+            f"{len(records)} ADR(s): {len(gated)} gated, {len(records) - len(gated)} exempt "
+            f"(pre-{since_date.isoformat()} or not accepted) — "
+            f"{len(errors)} error(s), {len(warnings)} warning(s)"
+        )
+        if errors:
+            typer.echo(
+                "\nBLOCKED: an accepted ADR must record the prior-art sweep it rests on "
+                "(ADR-029). `baron adr scaffold` prints the block."
+            )
+    raise typer.Exit(1 if errors else 0)
+
+
+@adr_app.command("scaffold")
+def adr_scaffold() -> None:
+    """Print the prior-art section to paste into a new ADR."""
+    typer.echo(adr_mod.SCAFFOLD)
 
 
 # --- M3: handoffs ---------------------------------------------------------------------

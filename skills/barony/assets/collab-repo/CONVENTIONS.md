@@ -167,6 +167,18 @@ So when a decision or ADR is made or ratified — signalled by a `for: Librarian
 starts **`DECISION:`**, or by an owner ratification — the Librarian runs the **full intake**, not a
 `decisions/` append alone:
 
+0. **Check prior art FIRST, and record the sweep.** Before writing the decision, search the
+   corpora where it may already have been decided — this project's `decisions/`, the code repo's
+   `docs/adr/`, and the owner's research vault if there is one. Write what you searched, with
+   what terms, on what date, into the decision's **Supersedes / Prior art** section, and cite or
+   explicitly supersede every hit. For an ADR this is **mechanized and fail-closed**:
+   `baron adr check docs/adr` REFUSES an ADR marked `status: accepted` whose prior-art block is
+   missing or empty (exit 1 — a gate, not a lint). See `decisions/ADR-TEMPLATE.md`, and run
+   `baron adr scaffold` to print the block. *Honest bound: this enforces that a search was
+   **recorded**, not that it was thorough — it converts "I forgot to check" from silent to
+   blocked, nothing more.* And note the rule it serves: **research notes are inputs; a decision
+   is canonical only once promoted to an accepted record here.** An unpromoted spike gets
+   re-derived.
 1. **Record with supersession.** Append to `decisions/` (or the ADR), stating explicitly what it
    **overrides**, with a back-pointer both ways. Decisions supersede; they do not accumulate
    silently beside the thing they contradict.
