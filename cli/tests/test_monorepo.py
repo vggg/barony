@@ -15,10 +15,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
-from baron import monorepo
+from baron import monorepo, verdict
 from baron.cli import app
 
 from conftest import run_git
@@ -253,6 +254,39 @@ def test_health_at_the_root_rolls_up_per_project(tmp_path: Path, fixed_clock: ob
     }
     human = runner.invoke(app, ["health", "--collab", str(root)])
     assert "portfolio health" in human.output
+
+
+def test_health_reads_the_shared_plane_once_not_once_per_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fixed_clock: object
+) -> None:
+    """ADR-025 §6.8. The plane hangs off the git top-level and a project subdir
+    is not its own repo, so ONE plane serves the whole clone. Two things must
+    hold: a verdict recorded from a project subdir is counted (it read as zero
+    before the fix), and the portfolio total counts it ONCE, not once per
+    project."""
+    root = _init_mono(tmp_path)
+    assert runner.invoke(app, ["add-project", "barony", "--root", str(root)]).exit_code == 0
+    monkeypatch.setenv("BARON_EVENTS_SINK", "disk")
+
+    verdict.record(root / "barony", author="atlas", pr=43, head="94e4285",
+                   verdict="approved", mutations_run=4, mutations_killed=3)
+
+    # Written at the root (the git top-level), not in the subdir.
+    assert (root / ".baron" / "events").is_dir()
+    assert not (root / "barony" / ".baron" / "events").exists()
+
+    # Single-project read from INSIDE the subdir sees it — this was 0 before.
+    sub = runner.invoke(app, ["health", "--collab", str(root / "barony"), "--json"])
+    assert json.loads(sub.output)["verdicts"] == 1
+
+    # ...and the portfolio counts it once across two projects sharing the plane.
+    result = runner.invoke(app, ["health", "--collab", str(root), "--json"])
+    payload = json.loads(result.output)
+    assert payload["summary"]["verdicts"] == 1
+    assert payload["summary"]["mutation_kill"] == {"killed": 3, "run": 4, "rate": 0.75}
+    human = runner.invoke(app, ["health", "--collab", str(root)]).output
+    assert "1 verdict(s)" in human
+    assert "REPO-WIDE" in human
 
 
 def test_validate_at_the_root_covers_every_project(tmp_path: Path, fixed_clock: object) -> None:

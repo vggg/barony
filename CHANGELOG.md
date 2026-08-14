@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — `baron health` read a plane nobody writes to in a monorepo (CLI 0.9.0, [ADR-025 §6.8](docs/adr/ADR-025-coordination-monorepo.md))
+
+Stage 2 of the same dogfood, and the defect §6.3's generalisation predicted. The disk sink
+hangs the event plane off the **git top-level**, and a monorepo project subdir is not its own
+git repo — so a verdict recorded from `<root>/barony/` is written to `<root>/.baron/events/`.
+`verdict.read` joined `.baron/events` onto the *collab path* and looked in
+`<root>/barony/.baron/events/`, which does not exist. Measured: `verdict.read(<root>)` → 1 row,
+`verdict.read(<root>/barony)` → **0**. A well-formed approved verdict sat on disk while `baron
+health` printed `0 verdict(s)`, offered "a project that records no verdicts shows a clean
+board", and advised enabling a sink **that was already enabled** — the same silent-false-green
+class as the `--code-repo` aliasing bug. Single-project layouts were never affected (there the
+collab dir IS the git top-level), which is exactly why it survived to Stage 2.
+
+- **One resolution, shared by the write and the read.** `sinks.disk.events_dir(cwd)` is now the
+  single answer to "where is the plane", used by `DiskSink.directory()` and `verdict.read`
+  alike. The two cannot drift apart again.
+- **The portfolio reads that plane once, not once per project.** Summing a per-project read over
+  a *shared* plane would report N× the verdicts that exist — a new false number in place of the
+  old false zero. `baron health` at a monorepo root now rolls the verdict half up once from the
+  root; per-project boxes carry stalls, which are genuinely per-project.
+- **A zero is attributable.** ADR-024 §5's honest bound is about *emission* and is unchanged —
+  health still measures what was emitted, not what happened. But it was never a licence to miss
+  rows that were emitted, so the report now names the directory it read, and flags when those
+  rows are the whole clone's rather than this project's alone.
+
 ### Fixed — ADR-025 hardening from the first real coordination monorepo (CLI 0.9.0, [ADR-025 §6](docs/adr/ADR-025-coordination-monorepo.md))
 
 Standing up `fleet-coordination` as a real coordination monorepo — Barony grafted

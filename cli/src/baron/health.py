@@ -9,6 +9,12 @@ Two halves, per ADR-024:
 Honest bound (ADR-024 §5): this measures **what was emitted**, not what happened. A fleet
 that records no verdicts shows a clean board — so the report states its coverage
 (verdicts seen) rather than implying health from silence.
+
+That bound is about *emission*. It was never a licence to miss rows that WERE emitted:
+the plane hangs off the git top-level, so in a coordination monorepo (ADR-025) it lives
+at the root and is shared by every project in the clone. The report therefore names the
+plane it read and says when that plane is repo-wide, so "0 verdicts" always means
+"nothing was emitted" and never "I looked in the wrong directory" (ADR-025 §6.8).
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import status, verdict
+from .sinks.disk import events_dir as plane_dir
 
 
 @dataclass
@@ -32,6 +39,17 @@ class HealthReport:
     by_author: dict[str, dict[str, int]]
     stalls: list[str]        # human-readable stall/divergence lines from `baron status`
     since: str | None = None
+    #: The event directory this report's verdicts were read from — the same
+    #: resolution the sink writes through. Named in the output so a zero is
+    #: attributable to an empty plane rather than to a mis-resolved path.
+    plane: str = ""
+    #: True when that plane sits above the collab dir (a monorepo subdir): the
+    #: rows are the WHOLE repo's, not this project's alone.
+    plane_shared: bool = False
+    #: False when a caller deliberately took the verdict half elsewhere (the
+    #: portfolio rollup reads the shared plane once). Distinguishes "measured
+    #: zero" from "not measured here" in the rendered output.
+    verdicts_measured: bool = True
 
     @property
     def kill_rate(self) -> float | None:
@@ -54,11 +72,31 @@ class HealthReport:
             "escapes": self.escapes,
             "by_author": self.by_author,
             "stalls": self.stalls,
+            "plane": {
+                "dir": self.plane,
+                "shared": self.plane_shared,
+                "measured": self.verdicts_measured,
+            },
         }
 
 
-def collect(collab: Path, *, since: str | None = None) -> HealthReport:
-    rows = verdict.read(collab, since=since)
+def collect(
+    collab: Path,
+    *,
+    since: str | None = None,
+    include_verdicts: bool = True,
+    include_stalls: bool = True,
+) -> HealthReport:
+    """Roll the plane + `baron status` up into one report.
+
+    ``include_verdicts=False`` skips the verdict half for callers that read the
+    plane themselves — the portfolio rollup does, because one monorepo plane
+    read once per project would report N× the verdicts that exist.
+    ``include_stalls=False`` skips the `baron status` half for callers pointing
+    at a directory that is not itself a project (the monorepo root).
+    """
+    rows = verdict.read(collab, since=since) if include_verdicts else []
+    plane = plane_dir(collab)
 
     def s(key: str) -> int:
         return sum(int(r.get(key, 0) or 0) for r in rows)
@@ -77,11 +115,13 @@ def collect(collab: Path, *, since: str | None = None) -> HealthReport:
     # Degrade gracefully: health must still report verdict metrics even where
     # status can't run (no manifest.yaml / not a collab repo).
     stalls: list[str] = []
-    try:
-        findings = status.collect(collab, fetch=False)
-    except (FileNotFoundError, ValueError) as exc:
-        stalls.append(f"(stalls unchecked — baron status unavailable: {exc})")
-        findings = []
+    findings: list[status.StatusFinding] = []
+    if include_stalls:
+        try:
+            findings = status.collect(collab, fetch=False)
+        except (FileNotFoundError, ValueError) as exc:
+            stalls.append(f"(stalls unchecked — baron status unavailable: {exc})")
+            findings = []
     for f in findings:
         if f.severity == status.RED and f.check in (
             "handoff-overdue", "unmerged-branch", "ahead", "behind",
@@ -99,16 +139,29 @@ def collect(collab: Path, *, since: str | None = None) -> HealthReport:
         by_author=dict(by_author),
         stalls=stalls,
         since=since,
+        plane=plane.as_posix(),
+        plane_shared=plane.parent.parent.resolve() != collab.resolve(),
+        verdicts_measured=include_verdicts,
     )
 
 
 def render(rep: HealthReport) -> str:
     win = f"since {rep.since}" if rep.since else "all time"
     lines = [f"=== fleet health ({win}) — {rep.verdicts} verdict(s) recorded ==="]
-    if rep.verdicts == 0:
+    if not rep.verdicts_measured:
+        lines.append("  (verdicts not measured here — the observation plane is shared by every")
+        lines.append("   project in this repo and is rolled up ONCE at the portfolio level.)")
+    elif rep.verdicts == 0:
         lines.append("  (no review.verdict events on the plane — nothing to measure.")
         lines.append("   enable it with BARON_EVENTS_SINK=disk and `baron verdict record`.)")
+        if rep.plane:
+            lines.append(f"   plane read: {rep.plane}")
     else:
+        if rep.plane_shared:
+            lines.append(
+                "  NOTE: the plane is repo-wide — these rows are every project's in this"
+            )
+            lines.append(f"        clone, not this project's alone ({rep.plane}).")
         rate = f"{100 * rep.kill_rate:.0f}%" if rep.kill_rate is not None else "n/a"
         lines.append(
             f"MUTATION KILL RATE   {rep.mutations_killed}/{rep.mutations_run} ({rate})"

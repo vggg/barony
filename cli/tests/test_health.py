@@ -85,3 +85,85 @@ def test_to_dict_shape(collab: Path, fixed_clock) -> None:
     assert d["mutation_kill"]["rate"] == 14 / 16
     assert d["claim_drift"]["understating"] == 1
     assert d["reviewer_escapes"] == 1
+
+
+def test_single_project_plane_is_the_collab_dir(collab: Path, fixed_clock) -> None:
+    """Regression guard for the fix below: in the default layout the plane IS
+    ``<collab>/.baron/events`` and is not flagged shared. Nothing about the
+    monorepo fix may change this."""
+    _seed(collab)
+    rep = health.collect(collab)
+    assert rep.verdicts == 2
+    assert rep.plane == (collab / ".baron" / "events").as_posix()
+    assert rep.plane_shared is False
+    assert (collab / ".baron" / "events").is_dir()  # written where we read
+
+
+# --- ADR-025 §6.8: the plane is repo-wide, and the read must follow the write -----
+
+
+@pytest.fixture
+def mono_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A monorepo-shaped project: one git repo at the root, the project a plain
+    subdir with no git repo of its own (which is what makes the sink's git
+    top-level resolution land ABOVE the project)."""
+    root = init_repo(tmp_path / "fleet")
+    project = root / "barony"
+    project.mkdir()
+    (project / "manifest.yaml").write_text("project:\n  name: barony\n", encoding="utf-8")
+    run_git(root, "add", "-A")
+    run_git(root, "commit", "-q", "-m", "init")
+    monkeypatch.setenv("BARON_EVENTS_SINK", "disk")
+    return project
+
+
+def test_verdict_read_follows_the_write_in_a_monorepo(mono_project: Path, fixed_clock) -> None:
+    """THE BUG (Stage 2 dogfood): `record` wrote to the git top-level while
+    `read` joined `.baron/events` onto the project subdir, so a well-formed
+    verdict on disk read back as zero rows. Fails on 94e4285."""
+    root = mono_project.parent
+    verdict.record(mono_project, author="atlas", pr=43, head="94e4285", verdict="approved",
+                   mutations_run=4, mutations_killed=4)
+
+    # The sink wrote at the ROOT — assert that first, so a later change to the
+    # WRITE side cannot make this test pass for the wrong reason.
+    assert (root / ".baron" / "events").is_dir()
+    assert not (mono_project / ".baron" / "events").exists()
+
+    rows = verdict.read(mono_project)
+    assert len(rows) == 1 and rows[0]["pr"] == 43
+    assert verdict.read(root) == rows  # the same plane from either directory
+
+
+def test_health_counts_the_monorepo_verdict(mono_project: Path, fixed_clock) -> None:
+    rep = health.collect(mono_project)
+    assert rep.verdicts == 0  # nothing emitted yet — an honest zero
+    verdict.record(mono_project, author="atlas", pr=43, head="94e4285", verdict="approved",
+                   mutations_run=4, mutations_killed=4)
+
+    rep = health.collect(mono_project)
+    assert rep.verdicts == 1                      # 0 on 94e4285
+    assert rep.mutations_run == 4 and rep.mutations_killed == 4
+    out = health.render(rep)
+    assert "1 verdict(s) recorded" in out
+    # ...and it no longer advises enabling a sink that is already enabled.
+    assert "nothing to measure" not in out
+    assert "BARON_EVENTS_SINK=disk" not in out
+
+
+def test_monorepo_health_names_the_shared_plane(mono_project: Path, fixed_clock) -> None:
+    """The honest bound stays intact — and gains provenance: the report says
+    WHERE it read, and that those rows are the whole repo's."""
+    root = mono_project.parent
+    verdict.record(mono_project, author="atlas", pr=43, head="94e4285", verdict="approved")
+    rep = health.collect(mono_project)
+    assert rep.plane == (root / ".baron" / "events").as_posix()
+    assert rep.plane_shared is True
+    assert "repo-wide" in health.render(rep)
+    assert rep.to_dict()["plane"] == {"dir": rep.plane, "shared": True, "measured": True}
+
+
+def test_zero_verdicts_states_the_plane_it_read(mono_project: Path, fixed_clock) -> None:
+    out = health.render(health.collect(mono_project))
+    assert "nothing to measure" in out
+    assert "plane read:" in out  # a zero is attributable, not merely reassuring

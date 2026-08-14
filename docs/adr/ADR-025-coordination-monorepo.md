@@ -146,8 +146,39 @@ The rest:
    per-project slugs (`--personas dev:fern,librarian:iris`), which the docs already
    recommend for unrelated reasons.
 
+**Stage 2 of the same dogfood found an eighth — the predicted one, in `baron health`.**
+
+8. **`baron health` read a plane nobody writes to.** The disk sink hangs the event
+   plane off the **git top-level** (`.baron/events/` at the repo root); a project
+   subdir is not its own git repo, so a verdict recorded from `<root>/barony/`
+   lands at `<root>/.baron/events/`. `verdict.read` joined `.baron/events` onto the
+   *collab path* instead, so it looked in `<root>/barony/.baron/events/` — a
+   directory that does not exist. Measured: `verdict.read(<root>)` → 1 row,
+   `verdict.read(<root>/barony)` → 0. A well-formed approved verdict sat on disk
+   while `baron health` printed `0 verdict(s)`, offered the reassurance that "a
+   project that records no verdicts shows a clean board", and advised enabling a
+   sink **that was already enabled**. Same silent-false-green class as §6.1, and
+   the exact instance §6.3's generalisation predicted — "the monorepo turns *the
+   repo* and *the project* into different things, and every place that conflated
+   them is a latent version of this bug." Write and read now share one resolution
+   (`sinks.disk.events_dir`), so the two cannot drift apart again.
+
+   Two consequences the fix had to carry, because reading the right plane exposes
+   what that plane *is*:
+   - **One plane, read once.** The portfolio rollup summed a per-project read, which
+     over a shared plane would report N× the verdicts that exist — a new false number
+     in place of the old false zero. `collect_health` now reads the plane once at the
+     root; the per-project boxes carry stalls (genuinely per-project, from `baron
+     status`) and say plainly that the verdict half is portfolio-level.
+   - **The report names the plane it read.** ADR-024 §5's honest bound is about
+     *emission* and is unchanged — health still measures what was emitted. It was
+     never a licence to miss rows that WERE emitted, so a zero now prints the
+     directory it came from, and a non-zero read from an ancestor says the rows are
+     the whole clone's rather than this project's alone. A zero is now attributable.
+
 **What this says about the topology:** none of these are arguments against projects-as-
-subdirs. Every one is an instance of the same root cause — code written when "the collab
+subdirs. Every one — §6.8 included, found by *applying* the rule the others produced — is
+an instance of the same root cause — code written when "the collab
 repo" and "the git repo" were the same directory, run in a world where they are not. §2's
 claim that "a monorepo subdir is an ordinary Barony project, which is what lets every
 other command ignore the distinction" holds for the *data* and fails for anything that
