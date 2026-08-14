@@ -130,7 +130,7 @@ in its own output, and the persona template carries the split.
 | Precondition 3 — record obligations | "Every material finding/decision has a `_handoff/`" needs a judgement about materiality. Not mechanizable without inventing a heuristic that would be wrong in both directions. Stays the persona's. |
 | Precondition 4 — hot-file collision | Needs the PR's changed paths crossed against `Lock` patterns. Mechanizable, and worth doing — deferred to keep this ADR to one claim. `baron lock list` is today's answer. |
 | Merge conflicts | The forge refuses the merge itself; GitHub computes mergeability asynchronously, so an `UNKNOWN` would produce spurious refusals. |
-| Who wrote the verdict | **Not possible today.** See §4. |
+| ~~Who wrote the verdict~~ | ~~**Not possible today.** See §4.~~ **Now checked** — [ADR-033](ADR-033-signed-review-verdicts.md) added the `verdict_signed` precondition. Still true of the *comment* surface, which ADR-033 §2.3 demotes to an index; the signed in-repo artifact is what attributes. |
 
 Exit 0 therefore means *"preconditions 1 and 2 hold"*, never *"merge it"*. Stating that
 plainly is the point: a gate that quietly covers half of what its name suggests is worse than
@@ -175,15 +175,24 @@ or ADR-027 does — recorded as §7 Q4:
    a comment. This is the option that composes with what ADR-027 actually built, and it is
    not designed anywhere yet.
 
+> **UPDATE 2026-08-14 — option (2) landed as [ADR-033](ADR-033-signed-review-verdicts.md).**
+> Everything above this note still describes the **comment** surface accurately and is
+> left standing rather than rewritten: a `REVIEW:PASS` comment remains unattributable,
+> which is exactly why ADR-033 §2.3 demotes it to an index and puts the record in a
+> signed in-repo artifact. The two bullets below are amended in place.
+
 Until one of them lands:
 
 - `baron merge check` is **owner-in-the-loop**: the merger runs it and reports; the human
-  performs the merge (or approves it).
+  performs the merge (or approves it). **Still true after ADR-033** — it closed the
+  evidence half, not the authority half (ADR-033 §5).
 - `--verdict-author <login>` exists and refuses verdicts from anyone else
   (`verdict_author_unverified`). It is *useless* under one shared account — every login
   matches — and becomes load-bearing only if option (1) above is ever taken. Shipping it now
   means that work would flip a flag rather than reopen the gate. It does **not** become
-  useful when ADR-027 lands.
+  useful when ADR-027 lands. **After ADR-033 it is the weaker of two overlapping
+  mechanisms**: it filters on a forge *login*, while the signed verdict attributes to a
+  *persona* — which is the thing that actually differs under one account.
 
 Anything else would be enforcement theater of the exact kind ADR-003 was written against:
 a mechanism whose refusal is real and whose *evidence* is forgeable by the party it
@@ -240,6 +249,20 @@ Rejected for an *action* surface. See §2.2.
    scheme. The second composes with what Barony actually built and keeps the record in git,
    which is the standing preference; neither is designed. This is the real blocker on an
    autonomous merger, and it is nobody's open item until it is somebody's.
+
+   > **SUPERSEDED BY [ADR-033](ADR-033-signed-review-verdicts.md) (2026-08-14).** It is
+   > somebody's. ADR-033 takes **route 2** — the reviewer SSH-signs an in-repo verdict
+   > artifact, and `baron merge check` gains a `verdict_signed` precondition that verifies
+   > it offline against `.barony/allowed_signers`, requiring a `reviewer`-archetype signer
+   > **distinct from the persona that signed the head commit**. Reviewer≠author becomes a
+   > property of the repo rather than a rule in a persona file.
+   >
+   > What that closes and what it does not: it closes the **evidence** half of the
+   > autonomous merger. It does **not** close the **authority** half — merging still means
+   > acting under the owner's token, which is the ambient-authority ground §5 rejected
+   > `baron merge do` over. `baron merge check` stays owner-in-the-loop. See ADR-033 §5,
+   > which exists because reading a green attribution check as permission is the specific
+   > mistake available at this moment.
 
 ## 8. Supersedes / Prior art
 

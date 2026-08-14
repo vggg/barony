@@ -6,6 +6,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — signed review verdicts: the merge gate proves WHO approved (plugin 1.17.0 / CLI 0.17.0, [ADR-033](docs/adr/ADR-033-signed-review-verdicts.md), **supersedes ADR-028 §7 Q4**)
+
+[ADR-028 §4](docs/adr/ADR-028-mechanized-merge-gate.md) recorded the hole in its own words: *baron
+can verify that a `REVIEW:PASS` exists at the current head. It **cannot verify who posted it**. The
+dev whose code is under review can post its own `REVIEW:PASS`, and the gate — correctly, given its
+inputs — returns exit 0.* A verdict was a PR comment: forge state, unsigned, under one shared login.
+
+The reviewer now **SSH-signs its verdict into the repo**, and the gate verifies that signature
+offline — the route ADR-028 §7 Q4 named and preferred, built on ADR-027 §2.3 with **no new key, no
+new registry and no new trust root**.
+
+```
+.barony/verdicts/pr-<n>-<sha12>.md        the verdict — canonical bytes
+.barony/verdicts/pr-<n>-<sha12>.md.sig    ssh-keygen -Y sign, namespace barony-verdict
+```
+
+- **`baron review sign --pr N --head <sha> --state PASS|FAIL --persona <slug>`** — writes and signs
+  the artifact with the reviewer's own enrolled key. Its first line is the **existing**
+  `REVIEW:PASS <40-hex>` contract (ADR-002 §4, ADR-008 §1), so one format is parsed everywhere.
+- **`baron review verify --pr N --head <sha>`** — the attribution check alone. No network.
+- **`baron merge check`** gains a **`verdict_signed`** precondition, scored right after
+  `verdict_at_head`, plus `--require-signed-verdict` and `--code-repo`.
+
+**Four legs, all fail-closed.** The signature verifies against `.barony/allowed_signers`; the
+**signed content** binds (repo, PR, sha) — re-derived from the content, never the filename, so a
+valid signature cannot be replayed onto another PR by copying the file; the signer is a
+`reviewer`-archetype persona (**a dev's key is a real enrolled key** — without this leg it produces
+a real verified verdict); and the signer is **not the persona that signed the head commit**
+(`%GS`, cryptographic — not the self-asserted git author field). **Reviewer≠author becomes a
+property of the repo**, checkable offline, rather than a rule in a persona file.
+
+**Posture — the ADR-027 §7.3 precedent, unchanged.** An *invalid* signature always refuses, in
+every posture. A *missing* one warns by default and refuses under `--require-signed-verdict`:
+turning absence into a refusal is a fleet-wide breaking change and should be signed, not defaulted.
+An unattested pass reports `UNATTRIBUTED` rather than rendering as a clean pass.
+
+**Honest bounds, in the ADR and in the command output.** This is attribution among *cooperating*
+agents — a hostile workspace holding the reviewer's key can still sign anything. It does not make a
+verdict *correct* (that is ADR-024's escape-rate axis). And it closes the **evidence** half of the
+autonomous merger, **not the authority half**: merging still means acting under the owner's token,
+so `baron merge check` stays owner-in-the-loop and there is still no `baron merge do`.
+
+The PR comment is **demoted to an index** (ADR-033 §2.3) — the same move ADR-008 §1 made for labels.
+`cli/tests/test_signed_verdict.py` (23 tests) drives real `ssh-keygen` and real git signing;
+`test_dev_cannot_sign_a_verdict_for_its_own_work` reproduces the ADR-028 §4 failure end-to-end with
+genuinely valid signatures throughout, and refuses it.
+
+### Added — `baron identity register|enroll|protect`: the ADR-027 runbook, mechanized (plugin 1.14.0 / CLI 0.14.0)
+
 ### Fixed — `baron export` at a coordination-monorepo root reported 0 records (plugin 1.16.0 / CLI 0.16.0, [ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md), ACCEPTED)
 
 Run at an ADR-025 monorepo root, `baron export` walked no project subdir and printed

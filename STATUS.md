@@ -26,6 +26,32 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+## Shipped (unreleased) — signed review verdicts (plugin 1.17.0 / CLI 0.17.0, [ADR-033](docs/adr/ADR-033-signed-review-verdicts.md), supersedes [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md) §7 Q4)
+
+The reviewer SSH-signs its verdict into `.barony/verdicts/`, and `baron merge check`'s new
+**`verdict_signed`** precondition verifies it offline against `.barony/allowed_signers`. Four legs:
+the signature verifies; the **signed content** binds (repo, PR, sha) so a valid signature cannot be
+replayed by copying the file; the signer is a `reviewer`-archetype persona; and the signer is **not
+the persona that signed the head commit**. **Reviewer≠author is now a property of the repo**, not a
+rule in a persona file.
+
+New: `baron review sign`, `baron review verify`, `--require-signed-verdict`, `--code-repo`. Built on
+ADR-027 §2.3 — no new key, no new registry, no new trust root. The PR comment is demoted to an index
+(the ADR-008 §1 move, one level up).
+
+Posture follows ADR-027 §7.3: an invalid signature always refuses; a missing one warns by default
+and refuses under `--require-signed-verdict`, because turning absence into a refusal is a fleet-wide
+breaking change that should be signed rather than defaulted.
+
+**What it does NOT do — the sentence most likely to be misread.** It closes the **evidence** half of
+the autonomous merger, not the **authority** half: merging still means acting under the owner's
+token, so `baron merge check` stays owner-in-the-loop and there is still no `baron merge do`
+(ADR-033 §5). Nor does it defend against a hostile workspace, or make a verdict *correct*.
+
+Tests: `cli/tests/test_signed_verdict.py` (23), real `ssh-keygen` + real git signing.
+
+## Shipped (unreleased) — identity onboarding commands (plugin 1.14.0 / CLI 0.14.0, [ADR-027 §7.5](docs/adr/ADR-027-agent-identity.md) amended)
+
 ## Shipped (unreleased) — identity onboarding commands (plugin 1.15.0 / CLI 0.15.0, [ADR-027 §7.5](docs/adr/ADR-027-agent-identity.md) amended)
 
 `baron identity register | enroll | protect` mechanize the three owner steps of
