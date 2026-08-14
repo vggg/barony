@@ -110,8 +110,11 @@ cli/                      # the baron CLI (ADR-003/004/006): init/add-project/va
                           # topology (baron/monorepo.py, ADR-025) + agent identity signing
                           # (baron/identity.py, ADR-027) + runtime hydrators (baron/runtimes/), the
                           # packaged capability-rules artifact + vendored templates (baron/data/,
-                          # synced by cli/scripts/sync_templates.py); pytest suite
+                          # synced by cli/scripts/sync_templates.py); the governed-memory
+                          # eval harness (baron/memeval.py, ADR-031); pytest suite
 legacy/                   # DEPRECATED v0.3 emit path (vault/, workspaces/, SKILL-v0.3.md)
+evals/
+  governed-memory/        # P3.3 labeled fixtures + corpus for `baron memeval` (ADR-031)
 docs/
   adr/                    # architecture decision records (ADR-001, ADR-002, ...)
   runbooks/               # OWNER procedures an agent cannot perform (account + ruleset settings)
@@ -187,6 +190,8 @@ See `CONTRIBUTING.md`. Key rule (post-2026-06-03): **documentation lands with co
 - `docs/adr/ADR-001-runtime-agnostic-multi-agent-bootstrap.md` — the accepted v1.0 architecture (and the full v0→v1 migration story)
 - `docs/adr/ADR-002-ways-of-working-2026-07.md` — the July-2026 ways-of-working folded in at v1.4
 - `docs/adr/ADR-008-ways-of-working-2026-07-31.md` — the 2026-07-31 pilot hardening folded in at v1.9 (verdict-vs-label; decision reconciliation)
+- `docs/adr/ADR-031-governed-memory-eval-harness.md` — `baron memeval`, the P3.3 gate on P3.4;
+  §4 is the honest bound, §5 lists what shipping it does NOT authorise
 - `docs/adr/ADR-016-externalizable-capability-rules.md` — the capability-rules rule-list representation + the `baron rules` surface; §5–§6 record why the project-level `.baron/rules.yaml` loader and project-defined verbs are deliberately NOT built
 - `docs/adr/ADR-027-agent-identity.md` — per-persona SSH signing keys enrolled in `.barony/allowed_signers`; agents still push under the OWNER's forge identity (attribution is the key, not an account). Supersedes ADR-026 §6 Q4. Owner setup: `docs/runbooks/identity-signing.md`
 - `AGENT-TASKS.md` — the ordered work queue (P1 → P2 → P3)

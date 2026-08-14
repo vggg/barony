@@ -10,8 +10,10 @@ the file and the exact commit whose content was read.
 **There is no knowledge backend here, and deliberately no plugin seam** — no
 entry-point group, no sink protocol, and no vendor named anywhere in this
 package. See `docs/adr/ADR-015-baron-export.md` §4: 3.4 is gated on 3.3 (the
-governed-memory evaluation harness), which does not exist, and a published
-entry-point group with no consumer is public API that cannot be retracted. The
+governed-memory evaluation harness — shipped 2026-08-14 as ``baron memeval``,
+ADR-031, which consumes this walk and has not yet been answered by a backend),
+and a published entry-point group with no consumer is public API that cannot be
+retracted. The
 export stands on its own — `baron export --json | jq` is useful today with no
 backend at all — and is the input either answer to the open owner decision
 would consume. The vendor evaluation, and the reason no adapter ships, live in

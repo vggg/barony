@@ -1,7 +1,7 @@
 ---
 name: barony
 description: Barony — scaffold or join a runtime-agnostic multi-agent software project. Use when the user wants to set up a new multi-agent project (personas, collab repo, conventions, coordination) or join an existing one — one runtime-neutral persona.yaml hydrates working personas on any AI coding agent (Claude Code, code-puppy, ...) via per-runtime adapters.
-version: 1.13.0
+version: 1.14.0
 created: 2026-05-22
 updated: 2026-08-14
 ---

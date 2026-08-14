@@ -521,6 +521,51 @@ and that is deliberate — see [ADR-015](../docs/adr/ADR-015-baron-export.md) §
 the sequencing argument and the open owner decision. Exit 0; exit 2 if the collab
 path is not a git repo with history (there is no provenance-free mode).
 
+### `baron memeval --fixtures <dir> [--k N] [--approach A]... [--json]` (P3.3, [ADR-031](../docs/adr/ADR-031-governed-memory-eval-harness.md))
+
+The governed-memory evaluation harness — the gate P3.4 has to pass. It
+materializes a labeled fixture corpus into a throwaway git repo, walks it with
+the same `baron export` producer above, and scores each approach on the metrics
+AGENT-TASKS.md 3.3 names.
+
+```bash
+baron memeval --fixtures evals/governed-memory
+baron memeval --fixtures evals/governed-memory --approach git-markdown --json | jq '.approaches[0].retrieval.per_query'
+```
+
+```
+corpus  22 citable record(s) at a034318b (adr=6, decision=6, finding=5, handoff=5)
+        skipped _handoff/2026-08-13-1700-tess-uncited-draft.md: uncommitted (1 record(s) not citable)
+        retrieval ceiling 84.4% — the share of gold answers any strategy could reach
+
+approach          prec   rec   dup schema  path  stat   R@5   MRR fresh  cite   tax
+git-markdown      66.7  75.0  50.0    0.0 100.0  50.0  76.0  81.2 100.0 100.0  33.3
+hooks            100.0 100.0 100.0  100.0 100.0 100.0  76.0  81.2 100.0 100.0   6.7
+semantic         NOT MEASURED — no 'semantic' retriever is registered ...
+hooks+semantic   NOT MEASURED — no 'semantic' retriever is registered ...
+```
+
+Columns, in order: propagation precision and recall, duplicate suppression,
+schema / path / status accuracy of the emitted note, Recall@k, MRR, freshness
+(does the *superseding* record outrank the superseded one), source-citation
+accuracy (`git show <sha>:<path>` resolves and reproduces), and human
+intervention tax (lower is better — the share of events a human has to touch).
+A metric with an empty denominator reports `n/a`, never a silent `0`.
+
+**It measures fixtures, not a live repository.** The bound is printed on the
+table and carried in the JSON as `honesty_bound`, so quoting the output cannot
+drop it. The fixture set — including the flagship 2026-08-04 identity case and
+the three fixtures that price the citation gate — is documented in
+[`evals/governed-memory/README.md`](../evals/governed-memory/README.md), and the
+limits of the `hooks` row (its rule table encodes the same policy the gold labels
+do) in [ADR-031](../docs/adr/ADR-031-governed-memory-eval-harness.md) §4.
+
+The two semantic approaches are **declared and unmeasured** — the seam is an
+in-process dict (`memeval.RETRIEVERS` / `register_retriever`), deliberately not
+an entry-point group, and this command estimates nothing it did not measure. No
+backend, no vendor, no new dependency ships with it; `cli/tests/test_memeval.py`
+asserts all four. Exit 0; exit 2 if the fixture set cannot be loaded or built.
+
 ### `baron guard --persona-file <persona.yaml>` (M4)
 
 Deterministic capability enforcement as a **Claude Code PreToolUse hook**

@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — `baron memeval`: the governed-memory evaluation harness (plugin 1.14.0 / CLI 0.14.0, P3.3, [ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md), PROPOSED)
+
+P3.4 says the default *"remains git+markdown until 3.3 shows material retrieval or scale
+benefit"* — a sentence that means nothing until 3.3 can produce a number the default can lose
+to. It can now. `baron memeval --fixtures evals/governed-memory` materializes a labeled
+fixture corpus into a throwaway git repo, walks it with the **existing** `baron export`
+producer (ADR-015 — the walker is consumed, not rebuilt), and scores each approach on every
+metric 3.3 names: propagation precision/recall, duplicate suppression, schema/path/status
+accuracy, Recall@k, MRR, source-citation accuracy, freshness/supersession, and human
+intervention tax. A metric with an empty denominator reports `n/a`, never a silent `0`.
+
+- **The fixture set covers 3.3's case list and asserts it** — routine commit, release,
+  accepted/proposed/parked/superseded ADR, thesis-changing finding, duplicate event, and
+  bad/missing source SHA. `evals/governed-memory/README.md` documents it.
+- **The flagship fixture is this repo's own 2026-08-04 identity incident**, and its numbers
+  are pinned by test. **Measured, and not the expected result:** the lexical baseline
+  retrieves every *in-corpus* gold record at rank 1. Its only miss is the survey note — which
+  `baron export` never walks. On this corpus the binding constraint is **coverage, not
+  ranking**, which is a different first move for 3.4 than "add embeddings".
+- **The citation gate now has a price.** One labeled query is unanswerable because its answer
+  sits in an uncommitted file: the gate working as designed, measured rather than assumed.
+- **Two of four approaches are measured; two are declared and left unmeasured.** The seam for
+  semantic retrieval is an in-process dict (`memeval.RETRIEVERS`), deliberately **not** an
+  entry-point group — ADR-015 §4's rule is not repealed by 3.3. Unavailable approaches print
+  `NOT MEASURED` with the reason and estimate nothing.
+- **Honest bound, carried in the output** (`honesty_bound` in the JSON, printed on the table):
+  this measures fixtures, not a live repository or a running fleet. ADR-031 §4 additionally
+  discounts the `hooks` row — its rule table encodes the same policy the gold labels do.
+- **Still not built, and asserted by test:** no knowledge backend, no `baron.knowledge`
+  entry-point group, no vendor named or run, no new runtime dependency (still typer + pyyaml).
+
+> Renumbered **028 → 031** at integration: the ADR was written against 028 on a parallel
+> branch, and 028 landed first as the mechanized merge gate. Recorded in `docs/adr/README.md
+> § Numbering` rather than silently renamed.
+
 ### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), PROPOSED)
 
 The fleet's first agent, and the one with no blast radius: it may **read everything** (handoffs,

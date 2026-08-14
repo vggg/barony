@@ -1,0 +1,299 @@
+# Governed-memory evaluation fixtures (AGENT-TASKS.md P3.3).
+#
+# Three sections, one file:
+#   build    — how to materialize corpus/ into a throwaway git repo, in commit
+#              order, including the two sources that deliberately cannot be cited
+#   queries  — labeled retrieval queries; `relevant` is the gold set, keyed
+#              `<kind>:<id>` exactly as `baron export` emits it
+#   events   — labeled propagation events with the gold outcome for each
+#
+# `relevant` may name records that are NOT in the exported corpus (the wiki note,
+# the uncommitted draft). That is deliberate: the gap between gold and reachable
+# gold is the corpus ceiling, and no retrieval strategy — lexical or semantic —
+# can cross it. Measuring it is the point.
+
+format: baron.memeval-fixtures/v1
+today: "2026-08-14"
+project: demo
+
+build:
+  commits:
+    - message: "tess: feat | collab repo topology (ADR-001)"
+      files:
+        - docs/adr/ADR-001-collab-repo-topology.md
+        - _handoff/archive/2026/2026-07-03-1200-tess-collab-repo-split.md
+    - message: "tess: docs | handoff schema v1 (ADR-002)"
+      files:
+        - docs/adr/ADR-002-handoff-schema.md
+    - message: "rex: docs | findings F1-F5"
+      files:
+        - findings/index.md
+    - message: "rex: docs | handoff schema v2 supersedes v1 (ADR-005)"
+      files:
+        - docs/adr/ADR-005-handoff-schema-v2.md
+    - message: "rex: release | v1.8.0"
+      files:
+        - _handoff/2026-08-02-1030-rex-release-v1-8-0.md
+    - message: "rex: docs | observation sinks proposed (ADR-003)"
+      files:
+        - docs/adr/ADR-003-observation-sinks.md
+    - message: "rex: docs | telemetry transport parked (ADR-004)"
+      files:
+        - docs/adr/ADR-004-otel-transport.md
+    - message: "tess: docs | agent identity spike handoff"
+      files:
+        - wiki/research-agent-identity-lightweight.md
+        - _handoff/2026-08-05-0900-tess-agent-identity-spike.md
+    - message: "rex: docs | duplicate identity question"
+      files:
+        - _handoff/2026-08-06-1400-rex-agent-identity-spike-again.md
+    - message: "vikram: docs | decisions D1-D6"
+      files:
+        - decisions/index.md
+        - _handoff/2026-08-11-0900-rex-sink-default-signed.md
+    - message: "vikram: feat | ADR-027 agent identity accepted"
+      files:
+        - docs/adr/ADR-027-agent-identity.md
+    - message: "rex: docs | note that will be edited after commit"
+      files:
+        - _handoff/2026-08-12-1100-rex-modified-note.md
+
+  # Committed, then edited in the working tree: `git show <sha>:<path>` resolves
+  # but returns text other than what was parsed. Skipped by the citation gate;
+  # emitted with `meta.dirty` under --allow-dirty.
+  modified:
+    - path: _handoff/2026-08-12-1100-rex-modified-note.md
+      append: "\nEdited after the commit, on purpose.\n"
+
+  # Written to disk and never added: the bad/missing source-SHA case. There is no
+  # commit to cite, so it is skipped under every flag.
+  uncommitted:
+    - _handoff/2026-08-13-1700-tess-uncited-draft.md
+
+  # Present in the tree but outside the four governed corpora `baron export`
+  # walks. Listed here only so the corpus ceiling has a name in the report.
+  out_of_corpus:
+    - wiki/research-agent-identity-lightweight.md
+
+queries:
+  - id: Q1-identity-flagship
+    text: "agent identity approach — SSH signing keys or personal access tokens (PATs)?"
+    note: >-
+      The flagship. Models the 2026-08-04 incident: the survey that answers this
+      lives in a wiki note outside the exported corpus, and the decision that
+      promotes it is an ADR inside it. A lexical baseline is scored on whether it
+      surfaces the in-corpus half; the out-of-corpus half is the ceiling.
+    relevant:
+      - "handoff:2026-08-05-0900-tess-agent-identity-spike"
+      - "adr:ADR-027"
+      - "finding:F4"
+      - "wiki:research-agent-identity-lightweight"
+
+  - id: Q2-identity-vocabulary-gap
+    text: "who actually wrote this commit, and can a stranger prove it from a clone?"
+    note: >-
+      Same subject as Q1 with none of its vocabulary. Deliberately hostile to term
+      overlap; this is the probe a semantic layer is supposed to win.
+    relevant:
+      - "adr:ADR-027"
+      - "finding:F4"
+      - "handoff:2026-08-06-1400-rex-agent-identity-spike-again"
+
+  - id: Q3-handoff-schema-freshness
+    text: "which fields does a handoff carry in its frontmatter?"
+    note: "Supersession probe — ADR-005 is current, ADR-002 is retired."
+    relevant:
+      - "adr:ADR-005"
+    stale:
+      - "adr:ADR-002"
+
+  - id: Q4-sink-default-status
+    text: "is the observation sink default decided, and by whom?"
+    note: "Supersession probe on the ledger — D6 corrects D4."
+    relevant:
+      - "decision:D6"
+      - "handoff:2026-08-11-0900-rex-sink-default-signed"
+    stale:
+      - "decision:D4"
+
+  - id: Q5-parked-transport
+    text: "why is the second telemetry transport not merged?"
+    relevant:
+      - "adr:ADR-004"
+      - "decision:D3"
+
+  - id: Q6-routine-finding
+    text: "why does the guard hook miss commands wrapped in bash -c?"
+    relevant:
+      - "finding:F1"
+
+  - id: Q7-release-contents
+    text: "what shipped in the v1.8.0 release?"
+    relevant:
+      - "handoff:2026-08-02-1030-rex-release-v1-8-0"
+      - "finding:F2"
+      - "finding:F5"
+
+  - id: Q8-uncited-answer
+    text: "what should gate enrolment of a persona signing key?"
+    note: >-
+      The answer exists on disk in a handoff that was never committed. The
+      citation gate excludes it, so reachable gold is empty and recall is 0 by
+      construction — the cost of the gate, made visible instead of assumed.
+    relevant:
+      - "handoff:2026-08-13-1700-tess-uncited-draft"
+
+events:
+  - id: E01
+    type: commit
+    subject: "dev: refactor | extract slugify helper into handoff.py"
+    source_sha: "aaaa111"
+    gold: {propagate: false}
+
+  - id: E02
+    type: commit
+    subject: "dev: test | add coverage for stale lock expiry"
+    source_sha: "aaaa112"
+    gold: {propagate: false}
+
+  - id: E03
+    type: release
+    ref: "v1.8.0"
+    subject: "release: v1.8.0 — lock expiry + export skip list"
+    source_sha: "aaaa113"
+    gold:
+      propagate: true
+      dest: tasks
+      priority: medium
+      path_glob: "_handoff/tasks/*.md"
+      schema: [created, from, for, status, priority, task-status]
+
+  - id: E04
+    type: adr
+    ref: "ADR-027"
+    status: accepted
+    subject: "vikram: feat | ADR-027 agent identity accepted"
+    source_sha: "aaaa114"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: high
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E05
+    type: adr
+    ref: "ADR-003"
+    status: proposed
+    subject: "rex: docs | observation sinks proposed (ADR-003)"
+    source_sha: "aaaa115"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: medium
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E06
+    type: adr
+    ref: "ADR-004"
+    status: parked
+    subject: "rex: docs | telemetry transport parked (ADR-004)"
+    source_sha: "aaaa116"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: low
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E07
+    type: adr
+    ref: "ADR-002"
+    status: superseded
+    subject: "rex: docs | handoff schema v2 supersedes v1 (ADR-005)"
+    source_sha: "aaaa117"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: medium
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E08
+    type: finding
+    ref: "F4"
+    thesis_changing: true
+    subject: "rex: docs | findings F1-F5"
+    source_sha: "aaaa118"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: high
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E09
+    type: finding
+    ref: "F1"
+    thesis_changing: false
+    subject: "rex: docs | guard misses bash -c re-entry"
+    source_sha: "aaaa119"
+    gold: {propagate: false}
+
+  - id: E10
+    type: adr
+    ref: "ADR-027"
+    status: accepted
+    subject: "the signing-key decision is in — recording it upstream"
+    source_sha: "aaaa120"
+    duplicate_of: E04
+    gold: {propagate: false}
+
+  - id: E11
+    type: release
+    ref: "v1.8.0"
+    subject: "shipped the eighth minor — telling the vault"
+    source_sha: "aaaa121"
+    duplicate_of: E03
+    gold: {propagate: false}
+
+  - id: E12
+    type: adr
+    ref: "ADR-027"
+    status: accepted
+    subject: "vikram: feat | ADR-027 agent identity accepted (re-report, no sha)"
+    source_sha: null
+    gold:
+      propagate: false
+      needs_human: true
+
+  - id: E13
+    type: decision
+    ref: "D6"
+    subject: "record that the sink default was chosen deliberately"
+    source_sha: "aaaa123"
+    gold:
+      propagate: true
+      dest: decisions
+      priority: medium
+      path_glob: "_handoff/decisions/*.md"
+      schema: [created, from, for, status, priority, decision, urgency]
+
+  - id: E14
+    type: commit
+    subject: "dev: docs | fix a typo in the release workflow section"
+    source_sha: "aaaa124"
+    gold: {propagate: false}
+
+  - id: E15
+    type: milestone
+    ref: "P1"
+    subject: "P1 pilot hardening complete"
+    source_sha: "aaaa125"
+    gold:
+      propagate: true
+      dest: tasks
+      priority: medium
+      path_glob: "_handoff/tasks/*.md"
+      schema: [created, from, for, status, priority, task-status]
