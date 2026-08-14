@@ -40,6 +40,11 @@ upward**, which is why the dogfood was worth doing at all.
 - **A nested `.github/` in a project subdir is reported inert.** GitHub resolves workflows
   from the repository root only, so a nested one fires never while reading like working CI.
   `init --layout monorepo`, `add-project` and `adopt-project` warn; none delete.
+- **The code-repo refusal reads consistently** (docs-only follow-up to the PR #43 review).
+  `cli/README.md` documented the standalone `init` refusal as the "itself" case alone, so
+  the nesting cases read as monorepo-only when the guard has always been shared; and the
+  refusal messages named the same directory twice per sentence ("an ANCESTOR of *the collab
+  repo* — the *coordination repo* would live inside…"). Both now use one name throughout.
 
 ### Added — `baron adopt-project <subdir>`: the monorepo migration path (ADR-025 §6)
 

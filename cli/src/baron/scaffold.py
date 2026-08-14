@@ -191,18 +191,18 @@ def _check_not_aliased(rel: str, root: Path, *, in_monorepo: bool) -> None:
     if target == boundary:
         raise ScaffoldError(
             f"--code-repo resolves to {what} itself ({rel!r} from {root.as_posix()}) — "
-            "a project's code repo must be a separate repo, not the coordination repo "
+            f"a project's code repo must be a separate repo, not {what} "
             "(pass a path outside it, or omit --code-repo)"
         )
     if _is_within(target, boundary):
         raise ScaffoldError(
             f"--code-repo resolves to {rel!r}, INSIDE {what} — that would nest a code "
-            "repo in the coordination repo and alias the two; keep the code repo outside it"
+            f"repo in {what} and alias the two; keep the code repo outside it"
         )
     if _is_within(boundary, target):
         raise ScaffoldError(
-            f"--code-repo resolves to {rel!r}, an ANCESTOR of {what} — the coordination "
-            "repo would live inside its own project's code repo; pass a sibling path instead"
+            f"--code-repo resolves to {rel!r}, an ANCESTOR of {what} — {what} would "
+            "live inside its own project's code repo; pass a sibling path instead"
         )
 
 

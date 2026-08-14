@@ -85,7 +85,9 @@ URL, recorded in `manifest.yaml` with a relative path + `workspace.worktrees_roo
 `autonomous-event`, `autonomous-cron`, `reviewer`, `merger`; a librarian is
 appended when missing), `--runtime claude|generic|pydantic-ai|code-puppy`,
 `--wake-allowed <slug>,...`, `--no-git`. Refuses a non-empty target directory,
-and a `--code-repo` that resolves to the collab repo itself.
+and a `--code-repo` that aliases the collab repo — whether it resolves to the
+collab repo itself, to a path inside it, or to an ancestor of it (which would
+nest the collab repo in its own project's code repo).
 
 `manifest.yaml` always carries a `notify:` block, empty unless `--wake-allowed`
 names personas. Empty still means **nobody may wake** — ADR-010 §5.5's
