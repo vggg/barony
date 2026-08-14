@@ -232,10 +232,25 @@ def test_enroll_never_plans_a_merge(tmp_path: Path, keys: Path) -> None:
     assert any("OWNER merges it" in n for n in plan.notes)
 
 
-def test_enroll_cli_has_no_merge_flag(tmp_path: Path) -> None:
-    out = runner.invoke(app, ["identity", "enroll", "--help"]).output
-    assert "--merge" not in out
-    assert "--apply" in out
+def _options(*path: str) -> dict[str, str]:
+    """{flag: help} for a command, by INTROSPECTION rather than by scraping --help.
+
+    Rendered help wraps and truncates at the terminal width, so an assertion over it
+    passes locally at 120 columns and fails in CI at 80 — testing the renderer, not the
+    interface. The parameter list is the interface.
+    """
+    import typer.main
+
+    cmd = typer.main.get_command(app)
+    for name in path:
+        cmd = cmd.commands[name]
+    return {opt: (p.help or "") for p in cmd.params for opt in p.opts}
+
+
+def test_enroll_cli_has_no_merge_flag() -> None:
+    opts = _options("identity", "enroll")
+    assert "--merge" not in opts
+    assert "--apply" in opts
 
 
 def test_enroll_warns_when_persona_yaml_is_missing(tmp_path: Path, keys: Path) -> None:
@@ -318,6 +333,7 @@ def test_apply_stops_at_the_first_failure(tmp_path: Path, keys: Path) -> None:
 def test_no_command_surface_accepts_a_token() -> None:
     """baron never handles a credential — the calls run under the operator's `gh auth`."""
     for action in ("register", "enroll", "protect"):
-        out = runner.invoke(app, ["identity", action, "--help"]).output
-        assert "--token" not in out
-        assert "never" in out.lower()
+        opts = _options("identity", action)
+        assert not any("token" in flag.lower() for flag in opts), action
+        # and every one of them says so where the operator reads it
+        assert "never" in opts["--apply"].lower(), action
