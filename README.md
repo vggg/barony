@@ -134,6 +134,38 @@ badminton-analyzer incident merged 15 PRs under a persona that was denied
 verifies **wiring, not invocation** (ADR-017), and a green doctor means
 "correctly wired", never "enforcement happened".
 
+### Running a portfolio: one coordination monorepo
+
+One collab repo per project is the default, and stays it — it is what buys
+multi-tenant isolation (different access per project) and an independent
+lifecycle. For a **single owner running several fleets** that default buys mostly
+repo sprawl and no cross-project view, so `--layout monorepo`
+([ADR-025](docs/adr/ADR-025-coordination-monorepo.md)) emits the other topology:
+one collab repo whose **projects are subdirs**, each with its own `manifest.yaml`,
+`agents/`, `_handoff/`, `decisions/`, `findings/` and `wiki/`.
+
+```bash
+baron init fleet-coordination --layout monorepo   # root + the `_meta` project
+cd fleet-coordination
+baron add-project gardenkit --code-repo ../gardenkit --personas dev:fern,librarian:iris
+baron add-project badminton --code-repo git@github.com:you/badminton.git
+
+baron status          # PORTFOLIO-wide: every project, then a portfolio total
+baron health          # same, rolled up
+baron validate .      # every project's specs in one pass
+cd gardenkit/         # inside a project, every command behaves exactly as above
+```
+
+`_meta/` is the portfolio project: no code repo, its work items are the
+cross-project decisions. The recursion is the point — the portfolio is a project
+that coordinates projects, governed by the same primitives one level up.
+
+What it costs, stated: access is all-or-nothing (a monorepo cannot grant
+per-project access), so this is a **mode**, not a replacement. Code repos stay
+separate and per-project; only the coordination substrate is unified. CI lives
+once at the root, and the wake (`repository_dispatch`) carries the project so the
+gate resolves the handoff inside that subdir and nothing else.
+
 The [user guide](docs/user-guide.md) walks all of that with real output,
 including a live guard denial and the failure modes. Full command reference:
 [`cli/README.md`](cli/README.md). The conversational setup path (an agent

@@ -35,6 +35,10 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [020](ADR-020-read-verb-posture-measured-on-four-adapters.md) | The read-verb posture label rests on four measured adapters | Accepted 2026-08-09 | **Supersedes** ADR-016 §4.1's round-3 correction. Implements owner decision D3. |
 | [021](ADR-021-audit-ingester-partitions-observation-rows.md) | baron's own evidence is not agent activity — the ingester partitions it out | Accepted 2026-08-09 | **Ports** ADR-014 §9.1 / `partition_guard_records`, re-measured against the merged producer. Implements the ingester half of D1. Scope is `skills/multi-agent-audit/` only. |
 | [022](ADR-022-substrate-invariant-amended-default-not-only.md) | git + markdown is the DEFAULT substrate — and governance state stays complete in git | **Accepted 2026-08-10** | **Amends product-vision invariant #1.** Scopes ADR-003 §2.2 and ADR-009 §3; resolves ADR-015 §4.1 and owner decision D2. No code change. |
+| [023](ADR-023-reserved-filenames.md) | The emitted config filenames are governed artifact types | Accepted 2026-08-12 | Names the emit-time filenames as artifacts with owners, not incidental strings. |
+| [024](ADR-024-fleet-health.md) | `baron health` — a fleet-health surface from the substrate, not a bespoke script | Accepted 2026-08-13 | Sits BESIDE `baron status` and calls into it. §5 states the honest bound: it measures what was emitted. Goes portfolio-wide under ADR-025. |
+| [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
+| [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
 
 ## Where the owner decisions landed
 

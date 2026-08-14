@@ -23,6 +23,14 @@ Loop safety (ADR-010 §5.1): the hop count lives in the substrate, not a payload
 ``parent + 1`` into the new one, copying ``wake_origin`` unchanged; wakes past
 ``--max-depth`` (default 2) are refused. The workflow gate reads the same committed
 frontmatter — see ``assets`` template ``baron-notify.yml``.
+
+Monorepo routing (ADR-025 §7 Q2): when the collab path is a project subdir of a
+coordination monorepo, the git side of all of the above — default branch, current
+branch, push — is the **root's**, because that is the git repo; and the payload gains
+``project`` so the root's gate can ``cd`` into the right subdir before resolving the
+handoff and the manifest. Everything else is unchanged, deliberately: the handoff is
+still read and written in the project, and the wake is still authorized against that
+project's committed evidence.
 """
 
 from __future__ import annotations
@@ -50,6 +58,7 @@ class NotifyResult:
     wake_depth: int
     wake_origin: str
     suppressed: str | None  # human-readable reason a wake did NOT fire, or None
+    project: str | None = None  # monorepo subdir this wake routes to (ADR-025), if any
 
 
 def _read_parent(collab: Path, stem: str) -> dict[str, str]:
@@ -118,9 +127,19 @@ def notify(
     )
     stem = path.stem
 
+    # --- 1b. which git repo, and which project? (ADR-025) ---
+    #
+    # In a monorepo the collab dir is a project SUBDIR: the branch/push checks below
+    # and the dispatch itself belong to the root, which is the actual git repo.
+    from . import monorepo as monorepo_mod
+
+    located = monorepo_mod.project_of(collab)
+    project = located[1].dir if located else None
+    git_root = located[0] if located else collab
+
     result = NotifyResult(
         handoff=path, delivered=True, woke=False,
-        wake_depth=depth, wake_origin=origin, suppressed=None,
+        wake_depth=depth, wake_origin=origin, suppressed=None, project=project,
     )
 
     # --- 2. decide whether a wake may fire, collecting the FIRST blocking reason ---
@@ -133,11 +152,11 @@ def notify(
     if forge is None or not supports(forge, "dispatch_event"):
         result.suppressed = "forge cannot dispatch_event (no forge / gh / plugin support)"
         return result
-    if not gitutil.is_git_repo(collab) or not gitutil.has_remote(collab, remote):
+    if not gitutil.is_git_repo(git_root) or not gitutil.has_remote(git_root, remote):
         result.suppressed = f"no git repo or no '{remote}' remote"
         return result
-    default = gitutil.default_branch(collab, remote)
-    current = gitutil.current_branch(collab)
+    default = gitutil.default_branch(git_root, remote)
+    current = gitutil.current_branch(git_root)
     if default is None:
         result.suppressed = "cannot determine the remote default branch"
         return result
@@ -154,7 +173,7 @@ def notify(
         return result
 
     # --- 3. push BEFORE dispatch; a rejection aborts (no force, no retry) ---
-    push = gitutil.git(collab, "push", remote, current, check=False)
+    push = gitutil.git(git_root, "push", remote, current, check=False)
     if push.returncode != 0:
         result.suppressed = (
             "push to the default branch was rejected — handoff is committed "
@@ -169,8 +188,12 @@ def notify(
         "from": from_,
         "wake_depth": depth,
     }
+    if project is not None:
+        # Routing only — the gate re-derives authorization from the committed
+        # handoff inside this subdir; the payload never grants anything.
+        payload["project"] = project
     try:
-        forge.dispatch_event(collab, event_type=DISPATCH_EVENT_TYPE, payload=payload)  # type: ignore[attr-defined]
+        forge.dispatch_event(git_root, event_type=DISPATCH_EVENT_TYPE, payload=payload)  # type: ignore[attr-defined]
     except Exception as exc:  # forge-specific errors degrade, never crash
         result.suppressed = f"dispatch failed (message delivered): {exc}"
         return result

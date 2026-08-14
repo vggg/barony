@@ -20,6 +20,13 @@ Beside each kit init emits ``agents/<slug>/sidecar.sh`` (ADR-026) — the person
 launcher: a thin wrapper over ``baron sidecar run`` whose only project-owned part
 is the runtime invocation. Kit = what the persona *is*; sidecar = how it is
 *deployed*.
+
+``in_monorepo=True`` emits the same project into a **subdir** of a coordination
+monorepo (ADR-025) instead of a repo of its own: the root owns git and
+``.github/``, so those are skipped here, and the paths that reach out of the
+project gain one level. Everything else is byte-identical — a monorepo subdir is
+an ordinary Barony project, which is what lets every other command ignore the
+distinction. See :mod:`baron.monorepo`.
 """
 
 from __future__ import annotations
@@ -146,6 +153,9 @@ class _Context:
     code_label: str  # display label for docs ("../gardenkit", a URL, or none-text)
     code_rel: str | None  # manifest-relative path to the code repo, if any
     code_remote: str | None
+    #: True when this project is a subdir of a coordination monorepo (ADR-025):
+    #: the root owns git and .github/, and the collab path gains one level.
+    in_monorepo: bool = False
 
     @property
     def identity_domain(self) -> str:
@@ -297,9 +307,12 @@ def _manifest(ctx: _Context) -> str:
             "    tier: auto              # auto | 2 | 3 (adapters/claude/HYDRATE.md)",
         ]
     if ctx.code_rel:
+        # In a monorepo the collab root is one level deeper, so the worktrees root
+        # stays a sibling of the MONOREPO — never a stray directory inside it.
+        up = "../../" if ctx.in_monorepo else "../"
         lines += [
             "workspace:",
-            f"  worktrees_root: ../{ctx.project}-worktrees  # `baron worktree add <slug>` targets this",
+            f"  worktrees_root: {up}{ctx.project}-worktrees  # `baron worktree add <slug>` targets this",
         ]
     return "\n".join(lines) + "\n"
 
@@ -735,6 +748,7 @@ def scaffold(
     personas: list[Persona],
     runtime: str = "claude",
     do_git: bool = True,
+    in_monorepo: bool = False,
 ) -> InitReport:
     if not _NAME_RE.match(project_name):
         raise ScaffoldError(
@@ -754,13 +768,16 @@ def scaffold(
     ctx = _Context(
         project=project_name,
         root=root,
-        collab_dir=root.name,
+        # In a monorepo the "collab repo" a runtime kit points back at is
+        # <monorepo>/<project>, so the kit's relative paths need both levels.
+        collab_dir=f"{root.parent.name}/{root.name}" if in_monorepo else root.name,
         date=clock.today().isoformat(),
         personas=personas,
         runtime=runtime,
         code_label=code_label,
         code_rel=code_rel,
         code_remote=code_remote,
+        in_monorepo=in_monorepo,
     )
     report = InitReport(root=root, personas=personas, runtime=runtime)
     created = report.created
@@ -804,15 +821,19 @@ def scaffold(
     copy("collab-repo/wiki/README.md", "wiki/README.md", docs)
     copy("collab-repo/wiki/index.md", "wiki/index.md", docs)
     write("wiki/log.md", _wiki_log(ctx))
-    copy("collab-repo/.github/workflows/lock-guard.yml", ".github/workflows/lock-guard.yml")
-    copy(
-        "collab-repo/.github/workflows/strip-stale-verdict.yml",
-        ".github/workflows/strip-stale-verdict.yml",
-    )
-    copy(
-        "collab-repo/.github/workflows/baron-notify.yml",
-        ".github/workflows/baron-notify.yml",
-    )
+    # CI is owned ONCE per git repo. In a monorepo that repo is the root, which
+    # already carries the three workflows (baron.monorepo.create_root) — emitting
+    # them again per subdir would give GitHub N copies of the same triggers.
+    if not in_monorepo:
+        copy("collab-repo/.github/workflows/lock-guard.yml", ".github/workflows/lock-guard.yml")
+        copy(
+            "collab-repo/.github/workflows/strip-stale-verdict.yml",
+            ".github/workflows/strip-stale-verdict.yml",
+        )
+        copy(
+            "collab-repo/.github/workflows/baron-notify.yml",
+            ".github/workflows/baron-notify.yml",
+        )
     # Runtime kits (deterministic floor; Tier-3 stays conversational — see module doc).
     for persona in personas:
         _emit_runtime_kit(root, persona, ctx, created)
