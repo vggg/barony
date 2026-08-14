@@ -40,6 +40,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [025](ADR-025-coordination-monorepo.md) | The coordination monorepo — projects as subdirs, the portfolio as a `_meta` project | Accepted 2026-08-13 | A **topology**, not a new tier: `baron init --layout monorepo` + `baron add-project`. Per-project-repo stays the default (§7 Q4). Extends ADR-006; routes the ADR-010 wake per subdir. |
 | [026](ADR-026-persona-sidecar.md) | The persona sidecar — a persona as a deployable unit | Accepted 2026-08-13 | `baron sidecar run` + an emitted `agents/<slug>/sidecar.sh`. ADR-007 holds: the runtime invocation stays project-owned. |
 | [027](ADR-027-agent-identity.md) | Agent identity — per-persona SSH signing keys enrolled in the repo | Accepted 2026-08-14 | Promotes the 2026-08-04 vault spike. `baron identity init` / `baron verify identity`; `.barony/allowed_signers` is the registry, CODEOWNERS the human gate. Agents still push under the OWNER's forge identity — attribution is the KEY. **Supersedes ADR-026 §6 Q4** and **ADR-011** (PR #32 — the same design, re-derived; closed as superseded, see §9). |
+| [028](ADR-028-mechanized-merge-gate.md) | `baron merge check` — the merge decision becomes a fail-closed gate | **Proposed** (2026-08-14) | Mechanizes ADR-002 §4 + ADR-008 §1/§3. Bounded by ADR-007 (checks, never merges) and by ADR-027 (§4 — the gate cannot attest *who* posted a verdict until identity lands). |
 
 ## Where the owner decisions landed
 

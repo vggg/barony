@@ -26,6 +26,35 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+## Shipped (unreleased) — the merge gate: `baron merge check` (CLI 0.11.0)
+
+[ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md). P1.3 hardened the `__MERGER__`
+templates in **prose**; this moves the checkable half into code. `baron merge check <pr>`
+scores four preconditions against one PR snapshot — `pr_open`, `verdict_at_head`
+(`reviewed-sha == head`, exact, never prefix-matched), `no_changes_requested`, `ci_green` —
+and exits 1 with the failing precondition, a stable reason slug and the sha it checked.
+Fail-closed with **no amber**: pending CI, absent CI, an all-skipped check set, an
+unrecognized check state, a missing verdict, an unreachable forge — all REFUSE; unreached
+preconditions are reported FAILED rather than skipped. Review-state **labels are collected
+and printed as ignored, never scored**, in both directions (ADR-008 §1). Wired into the
+`__MERGER__` persona template (`persona.yaml` + `AGENT.md`) and
+`COORDINATION.md § Review and merge`. 41 new tests: the pass path plus every refusal path.
+
+> **The bound, stated where it cannot be missed** (ADR-028 §4, and printed on every run).
+> The gate is identity-*independent* to build and test — it is pure preconditions. **Live
+> autonomous merging is not.** Under one shared forge account baron can verify that a
+> `REVIEW:PASS` exists at the current head but **cannot verify who posted it** — the dev
+> whose code is under review can post its own, and the gate correctly returns 0. So the
+> command **verifies and reports; it never merges** (there is no `baron merge do`, per
+> ADR-007), and merging stays **owner-in-the-loop** until per-persona forge identity
+> (ADR-027) is deployed. `--verdict-author <login>` ships now — useless under one account,
+> load-bearing the moment identities exist.
+>
+> Two of the merger's four preconditions remain unmechanized on purpose: **record
+> obligations** (needs a materiality judgement) and **hot-file collisions** (mechanizable —
+> the next increment; `baron lock list` is today's answer). Exit 0 means "1 and 2 hold",
+> never "merge it", and the command's own output says so.
+
 ## P1 — pilot hardening promoted into the canonical templates — COMPLETE (unreleased)
 
 The ordered queue is [`AGENT-TASKS.md`](AGENT-TASKS.md). `baron init` flows one-way

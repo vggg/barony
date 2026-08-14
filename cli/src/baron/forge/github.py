@@ -19,6 +19,31 @@ from ..gitutil import GitError, git
 from .base import ForgeError, ForgeUnavailable
 
 
+def _normalize_checks(rollup: object) -> list[dict[str, object]]:
+    """``statusCheckRollup`` -> ``[{name, state}]`` across both node shapes.
+
+    A CheckRun carries ``name`` + ``status``/``conclusion``; a legacy StatusContext
+    carries ``context`` + ``state``. An in-flight CheckRun has ``conclusion: ""``, so
+    the conclusion is used only once ``status`` is COMPLETED — reading it earlier
+    turns "still running" into an empty state the gate would have to guess at.
+    Unrecognized shapes keep whatever state they had (possibly ``""``) rather than
+    being dropped: ``baron merge`` refuses on an uninterpretable check, and dropping
+    it here would silently make that PR greener than it is.
+    """
+    out: list[dict[str, object]] = []
+    for node in rollup or []:
+        if not isinstance(node, dict):
+            continue
+        name = node.get("name") or node.get("context") or "?"
+        if "conclusion" in node or "status" in node:
+            status = str(node.get("status") or "").upper()
+            state = str(node.get("conclusion") or "") if status == "COMPLETED" else status
+        else:
+            state = str(node.get("state") or "")
+        out.append({"name": str(name), "state": state})
+    return out
+
+
 class GitHubForge:
     name = "github"
 
@@ -105,6 +130,42 @@ class GitHubForge:
             data["labels"] = [
                 lb.get("name") if isinstance(lb, dict) else lb for lb in labels
             ]
+        return data
+
+    def get_pr(
+        self, repo: Path, number: int, *, target_repo: str | None = None
+    ) -> dict[str, object]:
+        """ONE snapshot of a PR, normalized — the merge gate's only evidence.
+
+        Every field the gate scores comes from a single ``gh pr view`` so head sha,
+        verdict comments, labels and checks describe the same observed moment. Two
+        calls could straddle a push and produce a verdict that "matches" a head the
+        checks never ran on — precisely the stale-verdict merge this gate exists to
+        stop. ``target_repo`` is required in practice for a merger running in the
+        collab repo: without it ``gh`` answers about the collab repo's same-numbered
+        PR (the wrong-repo failure ``get_issue`` documents).
+
+        ``statusCheckRollup`` is by definition the rollup for the CURRENT head, and
+        it arrives in the same payload as ``headRefOid``.
+        """
+        args = [
+            "pr", "view", str(number),
+            "--json",
+            "number,state,isDraft,headRefOid,url,labels,reviewDecision,comments,statusCheckRollup",
+        ]
+        if target_repo:
+            args += ["--repo", target_repo]
+        data = json.loads(self._gh(repo, *args) or "{}")
+        if not isinstance(data, dict) or not data:
+            return {}
+        labels = data.get("labels")
+        if isinstance(labels, list):
+            data["labels"] = [
+                lb.get("name") if isinstance(lb, dict) else lb for lb in labels
+            ]
+        data["checks"] = _normalize_checks(data.pop("statusCheckRollup", None))
+        if target_repo:
+            data["repo"] = target_repo
         return data
 
     def dispatch_event(

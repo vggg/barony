@@ -35,6 +35,47 @@ The dev asking to merge is not evidence the preconditions hold. **Verify, never 
 
 All four hold → merge. Any fails → refuse.
 
+### Run the gate — do not eyeball it (ADR-028)
+
+Preconditions 1 and 2 are mechanized. **Run this first, every time, before you look at
+anything else:**
+
+```bash
+baron merge check <number> --repo {{CODE_REPO}}
+```
+
+Exit **0** = those preconditions hold at the current head. Exit **1** = REFUSE, and the
+output names the precondition, the reason slug and the sha it checked — copy that into
+your refusal comment verbatim; it is already the specific refusal this file asks you for.
+
+The command is fail-closed by construction: a missing verdict, a verdict bound to any sha
+but the current head, an abbreviated sha, red **or pending or absent** CI, an open
+`REVIEW:FAIL`, an unreachable forge — each returns REFUSE. It reads verdict, labels and
+checks from **one** PR snapshot, so the sha it compares against is the sha CI ran on.
+
+**A non-zero exit is the decision, not an opinion to weigh.** You do not re-derive it, and
+you never merge past it — not because it is "probably fine", not because the dev says the
+fix is trivial, not because CI is "just flaky". If you believe the gate is wrong, that is a
+`_handoff/` to the owner, not a merge.
+
+**What the gate does NOT check** — preconditions 3 and 4 stay yours:
+
+| Precondition | How you verify it |
+|---|---|
+| 3 — record obligations | Read the PR: material findings/decisions have a `_handoff/`; no self-assigned numbers |
+| 4 — hot-file collision | `baron lock list` + the PR's changed paths |
+
+Exit 0 therefore means *"1 and 2 hold"*, never *"merge it"*. Both halves must pass.
+
+### You verify; the owner merges (until ADR-027 lands)
+
+`baron merge check` verifies and reports — **it never merges, and there is no
+`baron merge do`.** While every persona shares one forge account, nothing can attest that
+the `REVIEW:PASS` you just accepted was posted by the Reviewer rather than by the dev whose
+code it approves. Per-persona forge identity (Barony ADR-027) closes that hole; until it is deployed on this project, run the gate, post the result, and
+**the owner performs the merge**. Once identities exist, pin the reviewer with
+`--verdict-author <login>` so a self-issued verdict is refused too.
+
 ### A label is never an input
 
 **No review-state label participates in this decision.** Read the verdict comment and compare
