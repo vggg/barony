@@ -8,6 +8,8 @@ Project-level decisions for {{PROJECT_NAME}}.
 
 **ADR pointers** — when an architectural decision meets the ADR trigger (per `COORDINATION.md § ADR rules`), the full ADR goes in the code repo at `docs/adr/ADR-NNN-slug.md`; this folder holds a pointer stub. Filename: `ADR-NNN-slug.md`.
 
+**`ADR-TEMPLATE.md`** — start every ADR from it. It carries the **Supersedes / Prior art** section that `baron adr check` requires before an ADR may be `status: accepted`; an accepted ADR without a populated block exits 1. Research notes and spikes are *inputs* — a decision is canonical only once promoted to an accepted record.
+
 ## Format — project decision
 
 ```markdown

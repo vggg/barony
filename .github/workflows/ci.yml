@@ -33,3 +33,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: baron test suite (schemas drift guard, stranding topology, ledger race)
         run: uv run --project cli pytest cli/tests
+      # ADR-029: the prior-art gate, run on this repo's OWN corpus. The rule is
+      # dogfooded or it is decoration — an accepted ADR here must carry the sweep
+      # it rests on, and this step is what makes that refusal unavoidable in the
+      # path that matters (the PR). Exit 1 blocks; pre-2026-08-14 records are exempt.
+      - name: Prior-art gate (baron adr check)
+        run: uv run --project cli baron adr check docs/adr
