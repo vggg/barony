@@ -102,6 +102,14 @@ strip-stale-verdict CI templates, and a per-persona **runtime kit** under
 | `generic`, `code-puppy` | Tier-1 `AGENTS.md` (instruction-only; code-puppy's documented fallback) |
 | `pydantic-ai` | `agent_setup.py` bootstrap (running it needs `barony[pydantic-ai]`) |
 
+Beside each kit, init emits the persona's **sidecar** —
+`agents/<slug>/sidecar.sh`, executable (ADR-026). The kit is what the persona
+*is*; the sidecar is how it is *deployed*: a thin launcher over
+`baron sidecar run` whose only project-owned part is the runtime invocation
+(pre-filled for `--runtime claude`, an empty fill-me slot elsewhere, always
+overridable with `$BARON_SIDECAR_CMD`). Its header renders the persona's
+`runtime.trigger`, which decides the loop form.
+
 The scaffold must pass `baron validate` with zero errors before init reports
 success; then `git init -b main` + a first commit of exactly the files written
 (never `git add -A`), unless `--no-git`. Dates come from the injectable clock.
@@ -611,6 +619,47 @@ only): a **human** runs them between turns; a **driver/CI** wraps them around a
 headless run; a **runtime adapter** may expose them as a capability/hook (a
 pydantic-ai capability, a Claude Code session hook, a cron driver). Barony ships
 only the runtime-neutral CLI — those wrappers are build-on-demand, not shipped.
+
+### `baron sidecar run <persona>` — the persona as a deployable unit (ADR-026)
+
+One **cycle** of a persona's work loop: sync → sweep → invoke → land. It is the
+generalised, emitted form of a hand-written fleet runner, and it composes the
+primitives above rather than adding machinery — `session start --sync` for the
+sync + sweep, `session end` for the bookkeeping commit.
+
+```bash
+baron sidecar run fern --collab . --dry-run          # plan + the brief, nothing else
+baron sidecar run fern --collab . --cmd "claude -p"  # one cycle
+baron sidecar run iris --collab . --watch --interval 900   # long-running (cron/event triggers)
+```
+
+1. **sync** — `git pull --ff-only` every manifest working copy.
+2. **sweep** — open `_handoff/` items addressed to this persona (or `all`) plus
+   unchecked backlog lines carrying its routing label (parked items excluded per
+   `backlog.park_label`). Nothing addressed and nothing labelled = **idle**: the
+   runtime is never invoked (`--force` overrides). A tracker-backed backlog is
+   the runtime's to read, and the report says so.
+3. **invoke** — run the runtime command **once**, with a work brief on stdin
+   (also at `$BARON_SIDECAR_BRIEF`; `{brief_file}` in the command is replaced by
+   that path). The brief puts LIVE review feedback ahead of new work — the
+   session-ritual ordering ADR-008 made load-bearing.
+4. **land** — `session end` bookkeeping, then a plain `git push` of the collab
+   repo. No force, no retry: a rejected push is a decision, not a race.
+
+**The command is yours.** `--cmd` / `$BARON_SIDECAR_CMD` / the emitted
+`sidecar.sh` supply it; a cycle without one is a usage error, never a default.
+baron syncs, sweeps, commits and pushes — it does not own the agent loop
+([ADR-007](../docs/adr/ADR-007-session-boundary.md)).
+
+Flags: `--collab`, `--cmd`, `--trigger interactive|event|cron` (override the
+persona spec), `--watch` + `--interval` + `--max-cycles`, `--timeout`,
+`--force`, `--no-push`, `--dry-run`, `--json`. Exit 0 green / 1 if the runtime
+failed / 2 on usage. `runtime.trigger` decides the loop form (ADR-026 §6 Q2):
+`interactive` is one-shot by hand and **refuses `--watch`** (that loop is the
+human's session), `event` is one-shot spawned by the wake
+(`baron notify` → `baron-notify.yml`), `cron` is scheduler-driven and may watch.
+A watching sidecar stays **stateless per task** — every cycle re-reads git as
+truth, which is what keeps audit-by-diff true (ADR-026 §4).
 
 ### `baron hydrate pydantic-ai --persona-file F [--out agent_setup.py]`
 

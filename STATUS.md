@@ -158,6 +158,26 @@ runtimes declared in `manifest.adapters` are checked; `--no-runtime-drift` opts 
 Verified both ways against real repos: reports exactly `terrence`/`carson` on the pilot, and
 a fresh `baron init` scaffold validates clean.
 
+## Shipped (unreleased) — the persona sidecar (ADR-026, launcher form)
+
+`baron sidecar run <persona>` plus a per-persona `agents/<slug>/sidecar.sh` emitted by
+`baron init` — [ADR-026](docs/adr/ADR-026-persona-sidecar.md)'s launcher half, which the owner
+chose over containers-first ("the cheap proof"). One cycle is sync → sweep → invoke → land,
+composed from `baron session start --sync` and `baron session end` rather than new machinery;
+the badminton `fleet-runner`, generalised and emitted.
+
+**Two things carried over from the hand-built runner deliberately.** The **idle guard** — no
+addressed handoff and no labelled backlog item means the runtime is never invoked — because the
+runner's cheapest win was not waking a model for nothing. And **the model invocation is the
+project's**: `--cmd` / `$BARON_SIDECAR_CMD` / the emitted script supply it, and a cycle without
+one is a usage error, never a default. ADR-007 is visible in the surface, not just the prose.
+
+`runtime.trigger` decides the loop form (§6 Q2): `interactive` refuses `--watch` (that loop is
+the human's session), `event` is spawned by the ADR-010 wake, `cron` is scheduler-driven or
+self-paced. A watching sidecar re-reads git as truth every cycle — stateless per task, so
+audit-by-diff survives a process that outlives one unit of work (§4). Containers stay deferred
+per the ADR; so do the per-persona signing keys the identity answer (§6 Q4) waits on.
+
 ## Shipped (unreleased) — P2.1 `baron decision` (park only, CLI 0.8.0)
 
 `baron decision reconcile --park` / `baron decision check`, per

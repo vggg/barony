@@ -121,6 +121,10 @@ baron worktree add fern                # ../gardenkit-worktrees/fern, branch per
 cp -R agents/fern/runtime/.claude   ../gardenkit/
 cp    agents/fern/runtime/CLAUDE.md ../gardenkit/
 baron doctor --dir ../gardenkit        # guard wiring self-test — exit 1 if the hook is missing
+
+# Deploy fern as a sidecar — sync, sweep her handoffs + labelled backlog, run one
+# unit of work, commit and push. `baron init` emitted the launcher (ADR-026):
+./agents/fern/sidecar.sh --dry-run     # the plan and the brief, nothing invoked
 ```
 
 Drop `--no-push` once the collab repo has an origin remote. **Generating a

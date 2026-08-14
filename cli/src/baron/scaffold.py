@@ -15,6 +15,11 @@ creation. Init's runtime kits are the deterministic floor: the Tier-2 persona
 ``CLAUDE.md`` + ``baron guard`` hook settings for claude, the Tier-1
 ``AGENTS.md`` for generic (and code-puppy, as its documented fallback), and the
 ``agent_setup.py`` bootstrap for pydantic-ai.
+
+Beside each kit init emits ``agents/<slug>/sidecar.sh`` (ADR-026) — the persona's
+launcher: a thin wrapper over ``baron sidecar run`` whose only project-owned part
+is the runtime invocation. Kit = what the persona *is*; sidecar = how it is
+*deployed*.
 """
 
 from __future__ import annotations
@@ -645,6 +650,48 @@ def _context_file(persona: Persona, ctx: _Context, data: dict, *, tier2: bool) -
     return "\n\n".join(lines) + "\n"
 
 
+#: The runtime invocation each emitted sidecar defaults to (ADR-026). Empty means
+#: "fill the PROJECT-OWNED SLOT": baron knows of no headless one-shot invocation for
+#: that runtime, and inventing one would be a launcher that fails at 3am, not a
+#: turnkey deployable. The slot is always overridable with $BARON_SIDECAR_CMD.
+_SIDECAR_RUNTIME_CMD: dict[str, str] = {
+    "claude": (
+        "claude -p --permission-mode acceptEdits "
+        "--allowedTools Bash,Read,Grep,Glob,Write,Edit"
+    ),
+    "code-puppy": "",
+    "pydantic-ai": "",
+    "generic": "",
+}
+
+
+def _sidecar_script(persona: Persona, ctx: _Context, data: dict) -> str:
+    """``agents/<slug>/sidecar.sh`` — the persona's launcher (ADR-026).
+
+    A thin wrapper over ``baron sidecar run``: baron owns sync/sweep/commit/push,
+    the script owns the runtime invocation, because the model loop is the
+    runtime's (ADR-007). ``runtime.trigger`` from the persona spec decides the
+    loop form (ADR-026 §6 Q2) and is rendered into the header.
+    """
+    runtime_block = data.get("runtime")
+    trigger = "interactive"
+    if isinstance(runtime_block, dict) and runtime_block.get("trigger"):
+        trigger = str(runtime_block["trigger"])
+    return _fill(
+        read_template("collab-repo/agents/__SIDECAR__/sidecar.sh"),
+        {
+            "PERSONA_NAME": persona.name,
+            "PERSONA_SLUG": persona.slug,
+            "PROJECT_NAME": ctx.project,
+            "DATE": ctx.date,
+            "RUNTIME": ctx.runtime,
+            "TRIGGER": trigger,
+            "RUNTIME_CMD": _SIDECAR_RUNTIME_CMD.get(ctx.runtime, ""),
+        },
+        where="collab-repo/agents/__SIDECAR__/sidecar.sh",
+    )
+
+
 def _emit_runtime_kit(root: Path, persona: Persona, ctx: _Context, created: list[str]) -> None:
     kit = root / "agents" / persona.slug / "runtime"
     data = _persona_data(root, persona)
@@ -668,6 +715,13 @@ def _emit_runtime_kit(root: Path, persona: Persona, ctx: _Context, created: list
         )
     else:  # generic, code-puppy (Tier-1 fallback per its HYDRATE.md)
         write("AGENTS.md", _context_file(persona, ctx, data, tier2=False))
+
+    # The sidecar sits BESIDE the kit it launches (agents/<slug>/sidecar.sh):
+    # kit = what the persona is, sidecar = how it is deployed (ADR-026).
+    script = kit.parent / "sidecar.sh"
+    script.write_text(_sidecar_script(persona, ctx, data), encoding="utf-8")
+    script.chmod(0o755)
+    created.append(script.relative_to(root).as_posix())
 
 
 # --- the scaffold ----------------------------------------------------------------------
