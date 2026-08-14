@@ -26,6 +26,7 @@ from . import (
     indexer,
     ledger,
     lock as lock_mod,
+    memeval as memeval_mod,
     merge as merge_mod,
     monorepo as monorepo_mod,
     notify as notify_mod,
@@ -1538,6 +1539,77 @@ def export(
             )
     else:
         typer.echo(export_mod.render_table(result))
+    raise typer.Exit(0)
+
+
+# --- P3.3: governed-memory evaluation harness -----------------------------------------
+
+
+@app.command()
+def memeval(
+    fixtures: Path = typer.Option(
+        ...,
+        "--fixtures",
+        help="Directory holding fixtures.yaml and corpus/ (e.g. evals/governed-memory).",
+    ),
+    workdir: Optional[Path] = typer.Option(
+        None,
+        "--workdir",
+        help="Where to materialize the fixture repo. Default: a temporary directory, removed after.",
+    ),
+    k: int = typer.Option(memeval_mod.DEFAULT_K, "--k", help="Cutoff for Recall@k."),
+    approach: Optional[list[str]] = typer.Option(
+        None,
+        "--approach",
+        help=(
+            "Restrict to one or more approaches (repeatable): "
+            + " | ".join(a.name for a in memeval_mod.APPROACHES)
+            + ". Default: all four."
+        ),
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Score governed-memory approaches against a labeled fixture corpus (P3.3).
+
+    Materializes the fixture corpus into a throwaway git repository, runs the
+    same `baron export` walk over it that any real collab repo gets, and scores
+    each approach on propagation precision/recall, duplicate suppression,
+    schema/path/status accuracy, Recall@k, MRR, freshness (supersession),
+    source-citation accuracy, and human intervention tax.
+
+    **This measures fixtures, not a live repository.** It is a comparison
+    instrument for choosing a knowledge backend (AGENT-TASKS.md 3.4) on measured
+    numbers rather than a guess; a number here is a statement about the fixture
+    set and nothing else. Approaches needing a retriever nobody has registered
+    report `NOT MEASURED` rather than an estimate — no backend, no vendor and no
+    plugin seam ships with this command
+    ([ADR-031](../docs/adr/ADR-031-governed-memory-eval-harness.md)).
+
+    Exit 0; exit 2 if the fixture set cannot be loaded or materialized.
+    """
+    import tempfile
+
+    temp: Optional[str] = None
+    try:
+        if workdir is None:
+            temp = tempfile.mkdtemp(prefix="baron-memeval-")
+            target = Path(temp) / "corpus"
+        else:
+            target = workdir
+        try:
+            report = memeval_mod.run(fixtures, target, k=k, approaches=approach or None)
+        except memeval_mod.MemevalError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2)
+        if json_out:
+            _echo_json(report.to_dict())
+        else:
+            typer.echo(memeval_mod.render(report))
+    finally:
+        if temp:
+            import shutil as _shutil
+
+            _shutil.rmtree(temp, ignore_errors=True)
     raise typer.Exit(0)
 
 

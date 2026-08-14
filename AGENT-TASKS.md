@@ -115,6 +115,17 @@ with the owner before large builds: `…/probe-findings-to-capabilities.md`.*
   accepted/proposed/parked/superseded ADR, thesis-changing finding, duplicate event, and bad/missing
   source-SHA cases. Separate from 3.2: fleet health measures the team; this measures durable project
   knowledge.
+  - **SHIPPED 2026-08-14 ([ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md)):**
+    `baron memeval --fixtures evals/governed-memory`. Labeled fixtures cover the full case
+    list (asserted by test), all eight metric families are computed, and two of the four
+    approaches are **measured** — `git-markdown` and `hooks`. The two semantic approaches are
+    declared and report `NOT MEASURED`; the seam is an in-process dict, deliberately not an
+    entry-point group. Numbers and honest bounds in `STATUS.md`.
+  - **The gate result 3.4 has to act on:** on the flagship fixture the lexical baseline
+    retrieves every *in-corpus* gold record at rank 1 and misses only a document
+    `baron export` does not walk. On this corpus the constraint is **coverage, not ranking** —
+    so widen the export (curated status, research notes outside the four corpora) before
+    reaching for embeddings, and expect a semantic layer over the same records to win little.
 - [ ] **3.4 — Pluggable knowledge substrate + Cognee spike** — define the backend contract first,
   then evaluate Cognee both as (a) a rebuildable semantic projection over git+markdown and (b) a
   candidate authoritative knowledge source where its durability, concurrency, provenance, export,

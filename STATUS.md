@@ -26,6 +26,45 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+## Shipped (unreleased) — P3.3 `baron memeval`: the governed-memory eval harness (plugin 1.14.0 / CLI 0.14.0)
+
+[ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md). `baron memeval --fixtures
+evals/governed-memory` materializes a labeled corpus into a throwaway git repo, walks it with
+the **existing** `baron export` producer, and scores each approach on all eight metric families
+3.3 names. The fixture set covers 3.3's case list (routine commit, release,
+accepted/proposed/parked/superseded ADR, thesis-changing finding, duplicate event,
+bad/missing source SHA) and a test fails if a case goes missing. No new dependency.
+
+**Baseline numbers, 22 citable records, k=5** — measured, reproducible, and *on fixtures*:
+
+| approach | prop. P / R | dup suppr. | schema / path / status | R@5 | MRR | fresh | cite | tax |
+|---|---|---|---|---|---|---|---|---|
+| `git-markdown` | 66.7 / 75.0 | 50.0 | 0.0 / 100 / 50.0 | 76.0 | 81.2 | 100 | 100 | 33.3 |
+| `hooks` | 100 / 100 | 100 | 100 / 100 / 100 | 76.0 | 81.2 | 100 | 100 | 6.7 |
+| `semantic`, `hooks+semantic` | **NOT MEASURED** — no retriever registered; the harness estimates nothing it did not measure | | | | | | | |
+
+**The finding, and it is not the expected one.** On the flagship fixture — this repo's own
+2026-08-04 identity incident — the lexical baseline retrieves **every in-corpus gold record,
+first at rank 1**. Its only miss is the survey note, which `baron export` never walks. The
+binding constraint on this corpus is **coverage, not ranking**, which argues 3.4's first move
+is widening what gets exported (curated status; research notes outside the four corpora)
+rather than adding embeddings to the same 22 records. A second measured cost: one labeled
+query is unanswerable because its answer sits in an uncommitted file — the ADR-015 citation
+gate, priced instead of assumed.
+
+**Honest bounds** (ADR-031 §4, and printed in the output as `honesty_bound`): this measures
+fixtures, not a live repository or a running fleet. The `hooks` row is partly definitional —
+its rule table mechanizes the same policy the gold labels come from, so read its duplicate
+suppression and bad-SHA columns and discount the rest. 22 records is a small corpus and small
+corpora flatter literal search; the vocabulary-mismatch probe (Q2) failed to defeat term
+overlap and is reported as measured rather than corrected by rewriting the corpus. No latency
+or scale metric is collected, so 3.4's "or scale benefit" clause is untouched.
+
+**Still deliberately not built, asserted by test:** no knowledge backend, no `baron.knowledge`
+entry-point group, no vendor named or run, no new runtime dependency. The seam for the two
+semantic approaches is an in-process dict (`memeval.RETRIEVERS`), not an entry-point group —
+ADR-015 §4's rule is not repealed by shipping 3.3.
+
 ## Shipped (unreleased) — the prior-art gate: `baron adr check` (plugin 1.12.0 / CLI 0.12.0, [ADR-029](docs/adr/ADR-029-prior-art-gate.md))
 
 **Accepted 2026-08-14.** Barony's own thesis (*instructed → enforced*) applied to its own
@@ -134,7 +173,8 @@ verified by byte-equality (`git show <sha>:<path>` vs disk, 0 mismatches). No ne
 still typer + pyyaml.
 
 **Deliberately not shipped:** the backend contract interface, a `baron.knowledge` entry-point
-group, and any semantic-memory adapter — 3.4 is gated on 3.3 (which does not exist), and an
+group, and any semantic-memory adapter — 3.4 is gated on 3.3 (**shipped 2026-08-14**, ADR-031;
+the gate now exists and 3.4 has to pass it), and an
 entry-point group with no consumer is unretractable public API (ADR-015 §4). **Nothing about
 the candidate vendor was run** — public docs read, no ingest, no retrieval, no measurement.
 

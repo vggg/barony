@@ -43,6 +43,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [028](ADR-028-mechanized-merge-gate.md) | `baron merge check` — the merge decision becomes a fail-closed gate | **Proposed** (2026-08-14) | Mechanizes ADR-002 §4 + ADR-008 §1/§3. Bounded by ADR-007 (checks, never merges). §4 **corrected at integration**: ADR-027 (SSH signing) does **not** unblock the autonomous merger — it attributes commits, and a verdict is a PR comment. §7 Q4 carries the real blocker. |
 | [029](ADR-029-prior-art-gate.md) | The prior-art gate — one canonical home, and a recorded sweep before acceptance | Accepted 2026-08-14 | Joins the ways-of-working family (002 → 008 → 023). Extends ADR-009 / the `CONVENTIONS.md` decision-intake rule one step earlier. Mechanized by `baron adr check`, which gates **this directory in CI**. |
 | [030](ADR-030-observer-archetype.md) | The `observer` archetype — a strictly read-only watcher with one zone | **Proposed** (2026-08-14) | Sixth shipped archetype. Deploys per ADR-026; reads the ADR-013 plane and ADR-024 health; read-only-ness rests on the write side because ADR-020 makes the read verbs `instructed`. 027/028 are claimed by in-flight PRs #47/#46. |
+| [031](ADR-031-governed-memory-eval-harness.md) | The governed-memory evaluation harness — measure first, then choose a backend | **Proposed** (2026-08-14) | `baron memeval` over labeled fixtures; P3.3, the gate on P3.4. Consumes ADR-015's walker. §4 states the honest bound (fixtures, not a live audit); §5 lists what it does NOT authorise. Renumbered 028 → 031 at integration: 028 landed as the merge gate. |
 
 ## Where the owner decisions landed
 
@@ -68,10 +69,14 @@ ADR numbers are never reused. Two are absent from this directory on purpose:
   neither citing the other. PR #32 is closed; ADR-011 was never merged and its number is not
   reused. **This is the exact failure ADR-029 exists to catch**, and it is recorded here
   rather than quietly dropped.
-- Anyone opening a new ADR should start at **030** — and **check the branches, not just this
+- Anyone opening a new ADR should start at **032** — and **check the branches, not just this
   directory**: a number free here may already be taken in flight. The 011/027 re-derivation
   is the reason that sentence is in this file. `baron adr check` gates the *records*; it
   cannot see a number claimed on a branch.
+- **028** was claimed twice in flight. It landed as the mechanized merge gate; the
+  governed-memory eval harness, written against 028 on a parallel branch, renumbered to
+  **031** at integration. Same failure mode as 011/027, caught earlier and costing only a
+  rename. The in-flight collision remains a fixture in `evals/governed-memory/`.
 - Three workstreams of the ops-plane consolidation each independently wrote an `ADR-018`.
   The number stayed with `harden/d1-semantics` because ADR-019 was already written against
   it by number; the other two were renumbered **020** and **021**. Only identifiers changed
