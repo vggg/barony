@@ -10,7 +10,7 @@
 # a surviving approval label on a PR whose head had already moved past the verdict.
 persona: {{PERSONA_NAME}}
 slug: {{PERSONA_SLUG}}
-archetype: dev
+archetype: merger
 identity:
   git_name: {{PERSONA_NAME}}
   git_email: {{PERSONA_SLUG}}@{{IDENTITY_DOMAIN}}

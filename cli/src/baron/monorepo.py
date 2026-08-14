@@ -253,6 +253,23 @@ def create_root(root: Path, name: str, *, date: str) -> list[str]:
     return created
 
 
+def inert_github_dirs(root: Path) -> list[str]:
+    """Project subdirs carrying a `.github/` — inert, because only the root's runs.
+
+    GitHub resolves workflows from `.github/workflows/` at the REPOSITORY root and
+    nowhere else, so a `.github/` inside a project subdir is dead weight: it looks
+    like CI to every human reading the subdir and fires never. It is not an error
+    — an adopted standalone collab repo brings one with it by construction — so
+    this reports rather than refuses.
+
+    Scanned across every subdir holding a manifest.yaml (registered or not): an
+    unregistered subdir's inert CI misleads exactly as much as a registered one's.
+    """
+    listed = {p.dir for p in load(root).projects}
+    candidates = sorted(listed | set(_discover(root)))
+    return [d for d in candidates if (root / d / ".github").is_dir()]
+
+
 def add_project(
     root: Path,
     dir_name: str,
@@ -261,6 +278,7 @@ def add_project(
     code_repo: str | None = None,
     personas: list[Persona],
     runtime: str = "claude",
+    wake_allowed: list[str] | None = None,
 ) -> tuple[ProjectRef, list[str]]:
     """Graft a project subdir into an existing monorepo root.
 
@@ -287,6 +305,7 @@ def add_project(
         runtime=runtime,
         do_git=False,
         in_monorepo=True,
+        wake_allowed=wake_allowed,
     )
     ref = ProjectRef(dir_name, name)
     register(root, ref)
@@ -297,6 +316,85 @@ def add_project(
     )
     created = [f"{dir_name}/{rel}" for rel in report.created] + [MARKER, "README.md"]
     return ref, created
+
+
+def adopt_project(
+    root: Path, dir_name: str, *, project_name: str | None = None
+) -> tuple[ProjectRef, list[str]]:
+    """Register an ALREADY-PRESENT collab-repo subdir as a project of this monorepo.
+
+    The migration path ``add_project`` cannot be (it scaffolds, and refuses a
+    non-empty target): a collab repo that already exists — with its own history,
+    personas and ledgers — becomes a project of the portfolio.
+
+    **Placing the directory is git's job, not baron's.** Preserving history across
+    the graft is `git subtree add --prefix=<dir> <remote> <branch>`; a plain `mv`
+    is right when history does not matter. Wrapping either in baron would be baron
+    guessing which one the owner meant and re-implementing git badly. So this
+    command starts where git leaves off: the subdir is here, make it a project.
+
+    What it does: verify the subdir is a plausible collab repo (a manifest), refuse
+    the same cases ``add_project`` refuses, cross-check the manifest's project name
+    against ``--project-name``, register it, and re-render the root README. What it
+    deliberately does NOT do: rewrite the adopted manifest, delete its ``.github/``
+    (reported inert by :func:`inert_github_dirs`; deleting other people's CI is not
+    a registration side effect), or touch its git history.
+    """
+    repo = load(root)  # refuses cleanly when root is not a monorepo
+    if "/" in dir_name or dir_name in {".", ".."} or dir_name.startswith("."):
+        raise MonorepoError(
+            f"project subdir {dir_name!r} must be a plain directory name under the root"
+        )
+    if any(p.dir == dir_name for p in repo.projects):
+        raise MonorepoError(f"project {dir_name!r} is already registered in this monorepo")
+    dest = root / dir_name
+    if not dest.is_dir():
+        raise MonorepoError(
+            f"{dest} does not exist — adopt registers a collab repo that is ALREADY a "
+            "subdir here. Put it in place first (`git subtree add --prefix="
+            f"{dir_name} <remote> <branch>` to keep its history, or `mv` if you do "
+            f"not need it), then re-run. To scaffold a NEW project use `baron add-project "
+            f"{dir_name}`."
+        )
+    manifest_path = dest / "manifest.yaml"
+    if not manifest_path.is_file():
+        raise MonorepoError(
+            f"{dest} has no manifest.yaml — it is not a collab repo, so there is no "
+            "project to adopt (a directory of loose files is not a Barony project)"
+        )
+    if (dest / ".git").exists():
+        raise MonorepoError(
+            f"{dest}/.git exists — the subdir is still its own git repo, which the "
+            "monorepo root cannot track. Graft it with `git subtree add` (keeps "
+            "history) or remove the nested .git after copying the files in."
+        )
+    try:
+        data = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise MonorepoError(f"{manifest_path}: YAML parse error: {exc}") from exc
+    if not isinstance(data, dict):
+        raise MonorepoError(f"{manifest_path}: manifest is not a mapping")
+    declared = str(((data.get("project") or {}) if isinstance(data.get("project"), dict) else {}).get("name") or "")
+    # The manifest is the adopted repo's own truth — baron reads it, never rewrites
+    # it. A conflicting --project-name is the owner contradicting a file they own,
+    # so say which two values disagree rather than silently picking one.
+    if project_name and declared and project_name != declared:
+        raise MonorepoError(
+            f"--project-name {project_name!r} contradicts {manifest_path.name}'s "
+            f"project.name {declared!r} — edit the manifest, or drop the flag to "
+            "adopt it under its declared name"
+        )
+    name = project_name or declared or dir_name
+    ref = ProjectRef(dir_name, name)
+    register(root, ref)
+    (root / "README.md").write_text(
+        _root_readme(root.name, load(root).projects, clock.today().isoformat()),
+        encoding="utf-8",
+    )
+    # The adopted subdir is untracked at the root until this commit stages it —
+    # registering a project whose files the monorepo does not track would leave
+    # `git status` permanently dirty and the next `baron status` permanently warn.
+    return ref, [MARKER, "README.md", dir_name]
 
 
 # --- portfolio-wide reads ---------------------------------------------------------------
@@ -454,7 +552,9 @@ __all__ = [
     "ProjectRef",
     "ScaffoldError",
     "add_project",
+    "adopt_project",
     "collect_health",
+    "inert_github_dirs",
     "collect_status",
     "create_root",
     "find_root",

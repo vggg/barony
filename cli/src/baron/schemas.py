@@ -50,7 +50,20 @@ PARAMETRIC_VERBS: frozenset[str] = frozenset({"write_path"})
 #: Named convenience scopes for write_path (data, not vocabulary — any str is legal).
 WRITE_PATH_SCOPES: tuple[str, ...] = ("findings", "_handoff", "wiki", "decisions")
 
-ARCHETYPES: tuple[str, ...] = ("dev", "librarian", "autonomous-event", "autonomous-cron")
+#: `reviewer` and `merger` are dev-SHAPED (same hydration mechanics, a narrower
+#: capability set) but they are not `dev`. Recording them as `dev` — which the
+#: templates did until 2026-08-14 — throws away the one field that says which
+#: archetype a persona was hydrated from, so a scaffolded roster read back as
+#: three indistinguishable devs. The enum is warning-severity (schemas.py §
+#: open-vocabulary note), so naming them costs no downstream compatibility.
+ARCHETYPES: tuple[str, ...] = (
+    "dev",
+    "librarian",
+    "reviewer",
+    "merger",
+    "autonomous-event",
+    "autonomous-cron",
+)
 RITUAL_TOKENS: tuple[str, ...] = (
     "sync_repos",
     "read_conventions",

@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — ADR-025 hardening from the first real coordination monorepo (CLI 0.9.0, [ADR-025 §6](docs/adr/ADR-025-coordination-monorepo.md))
+
+Standing up `fleet-coordination` as a real coordination monorepo — Barony grafted
+in as its first non-`_meta` project — found two defects that made the topology
+unusable and four more that made it unpleasant. Both criticals **failed silently
+upward**, which is why the dogfood was worth doing at all.
+
+- **`baron add-project --code-repo` no longer aliases the coordination repo.** A git
+  URL names no local path, so baron assumes the conventional sibling clone — and the
+  sibling of a monorepo *subdir* is one level further up. Emitting `../<name>` pointed
+  at the project subdir itself; every path existed inside a git work tree, so `baron
+  status` reported the code repo **green** with nothing cloned. The assumed sibling is
+  now re-based for the nesting level, and any `--code-repo` resolving to the
+  coordination repo, inside it, or containing it is **refused** — a code repo is a
+  separate repo, so aliasing is never a valid spelling. (A refusal now also happens
+  before the target directory is created, so a rejected graft leaves nothing behind.)
+- **`manifest.yaml` always carries a `notify:` block** — `add-project` emitted none, so
+  `wake_allowed` was empty and a grafted project could never be woken. Fail-closed stays
+  the contract (ADR-010 §5.5), but *absent* and *empty* are not the same thing to a
+  reader: absent gives you nothing to search for. Emitted always, empty-with-instructions,
+  from the emitter `init` and `add-project` share — so standalone `baron init` gains it too.
+  New **`--wake-allowed <slug>,...`** on both commands scaffolds a working wake loop in one
+  flag, and rejects a slug that is not a persona of the project (the gate matches the
+  handoff's `from:`, so an unknown name could never fire).
+- **`baron status` dirt is path-scoped per project.** `git status --porcelain` reports the
+  whole work tree wherever it runs, so one uncommitted file made every project dirty —
+  `_meta` was flagged for an edit to `barony/manifest.yaml`.
+- **`reviewer` and `merger` are first-class archetypes.** Both templates hard-coded
+  `archetype: dev`, so a scaffolded roster read back as indistinguishable devs. They stay
+  dev-*shaped* (same hydration mechanics, narrower capabilities); dev-shaped is not the same
+  claim as `dev`. Enum severity is unchanged (warning), so nothing downstream breaks.
+- **A nested `.github/` in a project subdir is reported inert.** GitHub resolves workflows
+  from the repository root only, so a nested one fires never while reading like working CI.
+  `init --layout monorepo`, `add-project` and `adopt-project` warn; none delete.
+
+### Added — `baron adopt-project <subdir>`: the monorepo migration path (ADR-025 §6)
+
+`add-project` scaffolds and refuses a non-empty target, so an existing collab repo — with
+its own history, personas and ledgers — had no way into a monorepo short of hand-editing
+the marker. `adopt-project` registers one that is **already a subdir**: verify it is a
+collab repo, read its project name from its own manifest (never rewrite it), register it,
+re-render the root README, commit.
+
+Placing the directory stays **git's** job — `git subtree add --prefix=<dir>` keeps history,
+`mv` does not, and choosing is the owner's call. Wrapping either would be baron guessing
+which was meant and re-implementing git badly. It refuses a subdir that is still its own
+git repo, one with no `manifest.yaml`, a duplicate, a path rather than a plain name, and a
+`--project-name` contradicting the manifest. It deliberately does not delete the adopted
+`.github/` or re-base its `repos[].path` — both are reported instead.
+
+**Deferred to its own PR:** persona-name collisions across projects in one monorepo clone
+(ADR-025 §6.7). The fix spans the persona spec, all four adapters and the drift checker —
+"how does persona registration become project-local" is an ADR, not a patch to
+`add-project`. Workaround meanwhile: per-project slugs (`--personas dev:fern,librarian:iris`).
+
+
 ### Added — the coordination monorepo: `baron init --layout monorepo` + `baron add-project` ([ADR-025](docs/adr/ADR-025-coordination-monorepo.md))
 
 A second **topology**, not a new abstraction. `baron init` emits one collab repo per
