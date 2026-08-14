@@ -22,7 +22,7 @@ related:
 | **Decision owner** | Vikram |
 | **Mechanizes** | [ADR-002](ADR-002-ways-of-working-2026-07.md) §4 (the Merger's preconditions) and [ADR-008](ADR-008-ways-of-working-2026-07-31.md) §1/§3 (verdict-not-label; strip-stale-verdict) |
 | **Constrained by** | [ADR-007](ADR-007-session-boundary.md) — baron provides the governed check; the runtime decides to invoke it |
-| **Blocked by, for the autonomous case** | **ADR-027** — per-persona forge identity (written in parallel; not on this branch, so it is referenced by number rather than linked) |
+| **Blocked by, for the autonomous case** | Per-persona **forge** identity — which [ADR-027](ADR-027-agent-identity.md) deliberately does **not** provide. See §4, corrected. |
 
 ## 1. Summary
 
@@ -136,29 +136,54 @@ Exit 0 therefore means *"preconditions 1 and 2 hold"*, never *"merge it"*. Stati
 plainly is the point: a gate that quietly covers half of what its name suggests is worse than
 one that covers half and says so.
 
-## 4. The honest bound — live autonomous merging is gated on ADR-027
+## 4. The honest bound — live autonomous merging is NOT unblocked by ADR-027
+
+> **Corrected 2026-08-14, at queue integration.** This section was drafted against an earlier
+> ADR-027 that proposed **per-persona forge credentials** (machine accounts / PATs). That
+> design was rejected; the accepted [ADR-027](ADR-027-agent-identity.md) is **SSH commit
+> signing**, and it introduces **no forge credential anywhere** (its §4.8 rules machine
+> accounts and PATs out as the attribution mechanism, and its §3 states plainly that nothing
+> in it is an authorization mechanism). The claim that ADR-027 unblocks the autonomous merger
+> was therefore **wrong**, and is withdrawn rather than quietly reworded.
 
 **The gate logic is identity-independent to build and to test.** It is pure preconditions
 over a PR snapshot; the test suite exercises the pass path and every refusal path with
-fixtures and a fake forge, and none of it needs a credential.
+fixtures and a fake forge, and none of it needs a credential. That part is unchanged.
 
-**Deploying it as an autonomous merger is not.** Under the single shared forge account
-(ADR-027 §1), every persona is the same login. So:
+**Deploying it as an autonomous merger is not — and stays blocked after ADR-027 ships.**
+Every persona still pushes and comments under one shared forge login. So:
 
 > baron can verify that a `REVIEW:PASS` exists at the current head. It **cannot verify who
 > posted it.** The dev whose code is under review can post its own `REVIEW:PASS`, and the
 > gate — correctly, given its inputs — returns exit 0.
 
-That is not a defect in the gate; it is the missing identity layer showing through it, and it
-is why ADR-027's *Unblocks* line names the autonomous merge-only agent. Until per-persona
-forge identity is deployed on a project:
+**Why ADR-027 does not close this.** ADR-027 attributes **commits, tags, handoffs and
+findings** — artifacts that live in git and can carry a signature verified against
+`.barony/allowed_signers`. A `REVIEW:PASS` verdict is a **PR comment**: forge state, not repo
+state, with no signature and no per-persona login behind it. The two do not meet. ADR-027
+makes the *code* under review attributable; it leaves the *verdict on* that code exactly as
+self-asserted as it is today.
+
+Closing it needs one of two things, neither of which is decided and neither of which this ADR
+or ADR-027 does — recorded as §7 Q4:
+
+1. **per-persona forge identity** (machine accounts, Apps, or the platform's own review API
+   with distinct logins) — the heavyweight authorization question ADR-027 §4.8 explicitly
+   left live *on its own merits*; or
+2. **moving the verdict into the substrate** — a signed verdict artifact in-repo under
+   ADR-027 §2.3's detached-signature scheme, which the gate would verify instead of trusting
+   a comment. This is the option that composes with what ADR-027 actually built, and it is
+   not designed anywhere yet.
+
+Until one of them lands:
 
 - `baron merge check` is **owner-in-the-loop**: the merger runs it and reports; the human
   performs the merge (or approves it).
 - `--verdict-author <login>` exists and refuses verdicts from anyone else
   (`verdict_author_unverified`). It is *useless* under one shared account — every login
-  matches — and becomes load-bearing the moment identities exist. Shipping it now means the
-  identity work flips a flag rather than reopening the gate.
+  matches — and becomes load-bearing only if option (1) above is ever taken. Shipping it now
+  means that work would flip a flag rather than reopen the gate. It does **not** become
+  useful when ADR-027 lands.
 
 Anything else would be enforcement theater of the exact kind ADR-003 was written against:
 a mechanism whose refusal is real and whose *evidence* is forgeable by the party it
@@ -178,8 +203,9 @@ it cannot see.
 
 **`baron merge do` — mechanize the merge itself.** Rejected for now on two grounds. ADR-007:
 baron provides the governed check, the runtime decides to invoke it. And §4: performing an
-autonomous merge under the owner's token is exactly the ambient-authority problem ADR-027
-exists to fix. Reconsider once identity ships — the gate is already the hard half.
+autonomous merge under the owner's token is exactly the ambient-authority problem. Note that
+ADR-027 does **not** fix it (§4): it attributes artifacts, it does not scope authority.
+Reconsider once §7 Q4 is answered — the gate is already the hard half.
 
 **Three states (discharged / outstanding / unverifiable), as `baron decision check` uses.**
 Rejected for an *action* surface. See §2.2.
@@ -198,12 +224,76 @@ Rejected for an *action* surface. See §2.2.
 
 ## 7. Open questions for the owner
 
-1. **Should `baron merge do` exist once ADR-027 lands**, or does the merge stay a runtime
-   action that calls the check (ADR-007's line)? This ADR assumes the latter and does not
-   foreclose the former.
+1. **Should `baron merge do` ever exist**, or does the merge stay a runtime action that
+   calls the check (ADR-007's line)? This ADR assumes the latter and does not foreclose the
+   former. The trigger is no longer "once ADR-027 lands" — see §4 and Q4.
 2. **Should precondition 4 fold into this command** (`baron merge check` cross-referencing
    `baron lock list` against the PR's changed paths), or stay a separate call the persona
    composes?
-3. **Should `--verdict-author` default to the manifest's reviewer persona** once identities
-   exist, rather than staying opt-in? Defaulting would make the strongest form the automatic
-   one, at the cost of breaking projects whose reviewer slug and forge login differ.
+3. **Should `--verdict-author` default to the manifest's reviewer persona** if per-persona
+   forge logins ever exist, rather than staying opt-in? Defaulting would make the strongest
+   form the automatic one, at the cost of breaking projects whose reviewer slug and forge
+   login differ.
+4. **How does a verdict become attributable at all?** §4 names two candidate routes —
+   per-persona forge identity (the authorization question ADR-027 §4.8 left live), or a
+   **signed verdict artifact in-repo** verified under ADR-027 §2.3's detached-signature
+   scheme. The second composes with what Barony actually built and keeps the record in git,
+   which is the standing preference; neither is designed. This is the real blocker on an
+   autonomous merger, and it is nobody's open item until it is somebody's.
+
+## 8. Supersedes / Prior art
+
+The sweep this ADR records under **ADR-029** (the prior-art gate — on another branch at the
+time of writing, referenced by number). Recorded **retrospectively**, at the queue
+integration on 2026-08-14, and it earned its keep immediately: it is what surfaced that §4's
+central claim was written against a **rejected** ADR-027 and was false. That correction is
+marked inline in §4 rather than silently reworded.
+
+This ADR is `status: proposed`, so the gate treats it as **exempt** rather than gated. The
+block is written anyway — the sweep either happened or it did not, and an ADR that acquires
+its prior art only at the moment someone accepts it has the discipline backwards.
+
+<!-- BEGIN BARON PRIOR-ART -->
+searched:
+  - corpus: repo-adr
+    location: docs/adr
+    query: "merge gate, merger preconditions, verdict at head, stale verdict, fail-closed, required check"
+    date: 2026-08-14
+  - corpus: repo-decisions
+    location: docs/, STATUS.md, AGENT-TASKS.md, CHANGELOG.md, open PRs on vggg/barony
+    query: "merge_pr, merger persona, FM4, review verdict, label vs verdict"
+    date: 2026-08-14
+  - corpus: vault
+    location: /Users/vikram/Obsidian/Brain
+    query: "merge gate, autonomous merger, review verdict, agent identity for merge"
+    date: 2026-08-14
+hits:
+  - ref: docs/adr/ADR-008-ways-of-working-2026-07-31.md
+    disposition: cites
+    note: >-
+      §1 (verdict-not-label) and §3 (strip-stale-verdict) are the rules this mechanizes.
+      §2.3 and §2.4 are those two rules turned into evaluated preconditions.
+  - ref: docs/adr/ADR-002-ways-of-working-2026-07.md
+    disposition: cites
+    note: §4 specifies the Merger's four preconditions; this mechanizes two of them and §3 says which.
+  - ref: docs/adr/ADR-009-baron-decision-reconciliation.md
+    disposition: distinct
+    note: >-
+      also a fail-or-report gate over governance state, but deliberately three-state
+      (discharged / outstanding / unverifiable). Distinct because that is a report and this
+      is an action — §2.2 records the departure and argues it rather than inheriting it.
+  - ref: docs/adr/ADR-027-agent-identity.md
+    disposition: cites
+    note: >-
+      §4's identity bound. NOTE the correction: the ADR-027 this section originally cited
+      was a rejected forge-credential design. The accepted ADR-027 (SSH signing) does NOT
+      unblock the autonomous merger — §4 and §7 Q4 carry the corrected claim.
+  - ref: docs/adr/ADR-007-session-boundary.md
+    disposition: cites
+    note: the reason there is no `baron merge do` — baron provides the check, the runtime invokes it.
+  - ref: docs/adr/ADR-017-baron-doctor-wiring-selftest.md
+    disposition: distinct
+    note: >-
+      also verifies-and-refuses rather than acting, but over local enforcement wiring rather
+      than a forge PR snapshot. No shared surface; noted because a reader may expect one.
+<!-- END BARON PRIOR-ART -->

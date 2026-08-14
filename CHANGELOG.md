@@ -41,6 +41,16 @@ was **persona prose**, the same enforcement tier FM4 watched a persona override 
   `forge/base.py` rule); the `__MERGER__` template, `COORDINATION.md § Review and merge`
   and `cli/README.md` carry the wiring.
 
+**Correction made at queue integration (2026-08-14).** ADR-028 §4 was drafted against an
+earlier, *rejected* ADR-027 that proposed per-persona **forge credentials**, and claimed that
+ADR-027 would unblock autonomous merging. The accepted ADR-027 is **SSH commit signing** and
+introduces no forge credential at all — so the claim was false and is **withdrawn in §4**, not
+reworded. The gap is real and now stated: ADR-027 attributes *commits*, a `REVIEW:PASS` is a
+*PR comment*, and the two do not meet. `--verdict-author` therefore does **not** become useful
+when ADR-027 lands. New ADR-028 §7 Q4 records the two candidate routes (per-persona forge
+identity, or a signed in-repo verdict artifact under ADR-027 §2.3) and that neither is
+designed. `baron merge check` stays owner-in-the-loop, which is what it already shipped as.
+
 ### Added — agent identity: per-persona SSH signing keys, enrolled in the repo (plugin 1.11.0 / CLI 0.10.0, [ADR-027](docs/adr/ADR-027-agent-identity.md))
 
 On **2026-08-04** an un-onboarded Codex agent committed to `main` **under the owner's git
