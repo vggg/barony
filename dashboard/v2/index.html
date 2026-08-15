@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Barony Review — Fleet Report</title>
+<meta name="description" content="An analyst-style report on a fleet of AI coding agents governed through git.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9819;</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script type="module">
+import { loadFleet, fmt, tone, el, renderError } from '../assets/fleet.js';
+
+const app = document.getElementById('app');
+
+// Declared as hoisted functions, not consts: render() runs at module top level.
+function tag(text, t) {
+  return el('span', { class: `tag ${t || 'plain'}` }, text);
+}
+
+function section(title, meta, ...body) {
+  return el('section', {},
+    el('div', { class: 'sec-head' }, el('h2', {}, title), meta && el('span', { class: 'meta' }, meta)),
+    ...body);
+}
+
+function table(head, rows) {
+  return el('table', {},
+    el('thead', {}, el('tr', {}, head.map((h) =>
+      el('th', { class: h.startsWith('>') ? 'r' : '' }, h.replace(/^>/, ''))))),
+    el('tbody', {}, rows));
+}
+
+try {
+  render(await loadFleet());
+} catch (err) {
+  renderError(app, err);
+}
+
+function render(d) {
+  const D = d.derived;
+
+  /* ---------------------------------------------------------- masthead */
+  app.append(
+    el('header', { class: 'masthead' },
+      el('div', { class: 'kicker' }, 'Barony · Fleet Report'),
+      el('h1', {}, 'Governing a fleet of ', el('em', {}, 'agents'), ' with nothing but git.'),
+      el('p', { class: 'standfirst' },
+        'A standing report on ', String(d.kpis.agents), ' registered agent personas across ',
+        String(d.kpis.projects), ' projects — read live from the coordination repository by ',
+        el('code', {}, 'baron'), '. No figure on this page was typed by hand.')),
+    el('div', { class: 'dateline' },
+      el('span', { class: 'live' }, el('span', { class: 'dot-live' }), 'Live snapshot'),
+      el('span', {}, fmt.when(d.generated_at)),
+      el('span', {}, d.generator.baron_version),
+      el('span', {}, d.portfolio.layout + ' layout')));
+
+  /* ------------------------------------------------------------- lede */
+  app.append(
+    el('div', { class: 'lede' },
+      el('h2', {}, 'What the board says'),
+      el('div', { class: 'src' }, 'Derived from the committed snapshot — not a language-model opinion'),
+      el('ol', {}, D.observerSummary.map((s) =>
+        el('li', { class: s.tone === 'muted' ? 'quiet' : '' }, s.text)))));
+
+  /* --------------------------------------------------------- figures */
+  app.append(
+    section('By the numbers', null,
+      el('div', { class: 'figures' },
+        D.kpis.map((k) =>
+          el('div', { class: `figure ${k.tone === 'accent' ? '' : k.tone}` },
+            el('div', { class: 'v' }, fmt.int(k.value)),
+            el('div', { class: 'l' }, k.label))))));
+
+  /* -------------------------------------------------------- portfolio */
+  app.append(
+    section('The portfolio', `${d.portfolio.projects} projects · ${d.kpis.open_handoffs} open handoffs`,
+      table(['Project', 'Composition', '>State'],
+        d.projects_detail.map((p) => {
+          const kinds = Object.entries(p.records.by_kind || {});
+          return el('tr', {},
+            el('td', {}, el('div', { class: 't' }, p.name)),
+            el('td', {},
+              `${p.agents} agents · ${p.records.total} records · ${p.open_handoffs} open handoffs`,
+              kinds.length && el('div', { class: 's' }, kinds.map(([k, v]) => `${v} ${k}`).join(' · '))),
+            el('td', { class: 'r' }, el('div', { class: 'tags' },
+              p.red ? tag(`${p.red} red`, 'bad') : null,
+              p.warn ? tag(`${p.warn} warn`, 'warn') : null,
+              !p.red && !p.warn ? tag('clean', 'good') : null)));
+        }))));
+
+  /* ------------------------------------------------------ merge queue */
+  app.append(
+    section('The merge queue', `${D.greenPRs} green · ${D.conflicted} conflicting`,
+      d.merge_queue.length
+        ? table(['#', 'Pull request', '>Checks', '>Merge'],
+            d.merge_queue.map((p) =>
+              el('tr', {},
+                el('td', { class: 'num' }, `#${p.number}`),
+                el('td', {},
+                  el('div', { class: 't' }, el('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.title)),
+                  el('div', { class: 's' }, `${p.branch} · opened ${fmt.age(p.age_days)}`)),
+                el('td', { class: 'r' }, tag(p.checks, tone('checks', p.checks))),
+                el('td', { class: 'r' }, tag((p.mergeable || 'unknown').toLowerCase(), tone('mergeable', p.mergeable)))))
+          )
+        : el('p', { class: 'empty' }, 'No open pull requests.')));
+
+  /* ----------------------------------------------------- fleet health */
+  app.append(
+    section('Fleet health', d.health.coverage.measured ? 'attributed' : 'coverage-limited',
+      el('div', { class: 'metrics' },
+        d.health.metrics.map((m) =>
+          el('div', { class: 'metric' },
+            el('div', { class: 'm-l' }, m.label),
+            el('div', { class: `m-v ${m.measured ? '' : 'na'}` }, fmt.metric(m)),
+            el('div', { class: 'm-b' }, m.basis),
+            m.note && el('div', { class: 'm-n' }, m.note)))),
+      el('div', { class: 'caveat' },
+        el('strong', {}, d.health.coverage.measured ? 'Coverage' : 'Coverage caveat'),
+        d.health.coverage.note)));
+
+  /* ------------------------------------------- agents + owner actions */
+  app.append(
+    el('div', { class: 'two' },
+      section('Agents & identity', `${d.agents.length} registered`,
+        table(['Persona', '>Powers'],
+          d.agents.map((a) =>
+            el('tr', {},
+              el('td', {},
+                el('div', { class: 't' }, `${a.persona} · ${a.project}`),
+                el('div', { class: 's' }, `${a.archetype} · ${a.git_email}`)),
+              el('td', { class: 'r' }, el('div', { class: 'tags' },
+                a.holds_merge_pr ? tag('merge_pr', 'warn') : null,
+                a.can_write_code ? tag('write_code', 'good') : null,
+                tag(`${a.deny.length} denied`, 'plain')))))),
+        el('div', { class: 'caveat' },
+          el('strong', {}, `Commit signing — ${d.identity.signing.label}`),
+          d.identity.signing.note)),
+
+      section('Owner action queue', `${d.owner_actions.length} items`,
+        d.owner_actions.length
+          ? table(['Item', '>Kind'],
+              d.owner_actions.map((a) =>
+                el('tr', {},
+                  el('td', {},
+                    el('div', { class: 't' }, a.url
+                      ? el('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.summary)
+                      : a.summary),
+                    el('div', { class: 's' }, a.detail)),
+                  el('td', { class: 'r' }, tag(a.kind, a.severity === 'action' ? 'bad' : 'warn')))))
+          : el('p', { class: 'empty' }, 'Nothing awaiting the owner.'))));
+
+  /* --------------------------------------------------------- observer */
+  app.append(
+    section('Observer flags', d.observer.active ? 'active' : d.observer.label,
+      d.observer.flags.length
+        ? el('div', { class: 'tags', style: 'justify-content:flex-start' },
+            d.observer.flags.map((f) => tag(f, 'warn')))
+        : el('div', { class: 'caveat' }, el('strong', {}, 'No watcher running'), d.observer.note)));
+
+  /* ----------------------------------------------------------- footer */
+  app.append(
+    el('footer', { class: 'foot' },
+      el('div', {}, 'Regenerate with ', el('code', {}, 'dashboard/build-data.sh'), ' · ',
+        el('a', { href: 'https://github.com/vggg/barony' }, 'github.com/vggg/barony')),
+      el('div', { class: 'switch' },
+        el('a', { href: '../' }, 'Index'),
+        el('a', { href: '../v1/' }, 'v1 Calm'),
+        el('a', { href: '../v2/', class: 'on' }, 'v2 Editorial'),
+        el('a', { href: '../v3/' }, 'v3 Ops'))));
+}
+</script>
+</body>
+</html>

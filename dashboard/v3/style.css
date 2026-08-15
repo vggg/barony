@@ -1,0 +1,171 @@
+/* v3 — "Ops wall". Dense, dark, monospace. Built for a monitor nobody sits at.
+ *
+ * Different lever again: maximum information per square inch. Everything is
+ * monospace and tabular so columns align down the wall; panels are small and
+ * many; sparklines carry distribution. Readable from across a room, so type is
+ * small but high-contrast and status colour is saturated.
+ */
+
+:root {
+  --bg: #06080b;
+  --panel: #0c1015;
+  --panel-2: #11161d;
+  --line: #1c232d;
+  --line-hot: #263040;
+
+  --text: #dfe6ef;
+  --dim: #7d8899;
+  --mute: #55606f;
+
+  --accent: #22d3ee;                      /* terminal cyan */
+  --accent-wash: rgba(34, 211, 238, 0.1);
+  --good: #4ade80;
+  --warn: #fbbf24;
+  --bad: #fb7185;
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+
+.wrap { max-width: 1800px; margin: 0 auto; padding: 14px 16px 40px; }
+
+/* ------------------------------------------------------------------- bar */
+
+.topbar {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  border: 1px solid var(--line); background: var(--panel);
+  padding: 9px 14px; margin-bottom: 10px;
+}
+.topbar .logo {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--accent);
+}
+.topbar .sep { width: 1px; height: 15px; background: var(--line-hot); }
+.topbar .kv { color: var(--mute); font-size: 11px; letter-spacing: 0.03em; }
+.topbar .kv b { color: var(--dim); font-weight: 500; }
+.topbar .spacer { flex: 1; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: var(--good); font-size: 11px; letter-spacing: 0.06em; }
+.live .d { width: 6px; height: 6px; background: var(--good); border-radius: 50%; box-shadow: 0 0 0 0 rgba(74,222,128,0.6); animation: blip 2.4s ease-out infinite; }
+@keyframes blip { 0% { box-shadow: 0 0 0 0 rgba(74,222,128,0.55);} 70%,100% { box-shadow: 0 0 0 7px rgba(74,222,128,0);} }
+@media (prefers-reduced-motion: reduce) { .live .d { animation: none; } }
+
+/* ----------------------------------------------------------------- grid */
+
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
+.c2 { grid-column: span 2; } .c3 { grid-column: span 3; } .c4 { grid-column: span 4; }
+.c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; }
+.c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+@media (max-width: 1400px) { .c3 { grid-column: span 4; } .c5, .c7 { grid-column: span 6; } }
+@media (max-width: 1000px) { .c2, .c3, .c4, .c5, .c6, .c7, .c8 { grid-column: span 12; } }
+
+.p { border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+.p-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+}
+.p-h h2 {
+  margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--dim);
+}
+.p-h .m { font-size: 10px; color: var(--mute); letter-spacing: 0.05em; }
+.p-b { padding: 9px 10px; flex: 1; }
+.p-b.flush { padding: 0; }
+
+/* ----------------------------------------------------------------- stat */
+
+.stat { text-align: left; }
+.stat .v { font-size: 30px; font-weight: 600; line-height: 1.05; letter-spacing: -0.02em; }
+.stat .v.na { font-size: 17px; color: var(--mute); }
+.stat .l { font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--mute); margin-top: 3px; }
+.stat .b { font-size: 10px; color: var(--mute); margin-top: 5px; }
+.stat .n { font-size: 10px; color: var(--warn); margin-top: 5px; line-height: 1.35; }
+.v.good { color: var(--good); } .v.warn { color: var(--warn); } .v.bad { color: var(--bad); }
+.v.accent { color: var(--accent); }
+
+/* ------------------------------------------------------------ sparkline */
+
+.spark { width: 100%; height: 26px; margin-top: 7px; display: block; }
+.spark-bar { fill: var(--accent); opacity: 0.75; }
+.spark-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.spark-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--mute); margin-top: 3px; }
+.sparse-tag { font-size: 9px; color: var(--warn); letter-spacing: 0.04em; margin-top: 4px; }
+
+/* ---------------------------------------------------------------- table */
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; font-size: 9.5px; font-weight: 600; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--mute); padding: 6px 10px;
+  border-bottom: 1px solid var(--line); background: var(--panel-2);
+  position: sticky; top: 0;
+}
+th.r, td.r { text-align: right; }
+td { padding: 5px 10px; border-bottom: 1px solid rgba(28,35,45,0.6); font-size: 11.5px; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--panel-2); }
+td.id { color: var(--mute); width: 44px; }
+td .s { color: var(--mute); font-size: 10px; }
+td a { color: var(--text); text-decoration: none; }
+td a:hover { color: var(--accent); text-decoration: underline; }
+.scroll { max-height: 300px; overflow: auto; }
+
+/* ----------------------------------------------------------------- pill */
+
+.pill {
+  display: inline-block; font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 1px 6px; border: 1px solid currentColor; border-radius: 2px; white-space: nowrap;
+}
+.pill.good { color: var(--good); background: rgba(74,222,128,0.08); }
+.pill.warn { color: var(--warn); background: rgba(251,191,36,0.08); }
+.pill.bad { color: var(--bad); background: rgba(251,113,133,0.08); }
+.pill.accent { color: var(--accent); background: var(--accent-wash); }
+.pill.mute { color: var(--mute); }
+.pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.pills.r { justify-content: flex-end; }
+
+/* -------------------------------------------------------------- log list */
+
+.log { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; }
+.log li {
+  display: grid; grid-template-columns: 7px 1fr; gap: 8px; align-items: start;
+  padding: 6px 10px; border-bottom: 1px solid rgba(28,35,45,0.6); font-size: 11px;
+}
+.log li:last-child { border-bottom: 0; }
+.log .bullet { width: 6px; height: 6px; margin-top: 4px; }
+.bullet.good { background: var(--good); } .bullet.warn { background: var(--warn); }
+.bullet.bad { background: var(--bad); } .bullet.accent { background: var(--accent); }
+.bullet.mute { background: var(--mute); }
+.log .s { color: var(--mute); font-size: 10px; }
+.log a { color: var(--text); text-decoration: none; }
+.log a:hover { color: var(--accent); }
+
+/* ---------------------------------------------------------------- banner */
+
+.banner {
+  margin: 0; padding: 8px 10px; font-size: 10.5px; line-height: 1.45;
+  border-left: 2px solid var(--warn); background: rgba(251,191,36,0.06); color: #d8c48f;
+}
+.banner b { color: var(--warn); }
+
+.empty { color: var(--mute); padding: 10px; font-size: 11px; }
+
+.foot {
+  margin-top: 10px; border: 1px solid var(--line); background: var(--panel);
+  padding: 8px 14px; display: flex; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap; font-size: 10.5px; color: var(--mute); letter-spacing: 0.04em;
+}
+.foot a { color: var(--dim); text-decoration: none; }
+.foot a:hover { color: var(--accent); }
+.switch { display: flex; gap: 10px; }
+.switch a.on { color: var(--accent); }
+
+.load-error { border: 1px solid var(--bad); background: rgba(251,113,133,0.06); padding: 16px; color: var(--dim); }
+.load-error strong { color: var(--bad); display: block; margin-bottom: 6px; }

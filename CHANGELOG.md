@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — fleet dashboard on GitHub Pages (plugin 1.18.0, `dashboard/`)
+
+A static, server-less dashboard published from `dashboard/` — three visual treatments (`/v1/`
+calm control, `/v2/` editorial, `/v3/` ops wall) rendering one committed JSON snapshot. The
+private coordination repo stays private: `dashboard/build-data.sh` runs only read-only `baron`
+reporters and writes a sanitised one-way projection to `dashboard/data/fleet.json`, and
+`dashboard/check_snapshot.py` fails CI on a leaked path, a leaked credential, or a metric that
+claims a number it never measured. See `dashboard/README.md`.
+
 ### Added — signed review verdicts: the merge gate proves WHO approved (plugin 1.17.0 / CLI 0.17.0, [ADR-033](docs/adr/ADR-033-signed-review-verdicts.md), **supersedes ADR-028 §7 Q4**)
 
 [ADR-028 §4](docs/adr/ADR-028-mechanized-merge-gate.md) recorded the hole in its own words: *baron

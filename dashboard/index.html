@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barony — Fleet Dashboard</title>
+<meta name="description" content="Three visual treatments of the same live fleet snapshot: git-native governance for teams of AI coding agents.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9819;</text></svg>">
+<style>
+  :root {
+    --bg:#0a0c10; --panel:#0e1117; --line:#232836; --text:#e6e8ee;
+    --dim:#9aa3b8; --mute:#6b7488; --accent:#a78bfa;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: ui-sans-serif, -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+    background-image: radial-gradient(900px 500px at 15% -10%, rgba(167,139,250,.08), transparent 70%);
+    background-attachment: fixed;
+  }
+  .wrap { max-width:1000px; margin:0 auto; padding:72px 28px 90px; }
+  h1 { font-size:34px; font-weight:640; letter-spacing:-.025em; margin:0 0 14px; }
+  .lede { color:var(--dim); font-size:16px; max-width:66ch; margin:0 0 10px; }
+  .lede strong { color:var(--text); font-weight:560; }
+  .meta { color:var(--mute); font-size:12.5px; font-family:var(--mono); margin-bottom:44px; }
+
+  .cards { display:grid; gap:16px; grid-template-columns:repeat(3,1fr); }
+  @media (max-width:860px){ .cards{ grid-template-columns:1fr; } }
+  a.card {
+    display:block; text-decoration:none; color:inherit; border:1px solid var(--line);
+    border-radius:12px; background:var(--panel); overflow:hidden;
+    transition: border-color .18s ease, transform .18s ease;
+  }
+  a.card:hover { border-color:var(--accent); transform:translateY(-2px); }
+  .swatch { height:96px; display:block; }
+  .s1 { background:linear-gradient(135deg,#0a0c10 0%,#151226 55%,#a78bfa 190%); border-bottom:1px solid var(--line); }
+  .s2 { background:linear-gradient(135deg,#fbfaf7 0%,#f3f1ec 60%,#b3251f 230%); }
+  .s3 { background:
+          repeating-linear-gradient(90deg,#0c1015 0 14px,#11161d 14px 15px),
+          linear-gradient(135deg,#06080b,#22d3ee 260%); border-bottom:1px solid var(--line); }
+  .card-b { padding:16px 18px 18px; }
+  .card-b .k { font-family:var(--mono); font-size:11px; letter-spacing:.09em; color:var(--accent); text-transform:uppercase; }
+  .card-b h2 { margin:6px 0 6px; font-size:17px; font-weight:600; letter-spacing:-.012em; }
+  .card-b p { margin:0; color:var(--dim); font-size:13.5px; line-height:1.5; }
+
+  .note { margin-top:44px; border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:22px 24px; }
+  .note h3 { margin:0 0 10px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; }
+  .note p { margin:0 0 10px; color:var(--dim); font-size:13.5px; }
+  .note p:last-child { margin-bottom:0; }
+  .note code { font-family:var(--mono); font-size:12.5px; color:var(--text); background:#12161f; padding:1px 6px; border-radius:4px; }
+  .foot { margin-top:34px; color:var(--mute); font-size:12.5px; }
+  .foot a { color:var(--dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Barony — Fleet Dashboard</h1>
+  <p class="lede">
+    <strong>Git-native governance for teams of AI coding agents.</strong>
+    Three visual treatments of the <em>same</em> live snapshot — projects, agents and their
+    capabilities, fleet-health metrics, the merge queue, and the owner action queue.
+  </p>
+  <p class="lede">
+    Every number is read from the coordination repository by <code>baron</code> and committed
+    as a curated, showcase-safe JSON file. No server, no database, no hand-entered figures —
+    git is the source of truth and the whole page rebuilds from a clone.
+  </p>
+  <p class="meta" id="meta">loading snapshot…</p>
+
+  <div class="cards">
+    <a class="card" href="v1/">
+      <span class="swatch s1"></span>
+      <span class="card-b">
+        <span class="k">v1 · primary</span>
+        <h2>Calm control</h2>
+        <p>Dark, quiet, one violet accent. Hierarchy from type and spacing. The Linear / Vercel / Grafana school.</p>
+      </span>
+    </a>
+    <a class="card" href="v2/">
+      <span class="swatch s2"></span>
+      <span class="card-b">
+        <span class="k">v2 · editorial</span>
+        <h2>Analyst report</h2>
+        <p>Bright paper, serif masthead, generous whitespace. The fleet as a well-set printed briefing.</p>
+      </span>
+    </a>
+    <a class="card" href="v3/">
+      <span class="swatch s3"></span>
+      <span class="card-b">
+        <span class="k">v3 · ops wall</span>
+        <h2>Mission control</h2>
+        <p>Dense monospace grid with sparklines, built for an always-on monitor across the room.</p>
+      </span>
+    </a>
+  </div>
+
+  <div class="note">
+    <h3>How the data gets here</h3>
+    <p>
+      The coordination repository is <strong>private and stays private</strong>.
+      <code>dashboard/build-data.sh</code> runs the read-only <code>baron</code> reporters against it
+      and writes a one-way, sanitised projection to <code>dashboard/data/fleet.json</code> — the only
+      thing published. Absolute paths, record bodies and handoff contents never leave.
+    </p>
+    <p>
+      Metrics are reported honestly: anything with an empty denominator renders as
+      <code>n/a</code> with its basis rather than a flattering 0% or 100%, and single-observation
+      figures are labelled <code>n=1</code>. Unmerged capabilities are shown as <em>not active</em>,
+      not as passing.
+    </p>
+  </div>
+
+  <p class="foot">
+    Source: <a href="https://github.com/vggg/barony">github.com/vggg/barony</a> ·
+    rebuild with <code>./dashboard/build-data.sh</code>
+  </p>
+</div>
+
+<script type="module">
+  // Small courtesy: stamp the landing page with the same snapshot metadata.
+  try {
+    const d = await (await fetch('data/fleet.json', { cache: 'no-cache' })).json();
+    document.getElementById('meta').textContent =
+      `${d.kpis.projects} projects · ${d.kpis.agents} agents · ${d.kpis.open_prs} open PRs · ` +
+      `${d.kpis.verdicts} verdict(s) · snapshot ${d.generated_at} · ${d.generator.baron_version}`;
+  } catch {
+    document.getElementById('meta').textContent =
+      'snapshot not loaded — serve this directory over HTTP (python3 -m http.server -d dashboard 8080)';
+  }
+</script>
+</body>
+</html>

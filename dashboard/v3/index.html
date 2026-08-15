@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BARONY // FLEET OPS</title>
+<meta name="description" content="Always-on operations wall for a git-governed fleet of AI coding agents.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9819;</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script type="module">
+import { loadFleet, fmt, tone, el, renderError, sparkline } from '../assets/fleet.js';
+
+const app = document.getElementById('app');
+
+function pill(text, t) {
+  return el('span', { class: `pill ${t || 'mute'}` }, text);
+}
+
+function panel(cls, title, meta, ...body) {
+  return el('div', { class: `p ${cls}` },
+    el('div', { class: 'p-h' }, el('h2', {}, title), meta && el('span', { class: 'm' }, meta)),
+    ...body);
+}
+
+function statPanel(cls, label, value, toneCls, basis, note, series) {
+  // The panel header already carries the label — the stat body shows value + basis only.
+  const body = el('div', { class: 'p-b stat' },
+    el('div', { class: `v ${toneCls}` }, value),
+    basis && el('div', { class: 'b' }, basis),
+    note && el('div', { class: 'n' }, note));
+  if (series && series.points.length) {
+    body.append(sparkline(series.points, { kind: 'bar' }));
+    body.append(el('div', { class: 'spark-labels' },
+      el('span', {}, series.labels[0] ?? ''),
+      el('span', {}, series.labels.at(-1) ?? '')));
+    if (series.sparse) body.append(el('div', { class: 'sparse-tag' }, 'sparse series — indicative only'));
+  }
+  return el('div', { class: `p ${cls}` },
+    el('div', { class: 'p-h' }, el('h2', {}, label), el('span', { class: 'm' }, 'metric')),
+    body);
+}
+
+function table(cols, rows, scroll = true) {
+  const t = el('table', {},
+    el('thead', {}, el('tr', {}, cols.map((c) => el('th', { class: c.startsWith('>') ? 'r' : '' }, c.replace(/^>/, ''))))),
+    el('tbody', {}, rows));
+  return el('div', { class: `p-b flush ${scroll ? 'scroll' : ''}` }, t);
+}
+
+try {
+  render(await loadFleet());
+} catch (err) {
+  renderError(app, err);
+}
+
+function render(d) {
+  const D = d.derived;
+
+  /* -------------------------------------------------------------- topbar */
+  app.append(
+    el('div', { class: 'topbar' },
+      el('span', { class: 'logo' }, 'Barony // Fleet Ops'),
+      el('span', { class: 'sep' }),
+      el('span', { class: 'kv' }, 'layout ', el('b', {}, d.portfolio.layout)),
+      el('span', { class: 'kv' }, 'projects ', el('b', {}, String(d.kpis.projects))),
+      el('span', { class: 'kv' }, 'agents ', el('b', {}, String(d.kpis.agents))),
+      el('span', { class: 'kv' }, 'prs ', el('b', {}, String(d.kpis.open_prs))),
+      el('span', { class: 'kv' }, 'verdicts ', el('b', {}, String(d.kpis.verdicts))),
+      el('span', { class: 'spacer' }),
+      el('span', { class: 'kv' }, d.generator.baron_version),
+      el('span', { class: 'kv' }, fmt.when(d.generated_at)),
+      el('span', { class: 'sep' }),
+      el('span', { class: 'live' }, el('span', { class: 'd' }), 'LIVE')));
+
+  const grid = el('div', { class: 'grid' });
+  app.append(grid);
+
+  /* -------------------------------------------------- observer summary */
+  grid.append(
+    panel('c8', 'Observer summary', 'derived from snapshot',
+      el('ul', { class: 'log' },
+        D.observerSummary.map((s) =>
+          el('li', {},
+            el('span', { class: `bullet ${s.tone === 'action' ? 'accent' : s.tone}` }),
+            el('span', {}, s.text))))));
+
+  /* --------------------------------------------------------- KPI stack */
+  grid.append(
+    panel('c4', 'Portfolio counters', 'live',
+      el('div', { class: 'p-b flush' },
+        el('table', {},
+          el('tbody', {},
+            D.kpis.map((k) =>
+              el('tr', {},
+                el('td', {}, k.label),
+                el('td', { class: 'r' },
+                  el('span', { class: `pill ${k.tone === 'accent' ? 'accent' : k.tone}` }, fmt.int(k.value))))))))));
+
+  /* ------------------------------------------------------ metric stats */
+  const series = D.series;
+  d.health.metrics.forEach((m) => {
+    const t = !m.measured ? 'na'
+      : m.key === 'stalls' && m.value ? 'warn'
+      : m.key === 'reviewer_escapes' && m.value ? 'bad'
+      : m.key === 'claim_drift' && m.value ? 'warn'
+      : m.key === 'verdict_coverage' && m.value <= 1 ? 'warn'
+      : 'good';
+    const spark = m.key === 'stalls' ? series.stallsByProject
+      : m.key === 'verdict_coverage' ? series.verdicts : null;
+    grid.append(statPanel('c2', m.label, fmt.metric(m), t, m.basis, m.note, spark));
+  });
+
+  /* ------------------------------------------------------- merge queue */
+  grid.append(
+    panel('c7', 'Merge queue', `${D.greenPRs} green · ${D.conflicted} conflicting`,
+      d.merge_queue.length
+        ? table(['#', 'Title', '>Checks', '>Merge', '>Age'],
+            d.merge_queue.map((p) =>
+              el('tr', {},
+                el('td', { class: 'id' }, `#${p.number}`),
+                el('td', {},
+                  el('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.title),
+                  el('div', { class: 's' }, p.branch)),
+                el('td', { class: 'r' }, pill(p.checks, tone('checks', p.checks))),
+                el('td', { class: 'r' }, pill((p.mergeable || '?').toLowerCase().slice(0, 11), tone('mergeable', p.mergeable))),
+                el('td', { class: 'r s' }, fmt.age(p.age_days)))))
+        : el('div', { class: 'empty' }, 'no open prs')));
+
+  /* --------------------------------------------------------- portfolio */
+  grid.append(
+    panel('c5', 'Projects', `${d.portfolio.projects} registered`,
+      table(['Project', '>Agents', '>Records', '>Handoffs', '>State'],
+        d.projects_detail.map((p) =>
+          el('tr', {},
+            el('td', {}, p.name),
+            el('td', { class: 'r s' }, String(p.agents)),
+            el('td', { class: 'r s' }, String(p.records.total)),
+            el('td', { class: 'r s' }, String(p.open_handoffs)),
+            el('td', { class: 'r' },
+              pill(p.state === 'red' ? `${p.red} red` : p.state === 'warn' ? `${p.warn} warn` : 'clean',
+                   tone('project', p.state))))))));
+
+  /* --------------------------------------------------- agents / identity */
+  grid.append(
+    panel('c6', 'Agents & identity', `${d.agents.length} registered`,
+      table(['Persona', 'Project', 'Archetype', '>Capabilities'],
+        d.agents.map((a) =>
+          el('tr', {},
+            el('td', {}, a.persona, el('div', { class: 's' }, a.git_email)),
+            el('td', { class: 's' }, a.project),
+            el('td', { class: 's' }, a.archetype),
+            el('td', { class: 'r' },
+              el('div', { class: 'pills r' },
+                a.holds_merge_pr ? pill('merge_pr', 'warn') : null,
+                a.can_write_code ? pill('write_code', 'good') : null,
+                pill(`${a.allow.length}a/${a.deny.length}d`, 'mute')))))),
+      el('div', { class: 'p-b' },
+        el('p', { class: 'banner' },
+          el('b', {}, `SIGNING: ${d.identity.signing.label.toUpperCase()} — `), d.identity.signing.note))));
+
+  /* ------------------------------------------------------ owner actions */
+  grid.append(
+    panel('c6', 'Owner action queue', `${d.owner_actions.length} items`,
+      d.owner_actions.length
+        ? el('ul', { class: 'log' },
+            d.owner_actions.map((a) =>
+              el('li', {},
+                el('span', { class: `bullet ${a.severity === 'action' ? 'accent' : 'warn'}` }),
+                el('span', {},
+                  a.url ? el('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.summary) : a.summary,
+                  el('div', { class: 's' }, a.detail)))))
+        : el('div', { class: 'empty' }, 'nothing awaiting owner')));
+
+  /* ------------------------------------------------------------ stalls */
+  const stallProject = d.health.projects.find((p) => p.stall_list.length) || { stall_list: [], name: '—' };
+  grid.append(
+    panel('c8', 'Stall detail', `${d.kpis.stalls} findings · ${stallProject.name}`,
+      stallProject.stall_list.length
+        ? el('ul', { class: 'log' },
+            stallProject.stall_list.map((s) =>
+              el('li', {}, el('span', { class: 'bullet warn' }), el('span', { class: 's' }, s))))
+        : el('div', { class: 'empty' }, 'no stalls')));
+
+  /* -------------------------------------------------- coverage + observer */
+  grid.append(
+    panel('c4', 'Coverage & watchers', d.health.coverage.measured ? 'attributed' : 'limited',
+      el('div', { class: 'p-b' },
+        el('p', { class: 'banner' },
+          el('b', {}, 'PLANE: '), d.health.coverage.note),
+        el('p', { class: 'banner', style: 'margin-top:8px' },
+          el('b', {}, `OBSERVER: ${d.observer.label.toUpperCase()} — `), d.observer.note))));
+
+  /* ------------------------------------------------------------ footer */
+  app.append(
+    el('div', { class: 'foot' },
+      el('div', {}, 'snapshot: dashboard/build-data.sh · source of truth: git · ',
+        el('a', { href: 'https://github.com/vggg/barony' }, 'vggg/barony')),
+      el('div', { class: 'switch' },
+        el('a', { href: '../' }, 'index'),
+        el('a', { href: '../v1/' }, 'v1'),
+        el('a', { href: '../v2/' }, 'v2'),
+        el('a', { href: '../v3/', class: 'on' }, 'v3'))));
+}
+</script>
+</body>
+</html>

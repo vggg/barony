@@ -1,0 +1,180 @@
+/* v2 — "Editorial / analyst". Bright, printed-report calm.
+ *
+ * The opposite lever from v1: hierarchy from TYPOGRAPHY and whitespace, with
+ * hairline rules instead of panels. Serif display for headlines, one bold
+ * accent (ink red) used sparingly the way a print masthead uses it. Status
+ * colour is muted to earth tones so the page still reads as a document.
+ */
+
+:root {
+  --paper: #fbfaf7;
+  --paper-2: #f3f1ec;
+  --ink: #1a1917;
+  --ink-2: #4a4740;
+  --ink-3: #7d7970;
+  --rule: #ded9d0;
+  --rule-soft: #ebe7df;
+
+  --accent: #b3251f;          /* ink red — masthead + emphasis only */
+  --good: #2f6f4f;
+  --warn: #9a6b12;
+  --bad: #b3251f;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: ui-sans-serif, -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
+
+/* ---------------------------------------------------------------- masthead */
+
+.masthead { border-bottom: 3px double var(--ink); padding-bottom: 22px; margin-bottom: 8px; }
+.kicker {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.19em; text-transform: uppercase; color: var(--accent);
+  margin-bottom: 12px;
+}
+.masthead h1 {
+  margin: 0; font-size: 54px; line-height: 1.02; font-weight: 600;
+  letter-spacing: -0.028em;
+}
+.masthead h1 em { font-style: italic; color: var(--accent); }
+.standfirst {
+  margin: 16px 0 0; font-size: 19px; line-height: 1.5; color: var(--ink-2);
+  max-width: 60ch;
+}
+
+.dateline {
+  display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--ink-3);
+  padding: 11px 0; border-bottom: 1px solid var(--rule); margin-bottom: 44px;
+}
+.dateline .live { display: inline-flex; align-items: center; gap: 6px; color: var(--good); }
+.dot-live { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+
+/* --------------------------------------------------------------- sections */
+
+section { margin-bottom: 52px; }
+
+.sec-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 18px; border-bottom: 1px solid var(--ink); padding-bottom: 7px; margin-bottom: 22px;
+}
+.sec-head h2 {
+  margin: 0; font-family: var(--sans); font-size: 12px; font-weight: 700;
+  letter-spacing: 0.15em; text-transform: uppercase;
+}
+.sec-head .meta { font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.04em; }
+
+/* ------------------------------------------------------- observer summary */
+
+.lede {
+  background: var(--paper-2); border-left: 3px solid var(--accent);
+  padding: 26px 30px; margin-bottom: 52px;
+}
+.lede h2 {
+  margin: 0 0 4px; font-family: var(--sans); font-size: 11px; font-weight: 700;
+  letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent);
+}
+.lede .src { font-family: var(--sans); font-size: 11px; color: var(--ink-3); margin-bottom: 16px; letter-spacing: 0.03em; }
+.lede ol { margin: 0; padding-left: 22px; }
+.lede li { margin-bottom: 11px; font-size: 17px; line-height: 1.52; }
+.lede li:last-child { margin-bottom: 0; }
+.lede li.quiet { color: var(--ink-3); font-size: 15.5px; }
+.lede li::marker { color: var(--accent); font-family: var(--sans); font-size: 12px; font-weight: 700; }
+
+/* ------------------------------------------------------------- KPI figures */
+
+.figures { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; }
+@media (max-width: 800px) { .figures { grid-template-columns: repeat(3, 1fr); row-gap: 26px; } }
+.figure { padding: 0 20px; border-left: 1px solid var(--rule); }
+.figure:first-child { padding-left: 0; border-left: 0; }
+.figure .v {
+  font-size: 42px; font-weight: 600; letter-spacing: -0.035em; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.figure .l {
+  font-family: var(--sans); font-size: 10.5px; letter-spacing: 0.11em;
+  text-transform: uppercase; color: var(--ink-3); margin-top: 8px;
+}
+.figure.bad .v { color: var(--bad); } .figure.warn .v { color: var(--warn); } .figure.good .v { color: var(--good); }
+
+/* ------------------------------------------------------------------ tables */
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--ink-3); text-align: left;
+  padding: 0 12px 8px 0; border-bottom: 1px solid var(--rule);
+}
+thead th.r, td.r { text-align: right; padding-right: 0; }
+tbody td { padding: 13px 12px 13px 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; font-size: 15.5px; }
+tbody tr:last-child td { border-bottom: 0; }
+td .t { font-weight: 500; }
+td .s { font-family: var(--mono); font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+td a { color: var(--ink); text-decoration-color: var(--rule); text-underline-offset: 3px; }
+td a:hover { color: var(--accent); }
+td.num { font-family: var(--mono); font-size: 13px; color: var(--ink-3); width: 52px; }
+
+/* ------------------------------------------------------------------- tags */
+
+.tag {
+  display: inline-block; font-family: var(--sans); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 7px;
+  border: 1px solid currentColor; border-radius: 2px; white-space: nowrap;
+}
+.tag.good { color: var(--good); } .tag.warn { color: var(--warn); }
+.tag.bad { color: var(--bad); } .tag.plain { color: var(--ink-3); }
+.tags { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---------------------------------------------------------------- metrics */
+
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 30px 26px; }
+.metric { border-top: 2px solid var(--ink); padding-top: 12px; }
+.metric .m-l { font-family: var(--sans); font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.metric .m-v { font-size: 34px; font-weight: 600; letter-spacing: -0.03em; margin-top: 6px; line-height: 1; font-variant-numeric: tabular-nums; }
+.metric .m-v.na { color: var(--ink-3); font-size: 26px; font-style: italic; }
+.metric .m-b { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 9px; }
+.metric .m-n { font-size: 13.5px; color: var(--warn); margin-top: 8px; line-height: 1.45; font-style: italic; }
+
+/* ------------------------------------------------------------- pull quote */
+
+.caveat {
+  margin: 32px 0 0; padding: 20px 24px; background: #fdf6e6;
+  border: 1px solid #e8d9ad; font-size: 15.5px; line-height: 1.55; color: #5c4a1e;
+}
+.caveat strong { color: var(--warn); font-family: var(--sans); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 6px; }
+
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 52px; }
+@media (max-width: 860px) { .two { grid-template-columns: 1fr; gap: 46px; } }
+
+.empty { color: var(--ink-3); font-style: italic; }
+
+/* ----------------------------------------------------------------- footer */
+
+.foot {
+  border-top: 3px double var(--ink); padding-top: 18px; margin-top: 60px;
+  display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+  font-family: var(--sans); font-size: 11.5px; color: var(--ink-3); letter-spacing: 0.03em;
+}
+.foot a { color: var(--ink-2); }
+.switch { display: flex; gap: 14px; }
+.switch a.on { color: var(--accent); font-weight: 700; }
+
+.load-error { border: 1px solid var(--bad); padding: 22px; color: var(--ink-2); }
+.load-error strong { color: var(--bad); display: block; margin-bottom: 8px; }
+.load-error p:last-child { font-family: var(--mono); font-size: 12.5px; }

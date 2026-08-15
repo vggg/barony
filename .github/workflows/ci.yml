@@ -24,6 +24,12 @@ jobs:
       - name: Audit-skill telemetry mode (ingester + baron wire shape)
         run: python skills/multi-agent-audit/tests/test_ingest_otel.py
 
+      # The dashboard snapshot is a projection of a PRIVATE repo committed into
+      # this PUBLIC one. This gate fails the build on a leaked path, a leaked
+      # credential, or a metric that claims a number it did not measure.
+      - name: Dashboard snapshot guard (leaks, shape, honest metrics)
+        run: python dashboard/check_snapshot.py
+
   # baron CLI (Phase 2, ADR-003; distribution `barony`) — the one packaged
   # component; tested via uv.
   baron:

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barony — Fleet Control</title>
+<meta name="description" content="Git-native governance for a fleet of AI coding agents — live portfolio, merge queue, fleet health and identity state.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9819;</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script type="module">
+import { loadFleet, fmt, tone, el, renderError } from '../assets/fleet.js';
+
+const app = document.getElementById('app');
+
+try {
+  const d = await loadFleet();
+  render(d);
+} catch (err) {
+  renderError(app, err);
+}
+
+function panel(title, note, ...body) {
+  return el('section', { class: 'panel' },
+    el('div', { class: 'panel-head' },
+      el('h2', {}, title),
+      note && el('span', { class: 'note' }, note)),
+    ...body);
+}
+
+function chip(text, t, dot = true) {
+  return el('span', { class: `chip ${t || ''}` }, dot && el('span', { class: 'dot' }), text);
+}
+
+function render(d) {
+  const D = d.derived;
+
+  /* ------------------------------------------------------------ masthead */
+  app.append(
+    el('header', { class: 'masthead' },
+      el('div', { class: 'brand' },
+        el('h1', {}, 'Barony — Fleet Control'),
+        el('p', { class: 'sub' },
+          el('strong', {}, 'Git-native governance for teams of AI coding agents.'),
+          ' Every figure below is read from the live coordination repo by ',
+          el('code', {}, 'baron'), ' — no hand-entered numbers, no server, rebuildable from a clone.')),
+      el('div', { class: 'masthead-meta' },
+        el('div', { class: 'pulse' }, el('span', { class: 'pulse-dot' }), 'snapshot live'),
+        el('div', {}, fmt.when(d.generated_at)),
+        el('div', {}, el('code', {}, d.generator.baron_version)))));
+
+  /* --------------------------------------------------- observer summary */
+  app.append(
+    el('section', { class: 'panel summary' },
+      el('div', { class: 'panel-head' },
+        el('h2', {}, 'Observer summary'),
+        el('span', { class: 'summary-badge' }, 'DERIVED FROM SNAPSHOT')),
+      el('div', { class: 'panel-body' },
+        el('ul', { class: 'summary-list' },
+          D.observerSummary.map((s) =>
+            el('li', { class: s.tone === 'muted' ? 'muted-row' : '' },
+              el('span', { class: `mark ${s.tone}` }), s.text))))));
+
+  /* ------------------------------------------------------------ KPI row */
+  app.append(
+    el('section', { class: 'panel' },
+      el('div', { class: 'kpis' },
+        D.kpis.map((k) =>
+          el('div', { class: `kpi ${k.tone}` },
+            el('div', { class: 'v' }, fmt.int(k.value)),
+            el('div', { class: 'l' }, k.label))))));
+
+  /* ------------------------------------------- projects + merge queue */
+  const projects = panel('Portfolio', `${d.portfolio.layout} · ${d.portfolio.projects} projects`,
+    el('div', { class: 'panel-body flush' },
+      el('div', { class: 'rows' },
+        d.projects_detail.map((p) => {
+          const kinds = Object.entries(p.records.by_kind || {});
+          return el('div', { class: 'row row-proj' },
+            el('div', {},
+              el('div', { class: 't' }, p.name),
+              el('div', { class: 'sub' },
+                `${p.agents} agents · ${p.records.total} records${kinds.length ? ' (' + kinds.map(([k, v]) => `${v} ${k}`).join(', ') + ')' : ''} · ${p.open_handoffs} open handoffs`)),
+            el('div', { class: 'chips' },
+              p.red ? chip(`${p.red} red`, 'bad') : null,
+              p.warn ? chip(`${p.warn} warn`, 'warn') : null,
+              !p.red && !p.warn ? chip('clean', 'good') : null));
+        }))));
+
+  const queue = panel('Merge queue', `${D.greenPRs} green · ${D.conflicted} conflicting`,
+    el('div', { class: 'panel-body flush' },
+      el('div', { class: 'rows' },
+        d.merge_queue.length
+          ? d.merge_queue.map((p) =>
+              el('div', { class: 'row row-pr' },
+                el('span', { class: 'num' }, `#${p.number}`),
+                el('div', {},
+                  el('div', { class: 't' }, el('a', { href: p.url, target: '_blank', rel: 'noopener' }, p.title)),
+                  el('div', { class: 'sub' }, `${p.branch} · ${fmt.age(p.age_days)}`)),
+                chip(p.checks, tone('checks', p.checks)),
+                chip(p.mergeable === 'MERGEABLE' ? 'mergeable' : (p.mergeable || 'unknown').toLowerCase(),
+                     tone('mergeable', p.mergeable))))
+          : el('div', { class: 'empty', style: 'padding:16px 18px' }, 'No open PRs.'))));
+
+  // The queue carries PR titles, so it gets the wider column.
+  app.append(el('div', { class: 'grid' },
+    el('div', { class: 'col-5' }, projects),
+    el('div', { class: 'col-7' }, queue)));
+
+  /* -------------------------------------------------------- fleet health */
+  const cov = d.health.coverage;
+  app.append(
+    panel('Fleet health', cov.measured ? 'attributed' : 'coverage-limited',
+      el('div', { class: 'metrics' },
+        d.health.metrics.map((m) =>
+          el('div', { class: 'metric' },
+            el('div', { class: 'm-l' }, m.label),
+            el('div', { class: `m-v ${m.measured ? '' : 'na'}` }, fmt.metric(m)),
+            el('div', { class: 'm-b' }, m.basis),
+            m.note && el('div', { class: 'm-n' }, m.note)))),
+      el('div', { class: 'panel-body' },
+        el('p', { class: 'coverage' },
+          el('strong', {}, cov.measured ? 'Coverage: attributed. ' : 'Coverage caveat. '), cov.note))));
+
+  /* ------------------------------------------- agents + owner actions */
+  const agents = panel('Agents & identity', `${d.agents.length} registered`,
+    el('div', { class: 'panel-body flush' },
+      el('div', { class: 'rows' },
+        d.agents.map((a) =>
+          el('div', { class: 'row row-agent' },
+            el('div', {},
+              el('div', { class: 't' }, a.persona, ' ', el('span', { class: 'num' }, `· ${a.project}`)),
+              el('div', { class: 'sub' }, `${a.git_email} · ${a.routing_label || 'no label'}`)),
+            el('div', { class: 'chips' },
+              chip(a.archetype, 'accent', false),
+              a.holds_merge_pr ? chip('merge_pr', 'warn') : null,
+              a.can_write_code ? chip('write_code', 'good') : null,
+              chip(`${a.deny.length} denied`, '', false)))))),
+    el('div', { class: 'panel-body' },
+      el('div', { class: 'ident' },
+        el('div', { class: 'ident-row' },
+          el('span', { class: 'ident-k' }, 'Commit signing'),
+          el('span', {}, chip(d.identity.signing.label, 'warn'))),
+        el('p', { class: 'coverage' }, d.identity.signing.note))));
+
+  const actions = panel('Owner action queue', `${d.owner_actions.length} items`,
+    el('div', { class: 'panel-body flush' },
+      el('div', { class: 'rows' },
+        d.owner_actions.length
+          ? d.owner_actions.map((a) =>
+              el('div', { class: 'row row-action' },
+                el('span', { class: `mark ${a.severity === 'action' ? 'action' : 'warn'}`,
+                             style: 'width:7px;height:7px;border-radius:2px;display:block' }),
+                el('div', {},
+                  el('div', { class: 't' }, a.url ? el('a', { href: a.url, target: '_blank', rel: 'noopener' }, a.summary) : a.summary),
+                  el('div', { class: 'sub' }, a.detail)),
+                chip(a.kind, a.severity === 'action' ? 'accent' : 'warn', false)))
+          : el('div', { class: 'empty', style: 'padding:16px 18px' }, 'Nothing awaiting the owner.'))));
+
+  app.append(el('div', { class: 'grid' },
+    el('div', { class: 'col-6' }, agents),
+    el('div', { class: 'col-6' }, actions)));
+
+  /* ------------------------------------------------------------ observer */
+  app.append(
+    panel('Observer flags', d.observer.active ? 'active' : d.observer.label,
+      el('div', { class: 'panel-body' },
+        d.observer.flags.length
+          ? el('div', { class: 'chips' }, d.observer.flags.map((f) => chip(f, 'warn')))
+          : el('p', { class: 'coverage' }, d.observer.note))));
+
+  /* -------------------------------------------------------------- footer */
+  app.append(
+    el('footer', { class: 'foot' },
+      el('div', {},
+        'Snapshot generated by ', el('code', {}, 'dashboard/build-data.sh'),
+        ' · source of truth is git · ',
+        el('a', { href: 'https://github.com/vggg/barony' }, 'vggg/barony')),
+      el('div', { class: 'switch' },
+        el('a', { href: '../', }, 'index'),
+        el('a', { href: '../v1/', class: 'on' }, 'v1 calm'),
+        el('a', { href: '../v2/' }, 'v2 editorial'),
+        el('a', { href: '../v3/' }, 'v3 ops'))));
+}
+</script>
+</body>
+</html>
