@@ -1,18 +1,55 @@
-# Fleet dashboard
+# The published site
 
-A static, server-less dashboard over the Barony fleet, published to GitHub Pages.
-Three visual treatments render the **same** committed JSON snapshot:
+`dashboard/` is the GitHub Pages root for `vggg.github.io/barony/`. It holds two
+kinds of page, both static and both built from a committed source rather than at
+request time:
 
-| Path | Version | Look |
+| Path | Page | Source |
 |---|---|---|
-| `/` | index | Landing page linking the three |
-| `/v1/` | **Calm control** *(primary)* | Dark, one violet accent, hierarchy from type and spacing |
-| `/v2/` | Editorial / analyst | Bright paper, serif masthead, printed-briefing feel |
-| `/v3/` | Ops wall | Dense monospace grid with sparklines, for an always-on monitor |
+| `/` | Site index — the map of everything below | hand-written `index.html` |
+| `/overview/` | **Product overview** | `docs/product-overview.md` |
+| `/value-map/` | **Capability → value → metric** | `docs/capability-value-map.md` |
+| `/v1/` | Fleet dashboard — **Calm control** *(primary)* | `data/fleet.json` |
+| `/v2/` | Fleet dashboard — Editorial / analyst | `data/fleet.json` |
+| `/v3/` | Fleet dashboard — Ops wall | `data/fleet.json` |
 
-Panels are identical across versions: observer summary, KPI row, portfolio
-project states, registered agents + identity state, fleet-health metrics,
-observer flags, merge queue, and the owner action queue.
+All three dashboard versions render the **same** committed snapshot; their panels
+are identical (observer summary, KPI row, portfolio project states, registered
+agents + identity state, fleet-health metrics, observer flags, merge queue, owner
+action queue) and they differ only in presentation.
+
+The two document pages share one hand-written stylesheet, `assets/site.css` — the
+v1 "calm control" treatment applied to prose, so the whole site reads as one
+thing.
+
+## The document pages
+
+`docs/product-overview.md` and `docs/capability-value-map.md` stay the source of
+truth. The pages under `overview/` and `value-map/` are a **styled projection** of
+them, committed so Pages can serve them with no build step:
+
+```bash
+./dashboard/build-docs.sh                    # render both pages
+python3 dashboard/build_docs.py --check      # the CI drift guard
+```
+
+Never edit the emitted HTML — the next build overwrites it, and `--check` fails
+the build in the meantime. Prose changes go in the markdown; layout changes go in
+`build_docs.py` (structure) or `assets/site.css` (styling).
+
+`--check` runs in CI on every push and PR, and again before every Pages deploy.
+Staleness is the failure mode worth gating: an edited paragraph that never reached
+the site publishes last week's copy under this week's URL, and nothing about the
+page looks wrong.
+
+The renderer is stdlib-only and deliberately implements just the markdown subset
+those two documents use. An unsupported construct should surface as a visible
+rendering bug rather than be silently half-handled.
+
+In the capability map, the `Status` column's leading verdict is promoted to a
+coloured pill — emerald **proven**, violet **instrumented**, amber
+**aspirational** — with mixed verdicts keeping both pills rather than being
+rounded to the flattering one.
 
 ## The privacy boundary
 
@@ -26,6 +63,9 @@ What ships is a **one-way, curated projection**:
    coordination monorepo  ──▶  build_data.py  ──▶  dashboard/data/fleet.json
    (baron status/health/export)   sanitise           committed, published
 ```
+
+The document pages are outside that boundary entirely: they read two markdown
+files already public in this repo.
 
 `dashboard/build_data.py` runs only read-only `baron` reporters, then strips:
 
@@ -68,7 +108,7 @@ The script builds `baron` from this repo's own `cli/` source via
 
 ```bash
 python3 -m http.server -d dashboard 8080
-# then open http://localhost:8080/  ·  /v1/  ·  /v2/  ·  /v3/
+# then open http://localhost:8080/  ·  /overview/  ·  /value-map/  ·  /v1/  ·  /v2/  ·  /v3/
 ```
 
 ## Honest reporting
@@ -93,7 +133,9 @@ a pretty chart usually is:
 
 `.github/workflows/pages.yml` uploads `dashboard/` as the Pages artifact, so the
 site root is this directory. It runs on pushes to `main` that touch
-`dashboard/**`, and on manual dispatch.
+`dashboard/**` or either of the two source documents, and on manual dispatch. It
+re-runs both gates — the snapshot guard and the doc-page drift check — before
+uploading, so a stale or leaky tree cannot publish.
 
 **One-time owner step:** in *Settings → Pages → Build and deployment*, set
 **Source** to **GitHub Actions**. Until that is set, the deploy step fails —
@@ -103,15 +145,21 @@ everything else in the workflow still runs.
 
 ```
 dashboard/
-  index.html          landing page linking the three versions
-  build-data.sh       regenerate the snapshot (wrapper)
+  index.html          site index — the one page with no generated source
+  build-data.sh       regenerate the fleet snapshot (wrapper)
   build_data.py       the sanitising projection — stdlib only
   check_snapshot.py   leak / shape / honesty gate — runs in CI
+  build-docs.sh       regenerate the document pages (wrapper)
+  build_docs.py       markdown -> HTML renderer + `--check` drift guard — stdlib only
   data/fleet.json     the committed, published snapshot
   assets/fleet.js     the one shared data layer (fetch, derive, format, sparkline)
-  v1/ v2/ v3/         index.html + style.css per version
+  assets/site.css     the one stylesheet for the index + document pages
+  overview/           GENERATED from docs/product-overview.md
+  value-map/          GENERATED from docs/capability-value-map.md
+  v1/ v2/ v3/         index.html + style.css per dashboard version
 ```
 
-`assets/fleet.js` is where DRY lives: every figure, label and caveat is derived
-once, so a metric cannot say one thing on v1 and something else on v3. The three
-versions differ only in presentation.
+`assets/fleet.js` is where DRY lives for the dashboards: every figure, label and
+caveat is derived once, so a metric cannot say one thing on v1 and something else
+on v3. `build_docs.py` is the same discipline for the prose — the markdown is
+written once and projected, never re-typed into HTML.

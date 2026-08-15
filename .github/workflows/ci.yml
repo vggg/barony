@@ -34,6 +34,13 @@ jobs:
       - name: Dashboard snapshot guard (leaks, shape, honest metrics)
         run: python dashboard/check_snapshot.py
 
+      # The two published doc pages are a projection of docs/*.md, committed so
+      # Pages can serve them without a build step. That makes staleness the
+      # failure mode: an edited paragraph that never reached the site publishes
+      # last week's copy under this week's URL. --check re-renders and diffs.
+      - name: Doc pages match their markdown sources
+        run: python dashboard/build_docs.py --check
+
       # CONTRIBUTING.md's "docs land with code" rule, mechanized to the weakest
       # true statement: a cli/ or skills/ change should touch CHANGELOG.md or
       # docs/. ADVISORY on purpose — it sees that a file changed, not that the

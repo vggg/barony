@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Published doc pages** — `docs/product-overview.md` and `docs/capability-value-map.md`
+  now render as styled pages at `/overview/` and `/value-map/` on the Pages site, in the
+  v1 "calm control" treatment shared with the dashboard. The markdown stays the source of
+  truth: `dashboard/build_docs.py` (stdlib only) projects it, `./dashboard/build-docs.sh`
+  regenerates, and `--check` gates the committed HTML against its source in CI and again
+  before every Pages deploy. The site index becomes a nav over all five pages. Docs only —
+  no CLI, skill or version change.
 
 ## [1.19.0] — 2026-08-14
 
