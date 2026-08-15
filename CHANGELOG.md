@@ -6,6 +6,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — `baron export` at a coordination-monorepo root reported 0 records (plugin 1.16.0 / CLI 0.16.0, [ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md), ACCEPTED)
+
+Run at an ADR-025 monorepo root, `baron export` walked no project subdir and printed
+`no records` — while a run inside each subdir returned real counts. Measured on a two-project
+fixture: **0 at the root, 2 + 2 in the subdirs**. Same silent-false-zero class as the ADR-025
+§6.8 health bug, and the exact instance §6.3's generalisation predicted ("the monorepo turns
+*the repo* and *the project* into different things"). A zero from a knowledge producer is worse
+than one from a health report: an export is piped into an index, and an empty index answers
+every future question with silence.
+
+- **`export.collect_portfolio()`** walks the `.baron-monorepo.yaml` registry and aggregates.
+  The payload keeps the **same shape** (`layout: "monorepo"`, records concatenated), so
+  `baron export --json | jq '.records[]'` does not fork per topology.
+- **`path` needed no adjustment** — `_repo_prefix` already resolved each subdir's offset from
+  the git top-level, so `git show <sha>:barony/docs/adr/…` works from the root. ADR-015 §3.1's
+  choice of repo-root-relative paths, made when a sub-directory collab repo was hypothetical,
+  is what made this a no-op.
+- **The primary key is now `(project, kind, id)`.** Two projects legitimately both hold an
+  `ADR-001`; the old key would have reported the second project's whole corpus as duplicates
+  and dropped it — trading the silent zero for a silent halving.
+- **One bad leg does not zero the portfolio**: unwalkable projects land in `unreadable{}` by
+  name, unregistered subdirs in `unregistered[]`, and neither stops the rest.
+- Regression test reproduces the root-level zero (fails before, passes after), plus a
+  single-project no-regression test.
+
+### Added — `baron export --wide`: `status` and `note` join the four ledgers, opt-in ([ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md))
+
+Acts on [ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md) (P3.3)'s measured finding that the retrieval miss was **coverage, not
+ranking**: the lexical baseline already retrieved the flagship gold record at rank 1, and its
+only miss was a `wiki/` research note `baron export` never walked. **Supersedes ADR-015 §7**'s
+"curated status is not exported — deferred rather than guessed at", and closes 3.4's own corpus
+list.
+
+- **`status`** — `wiki/status.md`, `STATUS.md`. **`note`** — every `*.md` under `wiki/` and
+  `docs/notes/`, retargetable with the repeatable `--note-dir`.
+- **Opt-in, not the default.** `DEFAULT_KINDS == LEDGER_KINDS`: a caller naming no kinds gets
+  the same four-ledger record set as before, and `--wide` (or an explicit `--kind`) asks for
+  the widened one. **ADR-032 §3.1 was amended at integration to reverse this**: as written the
+  new kinds were on by default, decided while ADR-031 was unmerged and the export therefore had
+  no consumer in the tree. It has one now — `baron memeval` calls `collect()` with no kinds —
+  and measured on the integrated stack a six-kind default moved its pinned numbers (MRR
+  **81.2 → 68.8**, citation **100 → 94.4**) and failed three `test_memeval.py` assertions,
+  while delivering **no** ceiling gain. The capability ships whole behind one flag; the default
+  stays where every existing consumer already is.
+- **An explicit include-list, not "every `.md` in the repo"**: `note` means *curated*, and a
+  recursive walk would sweep in agent templates and emit-time fixtures nobody wrote to be
+  retrieved.
+- **The citation gate is not relaxed for the new kinds.** An untracked research note is skipped
+  and named, exactly like an untracked handoff, and `--allow-dirty` still cannot cover it.
+- **`project` is now a core record field, in both layouts** (`null` when there is no readable
+  manifest) — so an index built across projects gets attribution without knowing the topology.
+  Per ADR-015 §5 this is not a format bump, but it is a visible diff: `test_cli_json_shape`
+  pins the key set and was updated by hand.
+- **Measured against the P3.3 fixtures, under `--wide`**: 22 → 23 records, retrieval ceiling
+  **84.4% → 87.5%**, R@5 **76.0 → 79.2**, and the flagship query's permanently-unreachable gold
+  record becomes reachable (`unreachable: []`). MRR fell **81.2 → 75.0** — reported, not
+  suppressed: widening a 22-record corpus adds competition, and the note that closes one query's
+  gap crowds another's top slot. **Those numbers require ADR-032 §4.3's two one-line harness
+  fixes**, which are an open follow-up on `main`, not part of this PR — without them `--wide`
+  measures 84.4 / 76.0 / 68.8 / 94.4. The shipped default is unaffected either way: `baron
+  memeval`'s numbers are byte-identical before and after this change.
+- **Nothing was built toward a backend.** No `baron.knowledge` group, no vendor, no new
+  dependency; ADR-015 §4.2 / ADR-022 §5.1 and their three guard tests are untouched and green.
+
 ### Added — `baron identity register|enroll|protect`: the ADR-027 runbook, mechanized (plugin 1.15.0 / CLI 0.15.0)
 
 `docs/runbooks/identity-signing.md` was a list of owner actions performed by clicking. Each is

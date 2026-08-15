@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from baron import export
+from baron import export, monorepo
 from baron.cli import app
 
 from conftest import REPO_ROOT, commit_file, init_repo, run_git
@@ -491,7 +491,13 @@ def test_cli_json_shape(collab: Path) -> None:
     assert payload["format"] == export.FORMAT
     assert payload["summary"]["records"] == 9
     assert payload["summary"]["by_kind"] == {"adr": 2, "decision": 1, "finding": 4, "handoff": 2}
-    core = {"id", "kind", "title", "path", "commit_sha", "status", "body", "links", "meta"}
+    # `project` was added by ADR-032 §3.2. Widening the core key set is allowed
+    # without a format bump (ADR-015 §5: consumers ignore unknown keys) but must
+    # be a VISIBLE diff, which is this line's whole job.
+    core = {
+        "id", "kind", "title", "path", "commit_sha", "status", "body", "links",
+        "meta", "project",
+    }
     for record in payload["records"]:
         assert set(record) == core, "the record wire shape is a contract — see ADR-015 §5"
 
@@ -567,3 +573,307 @@ def test_no_knowledge_entry_point_group_was_published() -> None:
     assert set(groups) <= {"baron.forges", "baron.sinks"}, (
         f"unreviewed entry-point group published: {sorted(set(groups) - {'baron.forges', 'baron.sinks'})}"
     )
+
+
+# --- ADR-032: the coordination-monorepo walk -------------------------------------------
+#
+# The bug: at an ADR-025 monorepo root `baron export` walked no project subdir
+# and reported **0 records**, while a run inside each subdir returned real
+# counts. Same silent-false-zero class as ADR-025 §6.8's health bug — a zero
+# that means "I looked in the wrong directory" while reading as "nothing is
+# there". These tests fail on the pre-ADR-032 code at the assertion that the
+# root sees what the subdirs see.
+
+
+PROJECT_ADR = """\
+---
+created: 2026-08-01
+type: decision
+status: accepted
+adr: 001
+---
+
+# ADR-001: {title}
+
+| Field | Value |
+|---|---|
+| **Status** | **Accepted** |
+
+{title} body.
+"""
+
+PROJECT_FINDINGS = """\
+# {name} — findings index
+
+### F1 — {title} (2026-08-02, Tess)
+
+Measured in {name}.
+"""
+
+
+def _manifest(name: str) -> str:
+    return f"project:\n  name: {name}\n  collab_repo: .\n"
+
+
+@pytest.fixture
+def monorepo_root(tmp_path: Path) -> Path:
+    """A coordination monorepo (ADR-025): one git repo, two project subdirs.
+
+    Deliberately gives BOTH projects an `ADR-001` — legitimate, since ADR numbers
+    are per-project — so the aggregation is forced to key on the project too.
+    """
+    root = init_repo(tmp_path / "fleet-coordination")
+    commit_file(
+        root,
+        ".baron-monorepo.yaml",
+        "layout: monorepo\nversion: 1\nprojects:\n"
+        "  - dir: _meta\n    name: meta\n"
+        "  - dir: barony\n    name: barony\n",
+        "seed: marker",
+    )
+    for subdir, name in (("_meta", "meta"), ("barony", "barony")):
+        commit_file(root, f"{subdir}/manifest.yaml", _manifest(name), f"seed: {name} manifest")
+        commit_file(
+            root,
+            f"{subdir}/docs/adr/ADR-001-topology.md",
+            PROJECT_ADR.format(title=f"{name} topology"),
+            f"seed: {name} adr",
+        )
+        commit_file(
+            root,
+            f"{subdir}/findings/index.md",
+            PROJECT_FINDINGS.format(name=name, title=f"{name} leaks under load"),
+            f"seed: {name} findings",
+        )
+    return root
+
+
+def _root_export(root: Path) -> export.Export:
+    repo = monorepo.load(root)
+    return export.collect_portfolio(
+        root, [(p.dir, p.name) for p in repo.projects], unregistered=repo.unregistered
+    )
+
+
+def test_monorepo_root_export_is_not_silently_zero(monorepo_root: Path) -> None:
+    """THE REGRESSION. The root must see exactly what the subdirs see.
+
+    Pre-fix, the left-hand side of the final assertion was 0 while the right-hand
+    side was 4 — and `baron export` said "no records" rather than "this is a
+    monorepo root, here is what I did not walk".
+    """
+    per_project = {
+        name: export.collect(monorepo_root / name if name != "meta" else monorepo_root / "_meta")
+        for name in ("meta", "barony")
+    }
+    assert all(len(e.records) == 2 for e in per_project.values()), {
+        k: len(v.records) for k, v in per_project.items()
+    }
+
+    result = _root_export(monorepo_root)
+    assert result.layout == "monorepo"
+    assert len(result.records) == sum(len(e.records) for e in per_project.values()) == 4
+
+
+def test_monorepo_export_carries_per_project_provenance(monorepo_root: Path) -> None:
+    result = _root_export(monorepo_root)
+    assert {r.project for r in result.records} == {"meta", "barony"}
+    assert {p.dir: p.records for p in result.projects} == {"_meta": 2, "barony": 2}
+    payload = result.to_dict()
+    assert payload["summary"]["by_project"] == {"meta": 2, "barony": 2}
+    assert payload["layout"] == "monorepo"
+
+
+def test_monorepo_export_does_not_call_cross_project_ids_duplicates(
+    monorepo_root: Path,
+) -> None:
+    """Both projects hold an `ADR-001` and an `F1`. Keying on `(kind, id)` alone
+    would drop half the corpus into `duplicates[]` — trading the silent zero for
+    a silent halving, which is the same bug wearing a different number."""
+    result = _root_export(monorepo_root)
+    assert result.duplicates == []
+    adrs = sorted(
+        (r.project, r.path) for r in result.records if r.kind == "adr"
+    )
+    assert adrs == [
+        ("barony", "barony/docs/adr/ADR-001-topology.md"),
+        ("meta", "_meta/docs/adr/ADR-001-topology.md"),
+    ]
+
+
+def test_monorepo_export_citations_resolve_from_the_root(monorepo_root: Path) -> None:
+    """`path` must stay repo-root-relative (ADR-015 §3.1) across the aggregation,
+    so `git show <sha>:<path>` still reproduces the bytes — now with the subdir
+    prefix that the per-project walk's `repo_prefix` supplies."""
+    result = _root_export(monorepo_root)
+    assert result.records, "nothing to check"
+    assert_no_miscitation(monorepo_root, result)
+
+
+def test_monorepo_export_reports_unregistered_subdirs_without_including_them(
+    monorepo_root: Path,
+) -> None:
+    commit_file(monorepo_root, "stowaway/manifest.yaml", _manifest("stowaway"), "seed: stowaway")
+    commit_file(
+        monorepo_root,
+        "stowaway/findings/index.md",
+        PROJECT_FINDINGS.format(name="stowaway", title="not registered"),
+        "seed: stowaway findings",
+    )
+    result = _root_export(monorepo_root)
+    assert result.unregistered == ["stowaway"]
+    assert "stowaway" not in {r.project for r in result.records}
+    assert "stowaway/" in export.render_table(result)
+
+
+def test_monorepo_export_survives_one_unreadable_project(monorepo_root: Path) -> None:
+    """One bad leg must not zero the portfolio — ADR-015 §3.2's "one uncommitted
+    handoff should not destroy the other 283 records", one level up."""
+    repo = monorepo.load(monorepo_root)
+    result = export.collect_portfolio(
+        monorepo_root,
+        [(p.dir, p.name) for p in repo.projects] + [("ghost", "ghost")],
+    )
+    assert "ghost" in result.unreadable
+    assert len(result.records) == 4
+
+
+def test_cli_export_at_a_monorepo_root_reports_records(monorepo_root: Path) -> None:
+    result = runner.invoke(app, ["export", "--collab", str(monorepo_root), "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["layout"] == "monorepo"
+    assert payload["summary"]["records"] == 4
+    assert payload["summary"]["projects"] == 2
+
+
+def test_single_project_export_is_unchanged_by_the_monorepo_path(collab: Path) -> None:
+    """No-regression: a standalone collab repo takes the single-layout branch,
+    reports `layout: "single"`, and still emits the same nine records."""
+    result = export.collect(collab)
+    assert result.layout == "single"
+    assert result.projects == []
+    assert len(result.records) == 9
+    assert_no_miscitation(collab, result)
+
+    cli = runner.invoke(app, ["export", "--collab", str(collab), "--json"])
+    assert cli.exit_code == 0, cli.output
+    payload = json.loads(cli.stdout)
+    assert payload["layout"] == "single"
+    assert payload["summary"]["records"] == 9
+
+
+# --- ADR-032: the widened corpus (status + note) ----------------------------------------
+#
+# P3.3 (ADR-031) measured the lexical baseline retrieving the flagship gold
+# record at rank 1; its ONLY miss was a research note in `wiki/` that this
+# walker never visited. Coverage, not ranking — so these lock what the walker
+# now reaches, and that the citation gate came with it rather than being
+# relaxed for the new corpora.
+
+
+RESEARCH_NOTE = """\
+---
+type: research
+status: draft
+related:
+  - "[[docs/adr/ADR-001-substrate]]"
+---
+
+# Lightweight agent identity — survey
+
+Compared three approaches. Feeds ADR-001.
+"""
+
+CURATED_STATUS = """\
+# Demo — status
+
+Phase 2 is green. See F3.
+"""
+
+
+def test_curated_status_and_notes_are_exported(collab: Path) -> None:
+    commit_file(collab, "wiki/status.md", CURATED_STATUS, "seed: status")
+    commit_file(collab, "wiki/research-identity.md", RESEARCH_NOTE, "seed: note")
+    commit_file(collab, "docs/notes/seam-measurements.md", "# Seam measurements\n", "seed: note 2")
+
+    result = export.collect(collab, kinds=set(export.KIND_ORDER))
+    keys = _by_key(result)
+    assert ("status", "wiki/status") in keys
+    assert ("note", "wiki/research-identity") in keys
+    assert ("note", "docs/notes/seam-measurements") in keys
+    # ...and `wiki/status.md` is claimed ONCE, by the kind that describes it.
+    assert ("note", "wiki/status") not in keys
+    assert_no_miscitation(collab, result)
+
+
+def test_note_records_keep_frontmatter_status_links_and_corpus(collab: Path) -> None:
+    commit_file(collab, "wiki/research-identity.md", RESEARCH_NOTE, "seed: note")
+    record = _by_key(export.collect(collab, kinds=set(export.KIND_ORDER)))[("note", "wiki/research-identity")]
+    assert record.title == "Lightweight agent identity — survey"
+    assert record.status == "draft"
+    assert record.meta["corpus"] == "wiki"
+    assert {"type": "ref", "target": "ADR-001"} in record.links
+    assert {"type": "wikilink", "target": "docs/adr/ADR-001-substrate"} in record.links
+
+
+def test_the_citation_gate_covers_the_new_corpora_too(collab: Path) -> None:
+    """ADR-015 §3.2 is not relaxed for `note`/`status`: an untracked research
+    note is skipped and NAMED, never emitted with an empty or borrowed SHA."""
+    (collab / "wiki").mkdir(parents=True, exist_ok=True)
+    (collab / "wiki" / "draft.md").write_text("# Uncommitted draft\n", encoding="utf-8")
+    result = export.collect(collab, kinds=set(export.KIND_ORDER))
+    assert ("note", "wiki/draft") not in _by_key(result)
+    assert ("wiki/draft.md", "uncommitted") in {(s.path, s.reason) for s in result.skipped}
+    # and --allow-dirty still cannot cover an untracked source
+    assert ("note", "wiki/draft") not in _by_key(
+        export.collect(collab, kinds=set(export.KIND_ORDER), allow_dirty=True)
+    )
+
+
+def test_kind_filter_selects_the_new_corpora(collab: Path) -> None:
+    commit_file(collab, "wiki/research-identity.md", RESEARCH_NOTE, "seed: note")
+    result = export.collect(collab, kinds={"note"})
+    assert {r.kind for r in result.records} == {"note"}
+
+    ledgers_only = export.collect(collab, kinds=set(export.LEDGER_KINDS))
+    assert {r.kind for r in ledgers_only.records} <= set(export.LEDGER_KINDS)
+    assert len(ledgers_only.records) == 9
+
+
+def test_notes_do_not_re_export_adrs_when_the_trees_overlap(collab: Path) -> None:
+    """`--adr-dir` can point inside a note dir. Guard against the same file
+    coming back twice under two kinds and two IDs."""
+    commit_file(collab, "wiki/adr/ADR-009-nested.md", ADR_ONE, "seed: nested adr")
+    result = export.collect(collab, adr_dir="wiki/adr")
+    paths = [r.path for r in result.records]
+    assert paths.count("wiki/adr/ADR-009-nested.md") == 1
+    assert _by_key(result)[("adr", "ADR-009")].kind == "adr"
+
+
+def test_records_are_byte_stable_with_the_widened_corpus(collab: Path) -> None:
+    commit_file(collab, "wiki/status.md", CURATED_STATUS, "seed: status")
+    commit_file(collab, "wiki/research-identity.md", RESEARCH_NOTE, "seed: note")
+    first = json.dumps(export.collect(collab).to_dict(), sort_keys=True)
+    second = json.dumps(export.collect(collab).to_dict(), sort_keys=True)
+    assert first == second
+
+
+def test_the_widened_corpus_is_opt_in_not_the_default(collab: Path) -> None:
+    """ADR-032 §3.1 (amended). The default record set is the four ledgers, so
+    merging the widened corpus does not silently move the counts under an
+    existing consumer — `baron memeval` (ADR-031) is one, and its pinned numbers
+    move if this regresses. `--wide` / an explicit `--kind` is how you ask.
+    """
+    commit_file(collab, "wiki/status.md", CURATED_STATUS, "seed: status")
+    commit_file(collab, "wiki/research-identity.md", RESEARCH_NOTE, "seed: note")
+
+    default = export.collect(collab)
+    assert {r.kind for r in default.records} <= set(export.LEDGER_KINDS)
+    assert ("note", "wiki/research-identity") not in _by_key(default)
+    assert ("status", "wiki/status") not in _by_key(default)
+
+    wide = export.collect(collab, kinds=set(export.KIND_ORDER))
+    assert ("note", "wiki/research-identity") in _by_key(wide)
+    assert ("status", "wiki/status") in _by_key(wide)
+    assert export.DEFAULT_KINDS == export.LEDGER_KINDS

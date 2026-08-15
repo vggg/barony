@@ -177,6 +177,60 @@ Remaining before release: the vault handoff to Iris, then the release workflow.
 > tag / `gh release create` steps of the release workflow have not run since. Reconcile
 > before or with the next release, or the tag history stops matching the record.
 
+## Shipped (unreleased) — `baron export` reaches the whole estate (plugin 1.16.0 / CLI 0.16.0, [ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md))
+
+Owner decision #5. Two fixes to the export's **reach**, both about what the walker can see.
+
+**The monorepo silent zero.** At an ADR-025 coordination-monorepo root `baron export` walked
+no project subdir and printed `no records`, while per-project runs returned real counts
+(measured on a two-project fixture: **0 at the root, 2 + 2 in the subdirs**). Same
+silent-false-zero class as the [ADR-025 §6.8](docs/adr/ADR-025-coordination-monorepo.md)
+health bug just fixed, and the exact instance §6.3's generalisation predicted. Now
+`collect_portfolio()` walks the `.baron-monorepo.yaml` registry and aggregates, keeping the
+**same payload shape** so `jq '.records[]'` does not fork per topology. Per-project provenance
+rides on each record (`project`) and on `projects[]`; unregistered subdirs are reported, not
+swept in; one unwalkable project no longer zeroes the portfolio. The primary key became
+`(project, kind, id)` — the old `(kind, id)` would have called the second project's `ADR-001`
+a duplicate and dropped its whole corpus, trading a silent zero for a silent halving.
+
+**The widened corpus, behind `--wide`.** `status` (`wiki/status.md`, `STATUS.md`) and `note`
+(`wiki/`, `docs/notes/`, retargetable via `--note-dir`) join the four ledgers — six kinds
+available, four by default (`DEFAULT_KINDS == LEDGER_KINDS`). **ADR-032 §3.1 was amended at
+integration** to make them opt-in: as written they were on by default, decided while ADR-031
+was unmerged and the export had no consumer in the tree. It has one now — `baron memeval`
+calls `collect()` with no kinds — and on the integrated stack a six-kind default moved its
+pinned numbers (MRR 81.2 → 68.8, citation 100 → 94.4) and failed three `test_memeval.py`
+assertions while delivering no ceiling gain. The capability ships whole behind one flag. This
+**supersedes [ADR-015](docs/adr/ADR-015-baron-export.md) §7**'s "curated status is not
+exported — deferred rather than guessed at" and closes 3.4's own corpus list. It acts on
+**[ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md) (P3.3)**'s measured finding that the retrieval miss was **coverage, not
+ranking**: the lexical baseline already retrieved the flagship gold record at rank 1, and its
+only miss was a `wiki/` research note the exporter never walked. The citation gate is not
+relaxed for the new kinds — an untracked note is skipped and named exactly like an untracked
+handoff.
+
+**Measured against the P3.3 fixtures, under `--wide`** (ADR-031 has since merged, so this is
+now directly reproducible — but it also needs §4.3's two harness fixes, which are a follow-up
+on `main`; without them `--wide` measures 84.4 / 76.0 / 68.8 / 94.4): 22 → 23 records, retrieval
+ceiling **84.4% → 87.5%**, R@5 **76.0 → 79.2**, and the flagship query's permanently
+unreachable gold record becomes reachable (`unreachable: []`). **MRR fell 81.2 → 75.0** —
+reported rather than suppressed: widening a 22-record corpus adds competition, and the note
+that closes one query's gap crowds another's top slot. Whether a semantic layer recovers
+precision-at-1 *while keeping* the coverage is now a well-posed question for P3.4, which it
+was not before.
+
+> **Two items this hands to `main`** (ADR-032 §4.3), now that ADR-031 has merged and they are
+> the prerequisite for ever flipping the default. ADR-031's harness hardcodes its
+> producer's vocabulary in two places — the gold label `wiki:research-agent-identity-lightweight`
+> (the shipped record is `note:wiki/research-agent-identity-lightweight`) and
+> `_citation_holds`'s closed kind allowlist `("adr", "handoff")`. Run unmodified against a
+> six-kind export they report a producer *improvement* as a regression (MRR 68.8, citation
+> 94.4) — measured, which is why the default was amended to four. Both are one-line fixes.
+
+**Still deliberately not built:** no semantic backend, no `baron.knowledge` entry-point group,
+no vendor, no new dependency. ADR-015 §4.2 / ADR-022 §5.1 are untouched and their three guard
+tests stay green and unrelaxed.
+
 ## Shipped (unreleased) — P3.4 (partial) `baron export`: citable records
 
 [ADR-015](docs/adr/ADR-015-baron-export.md). `baron export [--kind …] [--json]` walks
