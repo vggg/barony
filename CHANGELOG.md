@@ -6,6 +6,105 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [1.19.0] — 2026-08-14
+
+**The governance release.** Eight plugin versions and eight CLI versions accumulated since
+v1.10.0 (2026-08-09) without a tag; this cuts them as one. The through-line is that the
+things Barony asserted in prose became things it *checks*: who a persona is (ADR-027), who
+approved a commit (ADR-033), whether the merge preconditions hold (ADR-028), whether an
+ADR did its prior-art sweep (ADR-029), and — newly, and only advisorily — whether a change
+said anywhere what it did.
+
+Grouped below by what it does for a reader, newest first within each group. Every entry
+keeps the version markers it shipped under, because the CLI and the plugin are independent
+tracks and a reader chasing `barony==0.14.0` needs to find it.
+
+- **Governance & attribution:** signed review verdicts (§ADR-033) and its enrollment-keyed
+  default; agent identity and SSH signing (§ADR-027) plus the `baron identity` onboarding
+  commands; the mechanized merge gate (§ADR-028); the prior-art gate (§ADR-029).
+- **Topology & reach:** the coordination monorepo (§ADR-025), `baron adopt-project`, the
+  `baron health` plane fix, `baron export` at a monorepo root and `--wide`.
+- **New surfaces:** the persona sidecar (§ADR-026), the `observer` archetype (§ADR-030),
+  the `baron memeval` harness (§ADR-031), the fleet dashboard.
+- **Process:** the advisory docs-coverage check, and the release gate that now names the
+  product docs explicitly.
+
+**Governance record — ratified 2026-08-14.** The owner accepted **[ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md)**
+(the mechanized merge gate) and **[ADR-030](docs/adr/ADR-030-observer-archetype.md)** (the
+`observer` archetype). Both had shipped while still marked *proposed* — the code has been
+live on `main` since CLI 0.11.0 and 0.13.0 respectively — so ratification changes the
+**record**, not the behavior, and neither ADR was rewritten. In particular ADR-028 §4's
+account of the attribution hole is left standing exactly as written: it is the reasoning
+ADR-033 was built on, and an ADR that edits away its admitted gaps after the fact is worth
+less than one that leaves them visible. §7 Q4 remains superseded by ADR-033.
+
+This closes the "shipped ahead of its record" gap for both. It does **not** close it for
+[ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md) (`baron memeval`) or
+[ADR-015](docs/adr/ADR-015-baron-export.md) (`baron export`), which ship in this release
+and remain **proposed** — deliberately, and still worth reading as unsigned.
+
+### Changed — the signed-verdict gate enforces itself once a reviewer is enrolled (plugin 1.19.0 / CLI 0.18.0, [ADR-033 §7 Q1](docs/adr/ADR-033-signed-review-verdicts.md) RESOLVED)
+
+ADR-033 shipped `--require-signed-verdict` **off**, and said why: turning a missing
+signature into a refusal is a fleet-wide breaking change, and *a default nobody signed and
+a default somebody signed look identical in a diff* (ADR-013 §7.1). It left the question
+open for the owner. **Answered 2026-08-14 — approved: default-ON once a reviewer persona is
+enrolled, warn-only before enrollment.**
+
+None of the three candidate triggers in §7 Q1 was chosen. A manifest field is a new
+configuration surface that drifts from the registry it describes; a flag day breaks
+projects on a *date* rather than on a *fact*; `baron doctor` reports readiness without
+anybody acting on it. **Enrollment is the trigger** because it is the fact that decides
+whether a signature was possible at all — before a reviewer's key is in
+`.barony/allowed_signers`, nothing *could* have signed, and refusing would punish a project
+for a capability it does not have.
+
+- `merge.resolve_signed_posture()` reads enrollment **at HEAD**, never from the worktree.
+  A persona that writes its own registry line into its own worktree has enrolled nothing —
+  and if the worktree counted, any persona could flip the fleet's merge posture by editing
+  a file it already controls (ADR-027 §2).
+- **Both halves must hold:** an enrolled key *and* an `archetype: reviewer` persona behind
+  that slug. Either alone leaves nobody who can sign.
+- `--require-signed-verdict` / `--no-require-signed-verdict` override in **both**
+  directions, so a project mid-migration turns enforcement off without un-enrolling a key.
+- The posture **and its trigger** print in the `verdict_signed` detail line on every run.
+  §2.2's objection was to enforcement arriving *silently*; it never does.
+
+**The honest bound is unchanged.** Enforcing that a signature is *present* does not make
+the verdict *correct* (that stays ADR-024's escape-rate axis), and a hostile workspace
+holding the reviewer's key can still sign anything. This closes a coverage gap, not the
+trust question — and still only the evidence half of the autonomous merger, not the
+authority half. There is still no `baron merge do`.
+
+**Upgrade note.** A project with an enrolled reviewer and unsigned verdicts will start
+seeing `baron merge check` refuse. That is the intended change. Either sign verdicts with
+`baron review sign`, or pass `--no-require-signed-verdict` while you migrate.
+
+### Added — the docs-coverage check: "docs land with code" stops being only prose (`tests/check_docs_coverage.py`)
+
+`CONTRIBUTING.md` has carried the rule since 2026-06-03 and enforced it by memory. CI now
+warns when a PR changes `cli/` or `skills/` but touches neither `CHANGELOG.md` nor
+anything under `docs/` — the same move ADR-028 made for the merge gate and ADR-029 made
+for the prior-art sweep.
+
+**It is advisory and says so, in the script, in CI, and in `CONTRIBUTING.md`.** It sees
+that a file changed, not that the change *describes what shipped*; a one-word edit
+satisfies it. Its false positives are legitimate — a refactor or a test-only fix owes no
+docs. Claiming to *enforce* documentation on that evidence would be claiming a property it
+never measured, which is the failure `dashboard/check_snapshot.py` exists to prevent. It
+prints and exits 0; `--strict` blocks, and switching the CI line over is the one-line
+escalation to make once there is evidence the warning is ignored rather than answered.
+
+`CLAUDE.md`'s release workflow gains an explicit gate: **`docs/product-overview.md` and
+`docs/capability-value-map.md` reviewed** before tagging. Those two go stale in the way
+that is hardest to notice — they stay *true* while becoming *incomplete*, which reads as
+fine right up until a reader concludes the product cannot do something it has done for
+three releases. The workflow also now records the PyPI publish step and states plainly
+that tagging, releasing and publishing are **owner** steps run under the owner's own
+credentials.
+
 ### Added — fleet dashboard on GitHub Pages (plugin 1.18.0, `dashboard/`)
 
 A static, server-less dashboard published from `dashboard/` — three visual treatments (`/v1/`
@@ -203,7 +302,7 @@ intervention tax. A metric with an empty denominator reports `n/a`, never a sile
 > branch, and 028 landed first as the mechanized merge gate. Recorded in `docs/adr/README.md
 > § Numbering` rather than silently renamed.
 
-### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), PROPOSED)
+### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), ACCEPTED 2026-08-14)
 
 The fleet's first agent, and the one with no blast radius: it may **read everything** (handoffs,
 ledgers, wiki, git/PR activity, the ADR-013 event plane, `baron status` / `baron health`) and
@@ -1282,7 +1381,7 @@ is structural, not statistical: `baron init` creates the namespace, so the expos
 is universal even where the observation is singular. §7 keeps *"wait for a second
 instance"* as a legitimate owner call.
 
-## [1.10.0] — 2026-08-04
+## [1.10.0] — 2026-08-09
 
 ### Added — ritual-token coverage is now gated in the adapters
 

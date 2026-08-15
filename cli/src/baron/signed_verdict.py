@@ -215,6 +215,31 @@ def persona_archetype(collab: Path, slug: str) -> Optional[str]:
     return None
 
 
+def enrolled_reviewers(collab: Path) -> list[str]:
+    """Reviewer-archetype persona slugs whose signing keys are MERGED into the registry.
+
+    This is the *enrollment* question ADR-033 §7 Q1 turns the default posture on
+    (owner decision, 2026-08-14): once a project has a reviewer that can actually sign,
+    a missing signature stops being "this fleet has not adopted signing yet" and starts
+    being "the reviewer that could have signed this did not".
+
+    Read at HEAD, never from the worktree, for the reason ADR-027 §2 gives: a key is
+    enrolled once the OWNER has merged it. A persona that writes its own line into its
+    own worktree has enrolled nothing — and if the worktree counted, that persona could
+    flip the fleet's merge posture by editing a file it already controls.
+
+    Both halves must hold. A slug in ``allowed_signers`` with no reviewer persona behind
+    it is some other archetype's key, and a reviewer persona with no enrolled key cannot
+    sign anything — neither one makes the project ready to enforce.
+    """
+    slugs = {
+        entry.slug
+        for entry in identity_mod.read_allowed_signers(collab, at_head=True)
+        if entry.slug
+    }
+    return sorted(s for s in slugs if persona_archetype(collab, s) == REVIEWER_ARCHETYPE)
+
+
 def commit_signer(repo_dir: Path, sha: str) -> Optional[str]:
     """The persona slug that SIGNED ``sha`` — the author, established cryptographically.
 

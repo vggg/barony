@@ -125,6 +125,7 @@ docs/
 tests/
   bi_runtime_accept.py    # acceptance harness — parses the adapters' capability maps
   lint_repo.py            # placeholders, dead links, fixture leaks, version sync
+  check_docs_coverage.py  # advisory — warns when cli/ or skills/ changed but CHANGELOG/docs did not
   examples/               # example persona fixtures (rex, tess)
 CHANGELOG.md
 CLAUDE.md                 # this file
@@ -140,13 +141,34 @@ Semver. Patch (0.0.x): wording fixes, typos, broken references. Minor (0.x.0): n
 
 ## Release workflow
 
+**Release gate — the docs items are gate items, not chores.** A release is the one moment
+the outside-facing docs are read by someone who was not in the room. Tick these before
+tagging:
+
+- [ ] **`docs/product-overview.md` reviewed** against what actually shipped — the pitch
+      must describe the current product, not the one at the last release.
+- [ ] **`docs/capability-value-map.md` reviewed** — every capability the release adds is
+      either in the map or deliberately absent, and nothing in the map claims a capability
+      that was dropped or never landed.
+- [ ] **`CHANGELOG.md`** `[Unreleased]` folded into the new version section.
+- [ ] **`STATUS.md`** Shipped table matches the tags that actually exist (`git tag`), not
+      the ones the CHANGELOG implies.
+- [ ] `python3 tests/check_docs_coverage.py` — advisory, but read what it says.
+
+These two docs go stale in the specific way that is hardest to notice: they stay *true*
+while becoming *incomplete*, which reads as fine right up until a reader concludes the
+product cannot do something it has done for three releases.
+
 ```bash
-# 1. Verify the tests pass (the two stdlib suites + the baron CLI suite):
+# 1. Verify the tests pass (the two stdlib suites + the baron CLI suite + the gates):
 python3 tests/bi_runtime_accept.py
 python3 tests/lint_repo.py
+python3 tests/check_docs_coverage.py            # advisory
 uv run --project cli pytest cli/tests
+uv run --project cli baron adr check docs/adr   # ADR-029 prior-art gate
 
 # 2. Bump version in .claude-plugin/plugin.json AND skills/barony/SKILL.md
+#    (and cli/pyproject.toml when the CLI changed — the two tracks are independent)
 # 3. Move [Unreleased] content in CHANGELOG.md to a new version section
 
 git add .
@@ -155,7 +177,17 @@ git push
 git tag -a vX.Y.Z -m "<summary>"
 git push origin vX.Y.Z
 gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes "<notes>"
+
+# 4. Publish the CLI to PyPI — OWNER ONLY. This step needs the owner's PyPI token
+#    and is deliberately not automated and not delegated to an agent.
+uv build --project cli
+uv publish --project cli          # prompts for the token, or reads UV_PUBLISH_TOKEN
 ```
+
+**Tag/release/publish are owner steps.** An agent prepares the release commit, the notes
+and the exact commands; the owner runs the tagging and the publish. That boundary is the
+same one ADR-028/ADR-033 draw for merges — baron evaluates and prepares, the human acts
+under their own credentials.
 
 ## Testing
 

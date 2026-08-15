@@ -445,3 +445,138 @@ def test_signing_leaves_no_unsigned_artifact_behind(project: Path) -> None:
             repo="vggg/barony", reviewed_at="2026-08-14T10:00:00+00:00",
         )
     assert not signed_verdict.verdict_path(project, 7, HEAD).exists()
+
+
+# --- the enrollment-keyed default posture (ADR-033 §7 Q1, owner decision 2026-08-14) -----
+#
+# The owner's answer: default-ON once a reviewer persona is enrolled, warn-only before.
+# The property under test is that the TRIGGER is enrollment-at-HEAD — a merged key — and
+# not anything a persona can grant itself by writing into its own worktree.
+
+
+def test_enrolled_reviewers_finds_the_reviewer(project: Path) -> None:
+    assert signed_verdict.enrolled_reviewers(project) == ["tess"]
+
+
+def test_a_dev_key_alone_does_not_count_as_a_reviewer(tmp_path: Path, keys: Path) -> None:
+    """Both halves must hold: an enrolled key belonging to a non-reviewer archetype is
+    somebody else's key, and does not make the project able to sign a verdict."""
+    repo = init_repo(tmp_path / "collab")
+    make_persona(repo, "rex", "dev")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "seed", "--no-verify")
+
+    assert signed_verdict.enrolled_reviewers(repo) == []
+    assert merge.resolve_signed_posture(repo, None)[0] is False
+
+
+def test_an_unmerged_reviewer_key_does_not_flip_the_posture(
+    tmp_path: Path, keys: Path
+) -> None:
+    """The escalation an agent could otherwise perform on itself, in reverse: writing
+    the registry line into the worktree must not change the gate's posture until the
+    owner MERGES it (ADR-027 §2). Read at HEAD, never from the worktree."""
+    repo = init_repo(tmp_path / "collab")
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "seed", "--no-verify")
+
+    make_persona(repo, "tess", "reviewer")  # written, deliberately NOT committed
+    assert signed_verdict.enrolled_reviewers(repo) == []
+    assert merge.resolve_signed_posture(repo, None)[0] is False
+
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "enrol tess", "--no-verify")
+    required, why = merge.resolve_signed_posture(repo, None)
+    assert required is True
+    assert "tess" in why
+
+
+def test_posture_default_enforces_once_a_reviewer_is_enrolled(project: Path) -> None:
+    required, why = merge.resolve_signed_posture(project, None)
+    assert required is True
+    assert "ENFORCED by default" in why and "tess" in why
+
+
+def test_explicit_flags_win_in_both_directions(project: Path) -> None:
+    """The escape hatch is symmetric: a project mid-migration can turn enforcement off
+    without having to un-enrol a key."""
+    assert merge.resolve_signed_posture(project, False)[0] is False
+    repo = init_repo(project.parent / "bare-collab")
+    assert merge.resolve_signed_posture(repo, True)[0] is True
+
+
+def test_posture_is_reported_in_the_precondition_detail() -> None:
+    """An enforcement default that arrives silently is the ADR-013 §7.1 failure. The
+    gate must SAY which posture it is in and what put it there."""
+    result = merge.evaluate(
+        _pr(HEAD), attestation=None, require_signed_verdict=False,
+        posture=merge.POSTURE_UNENROLLED,
+    )
+    signed = next(p for p in result.preconditions if p.name == "verdict_signed")
+    assert "WARN-ONLY" in signed.detail
+    assert "nobody who COULD have signed" in signed.detail
+
+
+@needs_signing
+def test_check_refuses_an_unsigned_verdict_by_default_once_enrolled(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end through `check()` with NO flag passed: the enrolled reviewer `tess`
+    exists, no verdict was signed for this head, and the gate refuses on its own."""
+    head = commit_as(project, "rex", "the work")
+
+    class _Forge:
+        name = "stub"
+
+        def get_pr(self, repo_dir, number, *, target_repo=None):
+            return _pr(head, number=number)
+
+    result = merge.check(_Forge(), project, 7, target_repo="vggg/barony")
+
+    assert not result.allowed
+    assert result.refusal.name == "verdict_signed"
+    assert "ENFORCED by default" in result.refusal.detail
+
+
+@needs_signing
+def test_check_warns_instead_of_refusing_before_enrollment(tmp_path: Path, keys: Path) -> None:
+    """The compatibility half of the owner's decision: a project that has not enrolled a
+    reviewer keeps merging, and is told exactly why it is not being enforced."""
+    repo = init_repo(tmp_path / "collab")
+    make_persona(repo, "rex", "dev")
+    (repo / "code.py").write_text("x\n", encoding="utf-8")
+    run_git(repo, "add", "-A")
+    run_git(repo, "commit", "-m", "seed", "--no-verify")
+    head = run_git(repo, "rev-parse", "HEAD").strip()
+
+    class _Forge:
+        name = "stub"
+
+        def get_pr(self, repo_dir, number, *, target_repo=None):
+            return _pr(head, number=number)
+
+    result = merge.check(_Forge(), repo, 7, target_repo="vggg/barony")
+
+    assert result.allowed
+    signed = next(p for p in result.preconditions if p.name == "verdict_signed")
+    assert "WARN-ONLY" in signed.detail
+
+
+@needs_signing
+def test_the_honest_bound_survives_the_new_default(project: Path) -> None:
+    """Enforcing PRESENCE is not the same as establishing CORRECTNESS. The default
+    changed; the bound ADR-033 states did not, and the output must keep saying so."""
+    head = commit_as(project, "rex", "the work")
+    signed_verdict.sign(
+        project, pr=7, head=head, state="PASS", reviewer="tess",
+        repo="vggg/barony", reviewed_at="2026-08-14T10:00:00+00:00",
+    )
+    att = signed_verdict.verify(project, pr=7, head=head, repo="vggg/barony")
+    required, why = merge.resolve_signed_posture(project, None)
+    result = merge.evaluate(
+        _pr(head), attestation=att, require_signed_verdict=required, posture=why,
+    )
+
+    assert result.allowed
+    assert "hostile workspace" in "\n".join(merge.render(result))

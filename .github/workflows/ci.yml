@@ -9,6 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The docs-coverage check diffs against the PR base, which a depth-1
+          # checkout does not have. Everything else here is depth-independent.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
@@ -29,6 +33,17 @@ jobs:
       # credential, or a metric that claims a number it did not measure.
       - name: Dashboard snapshot guard (leaks, shape, honest metrics)
         run: python dashboard/check_snapshot.py
+
+      # CONTRIBUTING.md's "docs land with code" rule, mechanized to the weakest
+      # true statement: a cli/ or skills/ change should touch CHANGELOG.md or
+      # docs/. ADVISORY on purpose — it sees that a file changed, not that the
+      # change describes what shipped, and it has legitimate false positives
+      # (refactors, test fixes). It prints and exits 0; `--strict` makes it
+      # block, and switching this line over is the one-line escalation to make
+      # once there is evidence the warning is ignored rather than answered.
+      - name: Docs coverage (advisory — warns, does not block)
+        run: |
+          python tests/check_docs_coverage.py --base "origin/${{ github.base_ref || 'main' }}"
 
   # baron CLI (Phase 2, ADR-003; distribution `barony`) — the one packaged
   # component; tested via uv.
