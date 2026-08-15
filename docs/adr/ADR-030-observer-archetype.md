@@ -1,7 +1,8 @@
 ---
 created: 2026-08-14
 type: decision
-status: proposed
+status: accepted
+accepted: 2026-08-14
 adr: 030
 project: barony
 authors: Atlas (proposal for Vikram)
@@ -12,11 +13,17 @@ related:
   - "[[docs/adr/ADR-026-persona-sidecar]]"
 ---
 
-# ADR-030 (PROPOSED): the `observer` archetype — a strictly read-only watcher with one zone
+# ADR-030 (ACCEPTED): the `observer` archetype — a strictly read-only watcher with one zone
+
+> **RATIFIED 2026-08-14.** The owner gated this one, and accepted it as written. The
+> `observer` archetype has been live on `main` since CLI 0.13.0 and ships in **v1.19.0**,
+> so this changes the record rather than the code. Nothing below is rewritten — including
+> the open questions and the honest limits on what a read-only watcher can actually
+> establish.
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed (2026-08-14) — owner gates |
+| **Status** | Accepted (2026-08-14) — ratified by the owner; shipping in v1.19.0 |
 | **Scope note** | Renumbered **029 → 030** at queue integration (2026-08-14): 029 was already taken by the prior-art gate (PR #49), which was opened first. 027 is the identity ADR (PR #48), 028 the merge gate (PR #46). Numbers are never reused; see `README.md § Numbering`. |
 | **Decision owner** | Vikram |
 

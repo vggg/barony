@@ -34,6 +34,19 @@ Every ADR, its status and its supersession relationships are indexed at
 > chasing a specific `pip install` needs. "Unreleased" here means *not yet tagged*, not
 > *not yet merged*.
 
+> **ADR ratifications, 2026-08-14.** The owner accepted **[ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md)**
+> (mechanized merge gate) and **[ADR-030](docs/adr/ADR-030-observer-archetype.md)** (the
+> `observer` archetype). Both shipped while still marked *proposed* — live on `main` since
+> CLI 0.11.0 and 0.13.0 — so this changes the **record**, not the behavior, and neither ADR
+> was rewritten. ADR-028 §4's account of the attribution hole stands exactly as written: it
+> is the reasoning ADR-033 was built on, and an ADR that edits away its admitted gaps is
+> worth less than one that leaves them visible.
+>
+> **Still shipping in v1.19.0 while proposed:** [ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md)
+> (`baron memeval`) and [ADR-015](docs/adr/ADR-015-baron-export.md) (`baron export`). Two
+> records remain ahead of their signatures, not zero — worth saying plainly, because
+> "ratified two" reads like "closed the gap" and it did not.
+
 ## Shipped (unreleased) — the signed-verdict default is keyed to reviewer enrollment (plugin 1.19.0 / CLI 0.18.0, [ADR-033 §7 Q1](docs/adr/ADR-033-signed-review-verdicts.md) RESOLVED)
 
 **Owner decision, 2026-08-14: APPROVED — default-ON once a reviewer persona is enrolled,
@@ -187,7 +200,7 @@ awaiting template promotion — ADR-023 §8 Q2 named a combined `ways-of-working
 the likely host. **This ADR did not absorb it**: the claims ladder is a separate promotion with
 its own evidence, and bundling it would have made one decision out of two. The scope call
 remains the owner's.
-## Shipped (unreleased) — the merge gate: `baron merge check` (CLI 0.11.0)
+## Shipped (unreleased) — the merge gate: `baron merge check` (CLI 0.11.0, [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md) ACCEPTED 2026-08-14)
 
 [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md). P1.3 hardened the `__MERGER__`
 templates in **prose**; this moves the checkable half into code. `baron merge check <pr>`

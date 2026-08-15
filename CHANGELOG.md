@@ -31,6 +31,20 @@ tracks and a reader chasing `barony==0.14.0` needs to find it.
 - **Process:** the advisory docs-coverage check, and the release gate that now names the
   product docs explicitly.
 
+**Governance record — ratified 2026-08-14.** The owner accepted **[ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md)**
+(the mechanized merge gate) and **[ADR-030](docs/adr/ADR-030-observer-archetype.md)** (the
+`observer` archetype). Both had shipped while still marked *proposed* — the code has been
+live on `main` since CLI 0.11.0 and 0.13.0 respectively — so ratification changes the
+**record**, not the behavior, and neither ADR was rewritten. In particular ADR-028 §4's
+account of the attribution hole is left standing exactly as written: it is the reasoning
+ADR-033 was built on, and an ADR that edits away its admitted gaps after the fact is worth
+less than one that leaves them visible. §7 Q4 remains superseded by ADR-033.
+
+This closes the "shipped ahead of its record" gap for both. It does **not** close it for
+[ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md) (`baron memeval`) or
+[ADR-015](docs/adr/ADR-015-baron-export.md) (`baron export`), which ship in this release
+and remain **proposed** — deliberately, and still worth reading as unsigned.
+
 ### Changed — the signed-verdict gate enforces itself once a reviewer is enrolled (plugin 1.19.0 / CLI 0.18.0, [ADR-033 §7 Q1](docs/adr/ADR-033-signed-review-verdicts.md) RESOLVED)
 
 ADR-033 shipped `--require-signed-verdict` **off**, and said why: turning a missing
@@ -288,7 +302,7 @@ intervention tax. A metric with an empty denominator reports `n/a`, never a sile
 > branch, and 028 landed first as the mechanized merge gate. Recorded in `docs/adr/README.md
 > § Numbering` rather than silently renamed.
 
-### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), PROPOSED)
+### Added — the `observer` archetype, a strictly read-only watcher (plugin 1.13.0 / CLI 0.13.0, [ADR-030](docs/adr/ADR-030-observer-archetype.md), ACCEPTED 2026-08-14)
 
 The fleet's first agent, and the one with no blast radius: it may **read everything** (handoffs,
 ledgers, wiki, git/PR activity, the ADR-013 event plane, `baron status` / `baron health`) and

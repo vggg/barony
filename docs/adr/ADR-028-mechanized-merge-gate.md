@@ -1,7 +1,8 @@
 ---
 created: 2026-08-14
 type: decision
-status: proposed
+status: accepted
+accepted: 2026-08-14
 adr: 028
 project: barony
 authors: Claude (design + implementation for Vikram)
@@ -13,11 +14,19 @@ related:
   - "[[docs/adr/ADR-027-agent-identity]]"
 ---
 
-# ADR-028 (PROPOSED): `baron merge check` — the merge decision becomes a fail-closed gate
+# ADR-028 (ACCEPTED): `baron merge check` — the merge decision becomes a fail-closed gate
+
+> **RATIFIED 2026-08-14.** The owner accepted this ADR as written. It was drafted as
+> *proposed* and shipped ahead of ratification — `baron merge check` has been live on
+> `main` since CLI 0.11.0 and goes out in **v1.19.0** — so this changes the record, not the
+> code. Nothing below is rewritten: §4's account of the attribution hole is left exactly as
+> it was, because it is the reasoning [ADR-033](ADR-033-signed-review-verdicts.md) was
+> built on, and an ADR that quietly edits its own admitted gaps after the fact is worth
+> less than one that leaves them standing. §7 Q4 remains superseded by ADR-033.
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed (2026-08-14) |
+| **Status** | Accepted (2026-08-14) — ratified by the owner; shipping in v1.19.0 |
 | **Authors** | Claude (design + implementation for Vikram) |
 | **Decision owner** | Vikram |
 | **Mechanizes** | [ADR-002](ADR-002-ways-of-working-2026-07.md) §4 (the Merger's preconditions) and [ADR-008](ADR-008-ways-of-working-2026-07-31.md) §1/§3 (verdict-not-label; strip-stale-verdict) |
