@@ -832,6 +832,12 @@ spirit. They are the reason to believe the labels that *are* green.
 
 - **[`../README.md`](../README.md)** — the 30-second version and the four
   problems this exists for.
+- **[`product-overview.md`](product-overview.md)** — the evaluator's page: the
+  problem stated from first-party incidents, the git-native thesis, every
+  capability in a paragraph, and the bounds in line.
+- **[`capability-value-map.md`](capability-value-map.md)** — each capability →
+  the outcome → the metric it moves, flagged proven / instrumented /
+  aspirational.
 - **[`concepts.md`](concepts.md)** — every concept here at paragraph length:
   the front door, the emitted layout, the capability and honesty ladders, the
   adapters, PR-locks, signets.

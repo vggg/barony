@@ -252,6 +252,12 @@ version is separate (`baron --version`). See [`STATUS.md`](STATUS.md) for
 progress and [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
 - [docs/user-guide.md](docs/user-guide.md) — **start here.**
+- [docs/product-overview.md](docs/product-overview.md) — the evaluator's page: the
+  problem from first-party incidents, the git-native thesis, every capability in
+  a paragraph, and the bounds stated in line rather than in a footnote.
+- [docs/capability-value-map.md](docs/capability-value-map.md) — each capability →
+  the outcome it delivers → the metric it moves, with how it's measured and
+  whether anyone has measured it yet.
 - [docs/concepts.md](docs/concepts.md) — every concept at paragraph length:
   emitted layout, capability + honesty ladders, adapters, PR-locks, signets,
   worktree topology, the `baron` surface.
