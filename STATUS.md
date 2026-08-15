@@ -26,6 +26,24 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+## Shipped (unreleased) — identity onboarding commands (plugin 1.15.0 / CLI 0.15.0, [ADR-027 §7.5](docs/adr/ADR-027-agent-identity.md) amended)
+
+`baron identity register | enroll | protect` mechanize the three owner steps of
+`docs/runbooks/identity-signing.md` — register a persona's public key as a GitHub **signing**
+key, open the `.barony/allowed_signers` enrollment PR, and create the `main` ruleset (signed
+commits + required `verify-identity` + code-owner review, rebase-merge excluded).
+
+**The trust boundary is unchanged, and that is the load-bearing claim.** All three are
+**dry-run by default** — they print the exact `gh` argv and payload and exit; `--apply` is the
+only thing that executes. All three run under the operator's existing `gh auth`: baron accepts,
+reads, stores and prints **no token**, so no forge credential is introduced (ADR-027 §2 holds).
+`enroll` opens the **request** and stops — there is no `--merge` flag, because a persona that
+could approve its own enrollment could mint peers (§7.2). `register`/`protect` remain owner
+actions; `baron identity init` is still the only agent-run step.
+
+Tests: `cli/tests/test_onboard.py` (24), all against a recording fake — nothing reaches a live
+account, by design rather than by mocking discipline.
+
 ## Shipped (unreleased) — P3.3 `baron memeval`: the governed-memory eval harness (plugin 1.14.0 / CLI 0.14.0)
 
 [ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md). `baron memeval --fixtures

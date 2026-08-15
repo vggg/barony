@@ -30,6 +30,7 @@ from . import (
     merge as merge_mod,
     monorepo as monorepo_mod,
     notify as notify_mod,
+    onboard as onboard_mod,
     rules as rules_mod,
     runtimes,
     scaffold as scaffold_mod,
@@ -1364,6 +1365,140 @@ def handoff_verify(
             typer.echo(f"{state:8s} {v.file.name}  {v.signer or v.reason}")
     if any(not v.ok for v in verdicts):
         raise typer.Exit(1)
+
+
+# --- the ADR-027 runbook, mechanized (dry-run by default; --apply executes) --------------
+
+
+def _run_plan(plan: onboard_mod.Plan, *, apply_it: bool, json_out: bool) -> None:
+    """Shared tail of `register`/`enroll`/`protect`: report, then optionally execute.
+
+    Dry run is the default for all three. Two of them change GitHub ACCOUNT and
+    REPOSITORY SECURITY settings and the third pushes a branch and opens a PR — a
+    default of "act" would be indistinguishable from a default of "explain" right up
+    until it had acted.
+    """
+    results: list[onboard_mod.CallResult] = []
+    if apply_it and plan.calls:
+        try:
+            onboard_mod.require_gh()
+        except onboard_mod.OnboardError as exc:
+            typer.echo(f"error: {exc}", err=True)
+            raise typer.Exit(2)
+        results = onboard_mod.apply(plan)
+    if json_out:
+        payload = plan.to_dict()
+        payload["applied"] = bool(apply_it and plan.calls)
+        payload["results"] = [r.to_dict() for r in results]
+        _echo_json(payload)
+    else:
+        for line in onboard_mod.render(plan, applied=bool(apply_it and plan.calls),
+                                       results=results):
+            typer.echo(line)
+    if any(not r.ok for r in results):
+        typer.echo("error: a planned call failed — see above", err=True)
+        raise typer.Exit(1)
+
+
+_APPLY_OPT = typer.Option(
+    False,
+    "--apply",
+    help="Actually perform the calls. WITHOUT this, baron only prints them. Runs under "
+    "your existing `gh auth` session — baron never accepts, reads, stores or prints a token.",
+)
+
+
+@identity_app.command("register")
+def identity_register(
+    persona: str = typer.Option(..., "--persona", help="Persona slug whose PUBLIC key to register."),
+    title: Optional[str] = typer.Option(
+        None, "--title", help="Key title on GitHub (default: the persona slug)."
+    ),
+    apply_it: bool = _APPLY_OPT,
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Register a persona's PUBLIC key as a GitHub **signing key** (runbook step 2.4).
+
+    A signing key, not an authentication key — separate GitHub key types, and pasting
+    into the wrong list is the likeliest way to do this step and believe it worked. It
+    grants no access; it lets GitHub attribute and badge commits signed by this key.
+    GitHub caps neither the count nor the personas, which is why ADR-027 needs no
+    machine accounts.
+
+    Only the public half is sent; the private key is never read. DRY RUN BY DEFAULT —
+    prints the exact API call and payload, and does nothing until `--apply`.
+    """
+    try:
+        plan = onboard_mod.plan_register(persona, title=title)
+    except onboard_mod.OnboardError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    _run_plan(plan, apply_it=apply_it, json_out=json_out)
+
+
+@identity_app.command("enroll")
+def identity_enroll(
+    persona: str = typer.Option(..., "--persona", help="Persona slug to request enrollment for."),
+    collab: Path = _COLLAB_OPT,
+    branch: Optional[str] = typer.Option(
+        None, "--branch", help="Branch for the request (default: identity/enroll-<slug>)."
+    ),
+    base: str = typer.Option("main", "--base", help="Base branch for the PR."),
+    apply_it: bool = _APPLY_OPT,
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Open the `.barony/allowed_signers` enrollment PR — the REQUEST, never the grant.
+
+    Commits the request line `baron identity init` wrote (plus the persona's
+    `persona.yaml`, when it exists, so the owner approves the key and its declared
+    capabilities in one look), pushes, and opens a PR.
+
+    **It does not merge, and there is no flag that would.** `.barony/` is
+    CODEOWNERS-owned so a persona cannot enroll itself, and that one human approval is
+    the entire trust root of ADR-027 — a persona that could approve its own enrollment
+    could mint peers. DRY RUN BY DEFAULT.
+    """
+    try:
+        plan = onboard_mod.plan_enroll(collab.resolve(), persona, branch=branch, base=base)
+    except onboard_mod.OnboardError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    _run_plan(plan, apply_it=apply_it, json_out=json_out)
+
+
+@identity_app.command("protect")
+def identity_protect(
+    collab: Path = _COLLAB_OPT,
+    repo: Optional[str] = typer.Option(
+        None, "--repo", help="Target repo as owner/name (default: resolved from `origin`)."
+    ),
+    check: str = typer.Option(
+        onboard_mod.VERIFY_CHECK, "--check", help="Required status check to demand."
+    ),
+    name: str = typer.Option(onboard_mod.RULESET_NAME, "--name", help="Ruleset name."),
+    apply_it: bool = _APPLY_OPT,
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Turn on the `main` ruleset: signed commits + required `verify-identity` (runbook step 3).
+
+    The ADR-027 §2.2(c) platform backstop — require a PR with code-owner review (what
+    gives CODEOWNERS teeth over `.barony/`), require the `verify-identity` check (a
+    check that is not *required* is a report, and a report can be merged around), and
+    require signed commits. Rebase-merge is excluded: it adds head-branch commits to
+    the base without verifying signatures.
+
+    The most disruptive step in the runbook, so: DRY RUN BY DEFAULT. Enroll your
+    personas BEFORE applying — afterwards an unenrolled persona cannot land anything,
+    including its own enrollment PR.
+    """
+    try:
+        plan = onboard_mod.plan_protect(
+            collab.resolve(), target_repo=repo, check=check, name=name
+        )
+    except onboard_mod.OnboardError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2)
+    _run_plan(plan, apply_it=apply_it, json_out=json_out)
 
 
 @verify_app.command("identity")

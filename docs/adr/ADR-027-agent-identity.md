@@ -215,7 +215,26 @@ The direction is endorsed; these remain Vikram's calls and are deliberately left
    call is a stronger posture and a louder failure mode.
 5. **The platform steps in `docs/runbooks/identity-signing.md` are owner actions** — registering
    keys, the `main` ruleset, the merge strategy, CODEOWNERS. Nothing in this ADR works until
-   they are done, and no agent can do them.
+   they are done.
+
+   > **Amended 2026-08-14 (plugin 1.14.0 / CLI 0.14.0).** This item originally ended "and no
+   > agent can do them". That was true of the *clicking*, and it left the steps as a
+   > hand-run checklist — which is how a step gets done inconsistently, or half-done, or
+   > skipped on persona seven. `baron identity register`, `enroll` and `protect` now
+   > mechanize them. **Who decides is unchanged**, and that is worth stating precisely
+   > because the amendment looks like a loosening:
+   >
+   > - All three are **dry-run by default**: they print the exact `gh` argv and payload and
+   >   exit. `--apply` is the only thing that executes.
+   > - All three run under the operator's existing `gh auth`. baron accepts no `--token`,
+   >   reads none from the environment, stores none and prints none — so **no forge
+   >   credential is introduced by this amendment either**, and §2's property holds.
+   > - `enroll` opens the enrollment **request** and stops. There is no `--merge` flag and
+   >   there will not be one: §2's human gate and §7.2's "a persona that can enroll can mint
+   >   peers" are exactly what that omission protects.
+   > - `register` and `protect` remain **owner actions**: an agent running `--apply` would be
+   >   changing the owner's account and the repo's security settings. `baron identity init`
+   >   stays the only step an agent runs on its own.
 
 ## 8. Evidence / relation
 
