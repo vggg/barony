@@ -26,6 +26,50 @@ Every ADR, its status and its supersession relationships are indexed at
 > parsed but never activated. `baron doctor` reads project-level settings only. Runtime
 > neutrality is measured with **two** producers, not three.
 
+> **Reading the "Shipped (unreleased)" sections below (2026-08-14).** Every one of them is
+> merged on `main` and none of them was tagged — they accumulated between v1.10.0 and now.
+> They are **all** contents of the prepared **v1.19.0** release (see the Shipped table and
+> `CHANGELOG.md`); the headings are left as written rather than retitled in bulk, because
+> the version markers inside each one (`plugin 1.1x.0 / CLI 0.1x.0`) are what a reader
+> chasing a specific `pip install` needs. "Unreleased" here means *not yet tagged*, not
+> *not yet merged*.
+
+## Shipped (unreleased) — the signed-verdict default is keyed to reviewer enrollment (plugin 1.19.0 / CLI 0.18.0, [ADR-033 §7 Q1](docs/adr/ADR-033-signed-review-verdicts.md) RESOLVED)
+
+**Owner decision, 2026-08-14: APPROVED — default-ON once a reviewer persona is enrolled,
+warn-only before enrollment.** ADR-033 shipped `--require-signed-verdict` off and left the
+trigger to the owner; none of its three candidates (a manifest field, a flag day, `baron
+doctor` readiness) was chosen. Enrollment is the trigger because it is the fact that
+decides whether a signature was *possible*: before a reviewer's key is in
+`.barony/allowed_signers`, nothing could have signed, so refusing would punish a project
+for a capability it does not have. After it, the project opted in — by an **owner-merged**
+commit, which is what makes this a default somebody signed (ADR-013 §7.1).
+
+- `merge.resolve_signed_posture()` reads enrollment **at HEAD**, never the worktree — else
+  any persona could flip the fleet's merge posture by editing a file it already controls.
+- Both halves required: an enrolled key **and** an `archetype: reviewer` persona behind it.
+- `--require-signed-verdict` / `--no-require-signed-verdict` override in both directions.
+- The posture and its trigger print in the `verdict_signed` detail line on every run.
+
+**Bound, unchanged:** enforcing that a signature is *present* does not make the verdict
+*correct* (ADR-024's escape-rate axis), a hostile workspace holding the reviewer's key can
+still sign anything, and this is still the evidence half of the autonomous merger, not the
+authority half. There is still no `baron merge do`.
+
+## Shipped (unreleased) — docs coverage becomes a pipeline step (`tests/check_docs_coverage.py`)
+
+`CONTRIBUTING.md`'s "docs land with code" rule was prose from 2026-06-03 to 2026-08-14, so
+it held as well as whoever remembered it. CI now warns when a PR changes `cli/` or
+`skills/` but touches neither `CHANGELOG.md` nor `docs/`.
+
+**Advisory on purpose, and it says so everywhere it appears.** It sees that a file changed,
+not that the change describes what shipped; its false positives (refactors, test-only
+fixes) are legitimate. A gate that cries wolf teaches people to click past it. `--strict`
+is the one-line escalation to make once there is evidence the warning is being ignored
+rather than answered. `CLAUDE.md`'s release workflow additionally gates on
+`docs/product-overview.md` and `docs/capability-value-map.md` being reviewed, and now
+records the owner-only PyPI publish step.
+
 ## Shipped (unreleased) — signed review verdicts (plugin 1.17.0 / CLI 0.17.0, [ADR-033](docs/adr/ADR-033-signed-review-verdicts.md), supersedes [ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md) §7 Q4)
 
 The reviewer SSH-signs its verdict into `.barony/verdicts/`, and `baron merge check`'s new
@@ -41,7 +85,9 @@ ADR-027 §2.3 — no new key, no new registry, no new trust root. The PR comment
 
 Posture follows ADR-027 §7.3: an invalid signature always refuses; a missing one warns by default
 and refuses under `--require-signed-verdict`, because turning absence into a refusal is a fleet-wide
-breaking change that should be signed rather than defaulted.
+breaking change that should be signed rather than defaulted. *(Amended 2026-08-14: the owner signed
+it — a missing signature now refuses once a reviewer persona is enrolled, warn-only before. See the
+§7 Q1 section at the top of this file.)*
 
 **What it does NOT do — the sentence most likely to be misread.** It closes the **evidence** half of
 the autonomous merger, not the **authority** half: merging still means acting under the owner's
@@ -198,10 +244,17 @@ the same mechanism ADR-002 used. Ships in the pending **plugin 1.9.0 + CLI 0.6.0
 
 Remaining before release: the vault handoff to Iris, then the release workflow.
 
-> **Release-tagging gap (noticed 2026-07-31, unrelated to P1).** `CHANGELOG.md` and the
-> Shipped table record v1.4.0 → v1.8.x, but the newest tag on `origin` is **v1.3.0** — the
-> tag / `gh release create` steps of the release workflow have not run since. Reconcile
-> before or with the next release, or the tag history stops matching the record.
+> **Release-tagging gap (noticed 2026-07-31) — CLOSED 2026-08-14.** The gap was real: the
+> tag / `gh release create` steps had not run since v1.3.0. They were caught up in a batch
+> on **2026-08-02** (v1.4.0 → v1.9.0, all six releases created that afternoon) and
+> **v1.10.0** on 2026-08-09, so the newest tag on `origin` is **v1.10.0**, not v1.3.0.
+> Everything after it — plugin 1.11.0 → 1.19.0, CLI 0.10.0 → 0.18.0 — is cut as
+> **v1.19.0**; see `CHANGELOG.md`.
+>
+> The lesson that outlived the gap: **the tag is the only record a stranger can check.**
+> A CHANGELOG section describing a version nobody can `pip install` or `git checkout` is a
+> claim, not evidence. The release-gate checklist in `CLAUDE.md` now includes verifying the
+> Shipped table against `git tag` rather than against the CHANGELOG.
 
 ## Shipped (unreleased) — `baron export` reaches the whole estate (plugin 1.16.0 / CLI 0.16.0, [ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md))
 
@@ -734,10 +787,18 @@ in **v1.6.0**; `baron init` (the deterministic scaffold, ADR-006) in **v1.8.0**;
 
 ## Shipped
 
+Every row below **v1.19.0** corresponds to a tag that exists on `origin` — verified against
+`git tag`, not against the CHANGELOG. The v1.19.0 row is the release this branch prepares;
+it becomes true when the owner runs the tag + `gh release create` + `uv publish` steps
+(`CLAUDE.md` § Release workflow). Until then it is the only row that is a plan.
+
 | Version | Date | Summary (details in `CHANGELOG.md`) |
 |---|---|---|
-| **CLI 0.5.6** + plugin **1.8.2** (unreleased bundle) | 2026-07-28 | Session boundary ([ADR-007](docs/adr/ADR-007-session-boundary.md)) from the pydantic-ai interop eval (enforcement solid, orchestration manual): **no `baron run` driver** — Barony does not own the agent execution loop (orchestration is the runtime's job) — **plus** thin, optional session-ritual bookkeeping primitives `baron session start` (optional `git pull --ff-only`; open handoffs + conventions pointer + backlog location) and `baron session end` (regenerate the handoff index; commit dirty `_handoff/ findings/ decisions/ wiki/` by path with the persona prefix; `baron status` divergence check, exit 1 on red). Bookkeeping only — no agent loop, no model calls; opt-in; not new capability verbs (compose `status`/`handoff`/`indexer`/`gitutil`). pydantic-ai HYDRATE.md gains an optional "composing the session ritual" note (1.8.2; vendored copy re-synced). |
-| **CLI 0.5.4–0.5.5** + plugin **1.8.1** (unreleased bundle) | 2026-07-28 | **0.5.5:** worktree repair commands (rest of baron M6) — `baron worktree prune [--dry-run]` (wraps `git worktree prune`, clears stale `.git/worktrees/` registrations) + `baron worktree repair [PATH…]` (wraps `git worktree repair`, re-registers a moved worktree/main repo); both admin-only, non-destructive to history. **0.5.4:** interop hardening + backlog burndown from a pydantic-ai dogfood: least-privilege Shell (test-only personas get an allowlisted shell; broad shells deny redirect/pipe operators), guard denies out-of-root writes itself, `RepoContext` wired, `bash -c`/`sh -c` bypass honesty made prominent; `handoff create --body-file`, `handoff close --as`, `BARON_NOW` clock seam, `--author`-vs-git-author docs, version-string fixes. |
+| **v1.19.0** (prepared, not yet tagged) | 2026-08-14 | **The governance release** — plugin 1.11.0 → 1.19.0, CLI 0.10.0 → 0.18.0 cut as one. Agent identity + SSH signing ([ADR-027](docs/adr/ADR-027-agent-identity.md)) and `baron identity register\|enroll\|protect`; the mechanized merge gate ([ADR-028](docs/adr/ADR-028-mechanized-merge-gate.md)); signed review verdicts ([ADR-033](docs/adr/ADR-033-signed-review-verdicts.md)) **and** its §7 Q1 resolution — enforcement default-ON once a reviewer is enrolled; the prior-art gate ([ADR-029](docs/adr/ADR-029-prior-art-gate.md)); the coordination monorepo ([ADR-025](docs/adr/ADR-025-coordination-monorepo.md)) + `baron adopt-project` + the health-plane fix; the persona sidecar ([ADR-026](docs/adr/ADR-026-persona-sidecar.md)); the `observer` archetype ([ADR-030](docs/adr/ADR-030-observer-archetype.md)); `baron memeval` ([ADR-031](docs/adr/ADR-031-governed-memory-eval-harness.md)); `baron export` monorepo fix + `--wide` ([ADR-032](docs/adr/ADR-032-export-reach-monorepo-and-widened-corpus.md)); the fleet dashboard; the advisory docs-coverage check. |
+| **v1.10.0** | 2026-08-09 | Ritual-token coverage gated in the adapters — `ritual-map:v1` across `claude`/`code-puppy`/`generic`, closing the silent-omission gap 1.9.0 left in the three prose surfaces. |
+| **v1.9.0** | 2026-08-02 | The pilot-hardening release — 2026-07-31 ways of working ([ADR-008](docs/adr/ADR-008-ways-of-working-2026-07-31.md)): verdict-vs-label, decision reconciliation, `check_review_feedback`, the strip-stale-verdict workflow; plus P2.3 `baron validate` spec↔runtime drift. |
+| **CLI 0.5.6** + plugin **1.8.2** (folded into v1.9.0) | 2026-07-28 | Session boundary ([ADR-007](docs/adr/ADR-007-session-boundary.md)) from the pydantic-ai interop eval (enforcement solid, orchestration manual): **no `baron run` driver** — Barony does not own the agent execution loop (orchestration is the runtime's job) — **plus** thin, optional session-ritual bookkeeping primitives `baron session start` (optional `git pull --ff-only`; open handoffs + conventions pointer + backlog location) and `baron session end` (regenerate the handoff index; commit dirty `_handoff/ findings/ decisions/ wiki/` by path with the persona prefix; `baron status` divergence check, exit 1 on red). Bookkeeping only — no agent loop, no model calls; opt-in; not new capability verbs (compose `status`/`handoff`/`indexer`/`gitutil`). pydantic-ai HYDRATE.md gains an optional "composing the session ritual" note (1.8.2; vendored copy re-synced). |
+| **CLI 0.5.4–0.5.5** + plugin **1.8.1** (folded into v1.9.0) | 2026-07-28 | **0.5.5:** worktree repair commands (rest of baron M6) — `baron worktree prune [--dry-run]` (wraps `git worktree prune`, clears stale `.git/worktrees/` registrations) + `baron worktree repair [PATH…]` (wraps `git worktree repair`, re-registers a moved worktree/main repo); both admin-only, non-destructive to history. **0.5.4:** interop hardening + backlog burndown from a pydantic-ai dogfood: least-privilege Shell (test-only personas get an allowlisted shell; broad shells deny redirect/pipe operators), guard denies out-of-root writes itself, `RepoContext` wired, `bash -c`/`sh -c` bypass honesty made prominent; `handoff create --body-file`, `handoff close --as`, `BARON_NOW` clock seam, `--author`-vs-git-author docs, version-string fixes. |
 | **v1.8.0** | 2026-07-27 | The stranger release — `baron init` (CLI 0.5.0, [ADR-006](docs/adr/ADR-006-baron-init-template-packaging.md)): deterministic collab-repo scaffold + per-persona runtime kits from templates vendored as package data (drift-guarded), self-validated; quickstarts rewritten from a verified bare-venv run. |
 | v1.7.0 | 2026-07-27 | The Barony release — the project renamed from `agent-project-bootstrap` to **Barony** (repo `vggg/barony`, plugin/skill `barony`, PyPI distribution `barony` at CLI 0.4.0; the CLI command stays `baron`). [ADR-005](docs/adr/ADR-005-naming.md). |
 | v1.6.0 | 2026-07-23 | Capability-rules artifact (`capability-rules.v1.yaml`, single policy source for guard + adapters) + AGENTS.md emission (generic adapter) + the pydantic-ai runtime adapter (4th runtime; sub-tool denials natively enforced in-process) with working hydrator, `baron hydrate pydantic-ai`, and the `barony[pydantic-ai]` extra. See below. |

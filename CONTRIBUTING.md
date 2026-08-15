@@ -22,6 +22,7 @@ For PRs touching adapters, references, or the canonical contract files, also run
 ```bash
 python3 tests/bi_runtime_accept.py
 python3 tests/lint_repo.py
+python3 tests/check_docs_coverage.py   # advisory — see "Documentation is part of every PR"
 ```
 
 The acceptance harness parses the machine-readable capability maps in the adapters' `HYDRATE.md` files and validates that one `persona.yaml` hydrates to an equivalent behavior contract on every adapter (Claude Code, code-puppy, pydantic-ai, generic) with consistent enforcement claims. The lint catches unfilled placeholders, dead relative links, fixture-name leaks, and plugin/SKILL version drift. CI (`.github/workflows/ci.yml`) runs both on every push and PR. PRs touching `cli/` (baron, including the capability-rules artifact and the runtime hydrators) also run `uv run --project cli pytest cli/tests`.
@@ -41,6 +42,30 @@ Checklist (apply each line if relevant to the change):
 Reviewers must request docs before merging, not after.
 
 **Exception:** strictly cosmetic single-file changes (typo fixes, broken link updates, status syncs) may skip the broader checklist — but still update `CHANGELOG.md` under `[Unreleased]`.
+
+### The advisory check
+
+The rule above was prose from 2026-06-03 to 2026-08-14, which meant it held exactly as
+well as whoever remembered it. CI now runs it:
+
+```bash
+python3 tests/check_docs_coverage.py            # warn, exit 0
+python3 tests/check_docs_coverage.py --strict   # exit 1 on an uncovered change
+```
+
+It warns when a PR changes `cli/` or `skills/` but touches neither `CHANGELOG.md` nor
+anything under `docs/`. That is the weakest form of the rule, on purpose.
+
+**It is advisory, and the honesty is the point.** It sees that a file changed, not that
+the change *describes what shipped* — a one-word CHANGELOG edit satisfies it. And its
+false positives are real: a refactor, a test-only fix, or a docstring typo genuinely owes
+no docs. A gate that cried wolf on those would teach people to click past it, which costs
+more than the miss it prevents. So it prints and exits 0. Answer the warning; don't route
+around it. Escalating it to `--strict` in CI is a one-line change, and the right moment to
+make it is when there is evidence the warning is being ignored rather than answered.
+
+Excluded from "product change": `cli/tests/` and the vendored `cli/src/baron/data/templates/`
+(a drift-guarded copy — its documentation belongs to the source it was synced from).
 
 ## What's in scope
 

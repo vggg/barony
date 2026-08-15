@@ -113,6 +113,12 @@ an author that cannot be named is not an author that differs.
   a change somebody should sign, not one that arrives as a default. ADR-013 §7.1 is the
   standing precedent, in the same words: *a default nobody signed and a default somebody
   signed look identical in a diff.*
+  > **Amended 2026-08-14 by the owner's answer to §7 Q1 (below).** The default is now
+  > keyed to reviewer enrollment: enforced once a reviewer-archetype persona has a key
+  > merged into `.barony/allowed_signers`, warn-only before. The paragraph above still
+  > states the constraint correctly — it is *why* the trigger is enrollment rather than a
+  > flag day. The owner signed the change; the projects it breaks are exactly the ones
+  > that already opted in by merging a reviewer's key.
 - **An unattested pass does not render as a clean pass.** It reports `UNATTRIBUTED` in
   the precondition's own detail line and in the command's closing note. A known gap that
   renders as an absence is a gap a reader rounds down to "fine" — the same argument
@@ -207,13 +213,48 @@ and under one account every login matches. ADR-028 §4 already called it *"usele
 the single-account constraint"*.
 
 **Requiring signed verdicts by default.** Rejected per §2.2; correct destination, wrong
-way to arrive. Revisit as an owner decision once the fleet is enrolled.
+way to arrive. Revisit as an owner decision once the fleet is enrolled. — *Revisited and
+approved 2026-08-14 (§7 Q1). The destination was right and the objection was to the
+route: keying it to per-project enrollment reaches it without a flag day, because a
+project that has merged a reviewer's key has already arrived.*
 
 ## 7. Open questions for the owner
 
-1. **Should `--require-signed-verdict` become the default**, and on what trigger — a
+1. ~~**Should `--require-signed-verdict` become the default**, and on what trigger — a
    manifest field, a fleet-wide flag day, or `baron doctor` reporting readiness? §2.2
-   ships it off; the destination is on.
+   ships it off; the destination is on.~~
+   **RESOLVED 2026-08-14 — owner APPROVED: default-ON once a reviewer persona is
+   enrolled, warn-only before enrollment.** None of the three candidate triggers was
+   chosen. A manifest field is a new configuration surface that can drift out of step
+   with the registry it describes; a flag day breaks projects on a date rather than on a
+   fact; `baron doctor` reports readiness without anybody acting on it. **Enrollment is
+   the trigger** because it is the fact that decides whether a signature was *possible*
+   at all: before a reviewer's key is in `.barony/allowed_signers` nothing could have
+   signed the verdict, so refusing would punish a project for a capability it does not
+   have. After it, the project has already opted in — and, per ADR-027 §2, opted in by an
+   **owner-merged** commit, which is what makes this a default somebody signed.
+
+   Shipped in `baron merge check` as `merge.resolve_signed_posture()`:
+
+   - Enrollment is read **at HEAD**, never from the worktree. A persona that writes its
+     own registry line into its own worktree has enrolled nothing — and if the worktree
+     counted, any persona could flip the fleet's merge posture by editing a file it
+     already controls.
+   - Both halves must hold: an enrolled key **and** an `archetype: reviewer` persona
+     behind that slug. Either alone leaves nobody who can sign a verdict.
+   - `--require-signed-verdict` / `--no-require-signed-verdict` override in **both**
+     directions, so a project mid-migration can turn enforcement off without
+     un-enrolling a key.
+   - The posture and its trigger print in the `verdict_signed` detail line on every run,
+     pass or refuse. §2.2's objection was to enforcement arriving *silently*; the answer
+     is that it never does.
+
+   **The honest bound in §2.1 and §6 is unchanged by this.** Enforcing that a signature
+   is *present* does not make the verdict *correct* (that stays ADR-024's escape-rate
+   axis), and a hostile workspace holding the reviewer's key can still sign anything.
+   This closes a coverage gap, not the trust question — and it still closes only the
+   evidence half of the autonomous merger, not the authority half. There is still no
+   `baron merge do`.
 2. **Should the reviewer's `persona.yaml` need an explicit capability** rather than
    `archetype: reviewer`? Archetype is the existing machine truth and needed no vocabulary
    change (the v1 verb list stays frozen), but a `sign_verdict` verb would be more precise

@@ -3122,11 +3122,13 @@ def merge_check(
              "single-account constraint (every persona is the same login) — prefer the "
              "signed verdict (ADR-031), which attributes to a persona, not a login.",
     ),
-    require_signed_verdict: bool = typer.Option(
-        False, "--require-signed-verdict",
-        help="Refuse when no SIGNED verdict attests this head (ADR-031). Default off: an "
-             "invalid signature always refuses, but turning ABSENCE into a refusal is a "
-             "fleet-wide breaking change and should be signed, not defaulted.",
+    require_signed_verdict: Optional[bool] = typer.Option(
+        None, "--require-signed-verdict/--no-require-signed-verdict",
+        help="Refuse when no SIGNED verdict attests this head (ADR-033). Default: ON "
+             "once a reviewer-archetype persona has a key enrolled in "
+             ".barony/allowed_signers at HEAD, warn-only before that (ADR-033 §7 Q1, "
+             "owner decision 2026-08-14). An INVALID signature always refuses in every "
+             "posture. Pass either flag to override the detection.",
     ),
     code_repo: Optional[Path] = typer.Option(
         None, "--code-repo",
@@ -3148,6 +3150,12 @@ def merge_check(
     `.barony/allowed_signers` — and requires the signer to be a reviewer-archetype
     persona DISTINCT from the persona that signed the head commit. That is
     reviewer-is-not-author proved from the repo, not asserted in a persona file.
+
+    That leg ENFORCES itself once the project can satisfy it: a missing signed verdict
+    refuses as soon as a reviewer-archetype persona has a key merged into
+    `.barony/allowed_signers`, and warns before then (ADR-033 §7 Q1, owner decision
+    2026-08-14). The posture and its trigger are printed in the precondition's own
+    detail line, so an enforcement default is never silent.
 
     This command does not merge, and there is no `baron merge do` (ADR-007: baron
     provides the governed check; the runtime decides to invoke it).

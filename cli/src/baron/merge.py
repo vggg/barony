@@ -38,9 +38,12 @@ artifact, and the gate verifies that signature offline against
 **distinct from the persona that signed the head commit**. Reviewer≠author becomes a
 property of the repo rather than a rule in a persona file.
 
-Posture follows ADR-027 §7.3: an *invalid* signature always refuses; a *missing* one
-warns by default and refuses under ``--require-signed-verdict``, because turning
-absence into a refusal is a fleet-wide breaking change that somebody should sign.
+Posture follows ADR-027 §7.3: an *invalid* signature ALWAYS refuses. A *missing* one is
+keyed to enrollment (ADR-033 §7 Q1, owner decision 2026-08-14) — it refuses once a
+reviewer-archetype persona has a key merged into ``.barony/allowed_signers``, and warns
+before that, because until then there is nobody who *could* have signed. That is the
+same fleet-wide breaking change ADR-033 declined to default, arriving on a trigger the
+owner already had to merge rather than on a flag day.
 """
 
 from __future__ import annotations
@@ -316,7 +319,66 @@ def _check_verdict_at_head(
     )
 
 
-def _check_verdict_signed(attestation, head: str, *, required: bool) -> Precondition:
+#: Posture notes. Printed inside the `verdict_signed` detail so a reader can always tell
+#: WHY the gate is in the posture it is in — an enforcement default that arrives silently
+#: is exactly the failure ADR-013 §7.1 names (a default nobody signed and a default
+#: somebody signed look identical in a diff).
+POSTURE_ENROLLED = (
+    "posture: ENFORCED by default — reviewer {reviewers} enrolled in "
+    ".barony/allowed_signers at HEAD (ADR-033 §7 Q1, owner decision 2026-08-14). "
+    "Pass --no-require-signed-verdict to fall back to warn-only"
+)
+POSTURE_UNENROLLED = (
+    "posture: WARN-ONLY — no reviewer-archetype persona has a key enrolled in "
+    ".barony/allowed_signers at HEAD, so there is nobody who COULD have signed this "
+    "verdict; enforcement turns itself on when one is enrolled (ADR-033 §7 Q1)"
+)
+POSTURE_EXPLICIT_ON = "posture: ENFORCED — --require-signed-verdict was passed explicitly"
+POSTURE_EXPLICIT_OFF = (
+    "posture: WARN-ONLY — --no-require-signed-verdict was passed explicitly, overriding "
+    "the enrolled-reviewer default"
+)
+
+
+def resolve_signed_posture(collab: Path, requested: bool | None) -> tuple[bool, str]:
+    """Resolve the signed-verdict posture for ``collab``. ADR-033 §7 Q1.
+
+    The owner's answer to §7 Q1 (2026-08-14) is **default-ON once a reviewer persona is
+    enrolled, warn-only before enrollment**. The trigger is deliberately the repo's own
+    enrollment state rather than a flag day or a manifest field: enrollment is already
+    the fact that decides whether a signature was *possible*, it is already owner-merged
+    (ADR-027 §2), and it needs no new configuration surface to drift out of date.
+
+    ``requested`` is the explicit flag when the caller passed one, and ``None`` for the
+    default. An explicit value always wins in both directions — the escape hatch is
+    symmetric, so a project mid-migration can turn enforcement off without un-enrolling
+    a key.
+
+    **The honest bound is unchanged by this default.** Enforcing presence makes a missing
+    signature a refusal; it does not make a present one *correct*, and a hostile
+    workspace holding the reviewer's key can still sign anything. This closes a coverage
+    gap, not the trust question.
+    """
+    if requested is True:
+        return True, POSTURE_EXPLICIT_ON
+    if requested is False:
+        return False, POSTURE_EXPLICIT_OFF
+    from .signed_verdict import enrolled_reviewers
+
+    try:
+        reviewers = enrolled_reviewers(collab)
+    except OSError:
+        # Unreadable registry is not "no reviewers" — but it is also not evidence that
+        # one is enrolled, and this leg's default posture is the warn, not the refusal.
+        return False, POSTURE_UNENROLLED
+    if reviewers:
+        return True, POSTURE_ENROLLED.format(reviewers=", ".join(reviewers))
+    return False, POSTURE_UNENROLLED
+
+
+def _check_verdict_signed(
+    attestation, head: str, *, required: bool, posture: str = ""
+) -> Precondition:
     """Who signed the verdict at this head (ADR-033) — the ADR-028 §7 Q4 hole.
 
     Posture follows the ADR-027 §7.3 precedent exactly, and for the same reason:
@@ -325,30 +387,36 @@ def _check_verdict_signed(attestation, head: str, *, required: bool) -> Precondi
       failure mode — bad signature, unenrolled signer, a non-reviewer persona, the
       reviewer *being* the author, a verdict replayed from another PR — is red
       regardless of posture. Broken evidence is worse than none.
-    - **A MISSING signed verdict warns by default and refuses under
-      ``--require-signed-verdict``.** Turning absence into a refusal is a fleet-wide
-      breaking change: every project on the unsigned comment path would stop merging on
-      upgrade. That is a change somebody should sign, not one that arrives as a default
-      (ADR-013 §7.1: a default nobody signed and a default somebody signed look
-      identical in a diff).
+    - **A MISSING signed verdict refuses once a reviewer is ENROLLED, and warns before
+      that** (ADR-033 §7 Q1, owner decision 2026-08-14; see
+      :func:`resolve_signed_posture`). ADR-033 shipped this off for a real reason —
+      every project on the unsigned comment path would have stopped merging on upgrade,
+      and a fleet-wide breaking change should be signed, not defaulted (ADR-013 §7.1).
+      Keying it to enrollment answers that without a flag day: before enrollment nothing
+      changes, because there is nobody who *could* have signed; after it, the project has
+      already opted in by merging a reviewer's key. ``--no-require-signed-verdict``
+      remains an explicit escape hatch in the other direction.
 
     When it passes unattested, it says so in its own detail line rather than rendering
-    as a clean PASS — an unattested verdict is a *known* gap, not an absence.
+    as a clean PASS — an unattested verdict is a *known* gap, not an absence. Every
+    outcome also carries the ``posture`` note, so the reason the gate is enforcing (or
+    not) is never something the reader has to infer.
     """
+    tail = f". {posture}" if posture else ""
     if attestation is None:
         if required:
             return Precondition(
                 "verdict_signed", False, VERDICT_UNATTESTED,
-                "--require-signed-verdict was set but no attestation was evaluated — "
-                "fail-closed",
+                "no attestation was evaluated but a signed verdict is required — "
+                f"fail-closed{tail}",
             )
         return Precondition(
             "verdict_signed", True,
             detail="NOT CHECKED — no signed-verdict evaluation was performed; the "
-                   "verdict at this head is UNATTRIBUTED (ADR-028 §4)",
+                   f"verdict at this head is UNATTRIBUTED (ADR-028 §4){tail}",
         )
     if attestation.ok:
-        return Precondition("verdict_signed", True, detail=attestation.detail)
+        return Precondition("verdict_signed", True, detail=f"{attestation.detail}{tail}")
     # Absent evidence is the only case posture can soften; broken evidence never is.
     from .signed_verdict import UNSIGNED
 
@@ -356,12 +424,13 @@ def _check_verdict_signed(attestation, head: str, *, required: bool) -> Precondi
         return Precondition(
             "verdict_signed", True,
             detail=(
-                f"UNATTRIBUTED — {attestation.detail}. Not scored (default posture); "
-                f"baron cannot tell WHO approved {head[:12]}. Pass "
-                f"--require-signed-verdict to make this a refusal."
+                f"UNATTRIBUTED — {attestation.detail}. Not scored; baron cannot tell "
+                f"WHO approved {head[:12]}{tail}"
             ),
         )
-    return Precondition("verdict_signed", False, attestation.reason, attestation.detail)
+    return Precondition(
+        "verdict_signed", False, attestation.reason, f"{attestation.detail}{tail}"
+    )
 
 
 def _check_no_changes_requested(pr: dict, verdicts: list[Verdict], head: str) -> Precondition:
@@ -438,6 +507,7 @@ def evaluate(
     verdict_author: str | None = None,
     attestation=None,
     require_signed_verdict: bool = False,
+    posture: str = "",
 ) -> GateResult:
     """Evaluate the merge gate against one PR snapshot. Pure — no I/O.
 
@@ -452,6 +522,11 @@ def evaluate(
     signature means running ``ssh-keygen`` and reading git, and the whole reason every
     refusal path in this gate is cheap to test is that scoring never touches the disk.
     ``check()`` computes it; ``None`` means the signed-verdict leg was not evaluated.
+
+    ``require_signed_verdict`` stays a plain bool here and ``posture`` a plain string:
+    resolving the ADR-033 §7 Q1 default means reading the repo's enrollment state, which
+    is I/O, so :func:`resolve_signed_posture` does it in ``check()`` and this function
+    is handed the already-decided answer.
     """
     number = int(pr.get("number") or 0)
     head = str(pr.get("headRefOid") or "").lower()
@@ -465,7 +540,9 @@ def evaluate(
         checks = [
             open_check,
             _check_verdict_at_head(verdicts, head, verdict_author=verdict_author),
-            _check_verdict_signed(attestation, head, required=require_signed_verdict),
+            _check_verdict_signed(
+                attestation, head, required=require_signed_verdict, posture=posture
+            ),
             _check_no_changes_requested(pr, verdicts, head),
             _check_ci_green(list(pr.get("checks") or []), head),
         ]
@@ -527,7 +604,7 @@ def check(
     *,
     target_repo: str | None = None,
     verdict_author: str | None = None,
-    require_signed_verdict: bool = False,
+    require_signed_verdict: bool | None = None,
     code_repo: Path | None = None,
 ) -> GateResult:
     """Fetch one PR snapshot through ``forge`` and evaluate the gate against it.
@@ -540,6 +617,10 @@ def check(
     ``.barony/verdicts/`` and verified offline against ``.barony/allowed_signers``.
     Deliberately two sources: the thing being attested (who approved) must not come
     from the surface an unauthenticated persona can write to.
+
+    ``require_signed_verdict=None`` (the default) resolves the posture from the repo per
+    ADR-033 §7 Q1 — enforced once a reviewer persona is enrolled, warn-only before.
+    Pass a bool to override in either direction.
     """
     from .forge.base import ForgeError, supports
 
@@ -574,11 +655,13 @@ def check(
         attestation = verify_verdict(
             repo_dir, pr=number, head=head, repo=target_repo or "", code_repo=code_repo,
         )
+    required, posture = resolve_signed_posture(repo_dir, require_signed_verdict)
     return evaluate(
         snapshot,
         verdict_author=verdict_author,
         attestation=attestation,
-        require_signed_verdict=require_signed_verdict,
+        require_signed_verdict=required,
+        posture=posture,
     )
 
 
@@ -592,7 +675,8 @@ IDENTITY_NOTE = (
     "note: `baron merge check` verifies and reports — it never merges. The verdict at "
     "this head is UNATTRIBUTED: it is a PR comment under one shared forge account, so "
     "baron cannot tell who posted it (ADR-028 §4). Sign verdicts with `baron review "
-    "sign` and enforce with --require-signed-verdict (ADR-033)."
+    "sign`; enforcement turns on by itself once a reviewer persona is enrolled "
+    "(ADR-033 §7 Q1)."
 )
 
 ATTESTED_NOTE = (
