@@ -15,7 +15,12 @@
 # detection rules bump it too (a consumer must not silently interpret rules it
 # does not understand).
 
-rules_version: 1
+# rules_version 2 (ADR-034, 2026-08-14) adds the L0 config-protection path rules
+# and the depth-1 wrapper recursion policy. The FILENAME still says v1 because
+# `.v1` there names the VOCABULARY this table maps (capability-vocab.v1), which
+# is unchanged and still frozen at ten verbs; `rules_version` is the independent
+# integer that versions the table itself.
+rules_version: 2
 vocabulary: capability-vocab.v1
 
 # On ambiguity (e.g. a bare `git push` whose target branch cannot be resolved)
@@ -92,8 +97,11 @@ verbs:
     detection: file-op
     notes: >-
       Path rule: writes under another persona's spec dir
-      (<spec_dir_component>/<other-slug>/...) require this verb; a persona's
-      OWN spec dir is its own surface and always writable.
+      (<spec_dir_component>/<other-slug>/...) require this verb. Since
+      rules_version 2 (ADR-034 L0) it no longer reaches ANY persona's
+      capability document, and a persona's OWN spec dir is no longer its own
+      surface: both are structural refusals under file_ops protected_* below,
+      which no verb — including this one — unlocks.
 
 # --- command detection rules (Bash / shell tools) --------------------------------------
 commands:
@@ -147,16 +155,92 @@ commands:
         matcher: subcommand_present
         subcommand: ["pr", "merge"]
 
+  # --- inline-program wrappers (ADR-034 §4.3a, rules_version 2) ------------------------
+  # `bash -c 'git push origin main'` used to run its payload UNINSPECTED. A
+  # consumer now extracts the inline program string and re-runs THE SAME
+  # evaluators over it, depth-capped at max_depth. This is deliberately not a
+  # new parser: one level over known shell forms is where the honest-mistake
+  # curve flattens, and a second implementation must never appear (ADR-016 §4.2).
+  #
+  # OUT OF SCOPE, on purpose: `python -c`, `eval`, base64/printf indirection,
+  # script files, xargs, a raw forge API call, a different git client. Those are
+  # the adversarial half; ADR-004 §2.2 does not model that adversary.
+  wrappers:
+    # Programs whose inline_flag argument is a shell program string.
+    programs: ["bash", "sh", "zsh", "dash", "ksh"]
+    inline_flags: ["-c"]
+    # Recognised prefixes that merely re-exec the real program (`env FOO=1 bash -c`).
+    env_prefixes: ["env"]
+    # 1 = inspect the payload of a wrapper, but not a wrapper INSIDE that payload.
+    max_depth: 1
+    # When a payload cannot be tokenised, or nests past max_depth, it is
+    # ambiguous — and ambiguity_policy is conservative-deny. Narrowed to these
+    # three high-stakes verbs so the false-positive cost lands only on personas
+    # that deny them anyway; a persona holding them is unaffected (ADR-017 §3.6:
+    # the first unjustified shout spends the credibility the mechanism runs on).
+    unparsed_conservative_verbs: ["merge_pr", "push_main", "force_push"]
+
 # --- file-operation scoping rules (write tools) ----------------------------------------
 # Precedence (first match wins), applied to the normalized target path:
+#   0. path escapes above the root — STRUCTURAL refusal, no verb unlocks it.
+#   0.5 protected_* below — STRUCTURAL refusal (L0, ADR-034), no verb unlocks it.
 #   1. universal_write_components — always writable (_handoff/ is how personas
 #      report and coordinate; gating it would brick the substrate).
-#   2. spec-dir rule — <spec_dir_component>/<slug>/<file...>: own slug always
-#      writable; another slug requires edit_other_personas.
+#   2. spec-dir rule — <spec_dir_component>/<other-slug>/<file...> requires
+#      edit_other_personas. (The persona's OWN spec dir no longer reaches this
+#      step: 0.5 refused it.)
 #   3. denied write_path scopes — always block (even with write_code granted).
 #   4. write_code granted — general writes allowed.
 #   5. allowed write_path scopes — the only remaining writable paths; anything
 #      else is denied (conservative default).
+#
+# Steps 0.5 sit ABOVE step 1, not merely above step 2 as ADR-034 §4.1 first
+# drafted: `_handoff` is matched as a COMPONENT anywhere in the path, so a
+# protected file underneath one would otherwise be unlocked by step 1.
 file_ops:
   universal_write_components: ["_handoff"]
   spec_dir_component: "agents"
+
+  # --- L0: the enforcement configuration is out of the governed party's reach ---------
+  # (ADR-034 §4.1 + OD-1, ratified 2026-08-14. rules_version 2.)
+  #
+  # G5, the finding that motivates all of this: the hook re-reads the persona
+  # file on EVERY invocation, and `.claude/settings.json` was an ordinary path.
+  # A persona holding write_code could grant itself a denied verb, or unwire the
+  # hook, in one edit — and the next tool call was adjudicated against the new
+  # document. Layering enforcement on a policy the enforced party can rewrite is
+  # theatre. These three rules are STRUCTURAL: no capability verb unlocks them,
+  # so a consumer reports them with adjudicated=False (ADR-018 §2), exactly like
+  # the step-0 path escape.
+  #
+  # Changing a capability set is now a PR a human merges — for everyone, always,
+  # including a solo owner. That friction is the point.
+
+  # Matched against the TRAILING components of the normalized path, so both the
+  # project's own `.claude/settings.json` and the copy inside an emitted runtime
+  # kit (agents/<slug>/runtime/.claude/settings.json) are covered.
+  protected_config_paths:
+    - ".claude/settings.json"
+    - ".claude/settings.local.json"
+    - ".baron-waivers.yaml"
+    # The project rules document. It does not exist and nothing loads one
+    # (ADR-016 §5, ADR-034 §4.4 defers the loader) — the NAME is settled now,
+    # and fenced from the day it can first appear: a rules document the governed
+    # agent can edit is not a rules document.
+    - ".baron-rules.yaml"
+    # ADR-027's trust root: the registry every signature verifies against.
+    - ".barony/allowed_signers"
+
+  # Files directly under <spec_dir_component>/<any-slug>/ that carry the
+  # capability grant itself. Fenced for EVERY persona, including the one whose
+  # dir it is and including a holder of edit_other_personas.
+  protected_spec_files: ["persona.yaml"]
+
+  # The acting persona's OWN <spec_dir_component>/<slug>/ subtree, entirely.
+  # Broader than ADR-034 §4.1's first draft (which fenced only the capability
+  # document) because the whole self-amendment surface lives in that one
+  # directory: `runtime/` holds the emitted kit INCLUDING its .claude/settings.json
+  # hook wiring, `sidecar.sh` is the launcher that invokes it, and AGENT.md is a
+  # GENERATED mirror of persona.yaml, not hand-kept notes. See ADR-034 §4.1a.
+  # Another persona's non-capability files stay governed by edit_other_personas.
+  protect_own_spec_dir: true

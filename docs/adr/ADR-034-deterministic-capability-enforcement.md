@@ -1,7 +1,8 @@
 ---
 created: 2026-08-14
 type: decision
-status: proposed
+status: accepted
+accepted: 2026-08-14
 adr: 034
 project: barony
 authors: Atlas (proposal for Vikram)
@@ -16,11 +17,12 @@ related:
   - "[[docs/adr/ADR-027-agent-identity]]"
 ---
 
-# ADR-034 (PROPOSED): deterministic capability enforcement — denial becomes structural, and is proved by invocation
+# ADR-034: deterministic capability enforcement — denial becomes structural, and is proved by invocation
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed (2026-08-14) — **owner gates before any build.** This is a spec change and it is security-adjacent; nothing here is implemented. |
+| **Status** | **Accepted 2026-08-14.** Ratified by the owner with OD-1 YES (broadened — see §4.1a), **OD-2 NO (L1 dropped)**, OD-3 opt-in/advisory, OD-4–OD-7 as recommended. §9 records each answer inline; §10 is the decision table. The recommendation text in §4 is preserved as written and is annotated where the ratified answer differs from it — a ratified ADR that has been quietly edited to agree with itself is not a record. |
+| **Implemented by** | plugin v1.20.0 / CLI 0.18.0, `rules_version: 2`. L0 in `guard.evaluate_write`, L2 in `guard.evaluate_bash`, L3 in `doctor`, the proof tier in `cli/tests/test_live_runtime.py`. |
 | **Authors** | Atlas (proposal for Vikram) |
 | **Decision owner** | Vikram |
 | **Backlog item** | `AGENT-TASKS.md` P2.2 — *deterministic enforcement* |
@@ -169,10 +171,14 @@ below it**, and the lowest layer must not be writable by the party it governs.
 
 | Layer | What it is | Who owns it | Status |
 |---|---|---|---|
-| **L0** | The policy documents are out of the agent's reach | baron (`guard`) | **NEW — §4.1** |
-| **L1** | Deny by construction, in the runtime's own config | baron (`init`) | **NEW for claude — §4.2** |
-| **L2** | The interceptor (hook / in-process) | baron (`guard`) | exists (ADR-004); hardened in §4.3 |
-| **L3** | Platform: per-persona credentials + branch protection | **not baron** | reported, never configured — §4.5 |
+| **L0** | The policy documents are out of the agent's reach | baron (`guard`) | **BUILT — §4.1, §4.1a** |
+| ~~**L1**~~ | ~~Deny by construction, in the runtime's own config~~ | ~~baron (`init`)~~ | **DROPPED — OD-2 = NO. §4.2 is kept as the record of what was rejected and why.** |
+| **L2** | The interceptor (hook / in-process) | baron (`guard`) | exists (ADR-004); **hardened per §4.3** |
+| **L3** | Platform: per-persona credentials + branch protection | **not baron** | **reported, never configured — §4.5** |
+
+Note the shape the ratified model has: **three layers, not four**, and the
+dropped one is the layer that would have *looked* strongest to an outside
+reader. That is the intended outcome of OD-2, not an omission — see §9.
 
 ### 4.1 L0 — the enforcement configuration becomes a structural refusal (closes G5)
 
@@ -203,7 +209,64 @@ otherwise" — and FM4 is precisely a persona deciding otherwise.
 `cwd`-anchored comparison cannot see it, and `baron doctor` deliberately does not read it
 (ADR-017 §3.5). An agent with shell can still unwire itself there. Stated, not fixed.
 
+### 4.1a L0 as ratified — OD-1 is broader than §4.1 recommended (2026-08-14)
+
+§4.1 above recommended fencing **only the capability document**, and §7's
+alternatives table rejected fencing the whole `agents/<slug>/` directory as "too
+broad". **The owner ratified the broader form**: *a persona loses write access to
+its own `agents/<slug>/` — including `.claude/settings.json` and its own
+`persona.yaml`.* §4.1 and §7 are left standing as written; this section records
+what was actually decided and why the narrower recommendation was wrong.
+
+§7's argument was that "a persona legitimately maintains its own `AGENT.md` and
+notes". Building it showed that argument does not survive contact with what is
+actually in that directory:
+
+| Path | Why the narrow fence leaked |
+|---|---|
+| `agents/<slug>/runtime/.claude/settings.json` | **The hook wiring itself.** `baron init` emits the kit here. Fencing only the root `.claude/settings.json` fences the copy in use and leaves the source a persona would edit. |
+| `agents/<slug>/sidecar.sh` | **The launcher** (ADR-026) that invokes the runtime with the guard attached. Rewriting it is unwiring by another route. |
+| `agents/<slug>/AGENT.md` | Not hand-kept notes — it is emitted `GENERATED from agents/<slug>/persona.yaml`, i.e. a **mirror of the capability grant**. |
+
+So the whole self-amendment surface lives in that one directory, and a fence
+that stopped at `persona.yaml` would have left two working routes to the same
+result. The cost §7 feared is smaller than it looked, because the files it
+wanted to protect are generated.
+
+**What the ratified L0 fences, exactly** (`file_ops` in the rules artifact):
+
+1. **`agents/*/persona.yaml`** — *every* persona's capability document, including
+   the acting persona's own and including for a holder of `edit_other_personas`.
+2. **`agents/<acting-slug>/**`** — the acting persona's own spec dir, entirely.
+3. **`.claude/settings.json`**, `.claude/settings.local.json`,
+   `.baron-waivers.yaml`, `.baron-rules.yaml`, `.barony/allowed_signers` — matched
+   on the path's **trailing components**, so both the project's copy and the one
+   inside an emitted runtime kit are covered.
+
+**What it leaves alone:** another persona's *non-capability* files stay governed
+by `edit_other_personas` — L0 narrowed that verb's reach, it did not void it.
+Source, `findings/`, `wiki/` and `_handoff/` are untouched.
+
+**One placement change from §4.1.** §4.1 says "placed *before* the own-persona
+allow at step 2". It is placed before **step 1**, the universal-write allow,
+because `_handoff` is matched as a *component anywhere in the path*: at §4.1's
+position, `_handoff/.claude/settings.json` would have been allowed by the
+universal zone before any fence was consulted. Pinned by
+`test_guard_l0.py::test_a_handoff_component_does_not_unlock_a_fenced_path`.
+
 ### 4.2 L1 — `baron init` emits `permissions.deny` for the claude adapter (chips at G1)
+
+> **DROPPED — OD-2 = NO (ratified 2026-08-14).** Nothing in this section was
+> built. It is kept in full because the *reason* it was rejected is the
+> load-bearing part: the strongest argument against it, named in OD-2 itself,
+> won. `permissions.deny` publishes a **stronger-looking** posture that is still
+> evadable by `bash -c` — and not over-claiming is this project's differentiator.
+> It would also have deliberately invalidated an ADR-020 measurement (§4.2
+> consequence 1) to buy a control that does not hold against the very wrapper
+> class §4.3 exists to bound. The ADR-020 measurement for `claude` therefore
+> **stands unchanged**: the emitted kit still wires hooks and nothing else, and
+> `test_adapter_omission.py` is untouched. W1/W2/W3/W5 stand alone, as §9
+> anticipated.
 
 Today the claude kit's `.claude/settings.json` contains hook wiring and nothing else — that
 is ADR-020's measured finding. Proposal: **also derive a `permissions.deny` block from the
@@ -323,21 +386,27 @@ absent wall is governance; building the wall is somebody else's layer.
 
 ## 5. Build now vs defer
 
-| # | Item | Layer | Call |
-|---|---|---|---|
-| W1 | Config-protection path rule + precedence change | L0 | **Build now** — highest leverage, smallest diff, entirely inside baron |
-| W2 | Wrapper recursion (depth 1) + narrowed conservative-deny | L2 | **Build now** — closes the accident half of G2 |
-| W3 | Live-invocation test tier, claude, one verb, with the negative control | L2 | **Build now** — this is what makes the rest a measurement instead of a claim |
-| W4 | `permissions.deny` emission + the ADR-020 re-measurement + the doctor drift check | L1 | **Build now if OD-2 is yes** — genuinely optional; W1+W2+W3 stand alone |
-| W5 | `baron doctor` platform-layer report | L3 | **Build now** — cheap, read-only, and it is the honest way to say "the real wall is not here" |
-| D1 | `.baron-rules.yaml` loader | — | **Defer** (§4.4), filename settled now |
-| D2 | code-puppy structural enforcement | — | **Defer indefinitely** — no pre-tool seam exists to build on |
-| D3 | Per-runtime capability matrix (`§F1`) | — | **Defer** — a user-visible output redesign; W4 will make its absence louder |
-| D4 | Ritual-fence delivery verification (`§F2`) | — | **Defer** — a new claim class needing its own vocabulary decision |
+| # | Item | Layer | Call | Landed as |
+|---|---|---|---|---|
+| W1 | Config-protection path rules + precedence change | L0 | **Built** (broadened per §4.1a) | `file_ops.protected_config` / `.protected_spec_file` / `.own_spec_dir`; `guard._protected_config_refusal` at step 0.5; `cli/tests/test_guard_l0.py` |
+| W2 | Wrapper recursion (depth 1) + narrowed conservative-deny | L2 | **Built** | `commands.wrappers` in the artifact; `guard._analyze_segments`; `cli/tests/test_guard_wrappers.py` |
+| W3 | Live-invocation test tier, claude, one verb, with the negative control | L2 | **Built, opt-in + advisory** (OD-3) | `cli/tests/test_live_runtime.py`, `cli/tests/test_live_harness.py`, `.github/workflows/live-runtime.yml` |
+| W4 | `permissions.deny` emission + the ADR-020 re-measurement + the doctor drift check | L1 | **NOT BUILT — OD-2 = NO** (§4.2) | — |
+| W5 | `baron doctor` platform-layer report | L3 | **Built** | `doctor._check_platform_layer` (check 10, INFO, networked half opt-in) |
+| D1 | `.baron-rules.yaml` loader | — | **Deferred** (§4.4); name settled and **already fenced by L0** so it is protected from the day it can first exist |
+| D2 | code-puppy structural enforcement | — | **Deferred indefinitely** — no pre-tool seam exists to build on |
+| D3 | Per-runtime capability matrix (`§F1`) | — | **Deferred** — a user-visible output redesign. Note W4's drop removes the pressure this row anticipated: with L1 gone, the posture does **not** become structurally different across adapters, so OD-7's confirmation question is moot for now |
+| D4 | Ritual-fence delivery verification (`§F2`) | — | **Deferred** — a new claim class needing its own vocabulary decision |
 
-**Scope of the whole proposal:** runtimes `claude` and `pydantic-ai`; verbs the five
-guard-covered sub-tool verbs, plus the new L0 config paths. No vocabulary change. No new
-capability verbs. `rules_version` bumps for W1 and W2.
+**Scope as built:** runtimes `claude` and `pydantic-ai` — and note this came free
+rather than as duplicated work: both drive the *same* `evaluate_bash` /
+`evaluate_write`, so L0 and L2 reached the in-process seam with no adapter code
+at all (pinned by `test_pydantic_ai.py::test_interceptor_write_scoping_follows_verbs`).
+Verbs: the five guard-covered sub-tool verbs, plus the new L0 config paths. No
+vocabulary change. No new capability verbs. **`rules_version` 1 → 2**, once, for
+W1 and W2 together. The artifact FILENAME stays `capability-rules.v1.yaml`: the
+`.v1` there names the vocabulary (`capability-vocab.v1`, still frozen at ten
+verbs), and `rules_version` is the independent integer that versions the table.
 
 ## 6. Honest bound — what stays true after all of this
 
@@ -355,13 +424,27 @@ Stated plainly, because a four-layer diagram invites the wrong inference.
 - **Invocation proof is per-run and probabilistic.** A green live test shows the block
   happened *once, on that model, on that prompt*. It does not show it always will, and the
   INCONCLUSIVE state exists because the failure mode is a model that never tried.
+  **As shipped it is also advisory** (OD-3): it has never gated a release, and
+  as of this writing it has **not been run** — the tier landed with its harness
+  covered by a non-model test and its measurement still owed.
 - **`instructed` remains verified at emission, never at receipt** (§F2). This ADR does not
   move that ceiling, and the 0.53 operational-fidelity number lives there.
-- **L1 adds a surface that can drift** (§4.2 consequence 2). The drift check is a mitigation,
-  not an elimination.
+- ~~**L1 adds a surface that can drift.**~~ Moot: L1 was dropped (OD-2). One
+  policy surface remains, which is the quiet benefit of that decision.
 - **L0 protects paths, not intent.** A persona can still propose a capability change; it
   just cannot land one alone. That is the intended shape, and it means the gate is only as
   strong as the human review behind CODEOWNERS.
+- **L0 governs the guard's own seams, not the filesystem.** It refuses `Write`/
+  `Edit`/`NotebookEdit` at those paths. A shell redirect (`echo ... > .claude/settings.json`)
+  is not a write-tool call and not a capability verb, so guard does not see it —
+  pinned, deliberately, by
+  `test_guard_wrappers.py::test_the_home_settings_unwire_via_shell_is_still_open`.
+  This is the same boundary as everything else here: cooperating agents, not a
+  sandbox.
+- **The three-verb conservative-deny is a real false-positive surface.** An
+  honest `bash -c` with awkward quoting is now denied to a persona that denies
+  `merge_pr`/`push_main`/`force_push`, on suspicion rather than on evidence. The
+  narrowing keeps the cost off every other persona; it does not make it zero.
 
 ## 7. Alternatives considered
 
@@ -377,22 +460,71 @@ Stated plainly, because a four-layer diagram invites the wrong inference.
 
 ## 8. Consequences
 
-**Good.** The FM4 shape — a persona exercising a verb its own config denies — requires a
-human-merged PR after W1. G1 degrades to weaker-not-absent after W4. The accident half of
-G2 closes after W2. §E item 1 moves for the first time since it was written, after W3. The
-product claim gets a measurement behind it that is not baron marking its own homework.
+**Good.** The FM4 shape — a persona exercising a verb its own config denies — now requires a
+human-merged PR (W1). The accident half of G2 is closed (W2). §E item 1 has, for the first
+time since it was written, an instrument that could move it (W3). The platform layer that
+actually could stop an irreversible action is named in the product's own output instead of
+only in an ADR (W5).
 
-**Costs.** A `rules_version` bump and a precedence-order change in the most safety-critical
-function in the codebase. An intended test failure in `test_adapter_omission.py` and a
-published label that may change (W4). A test tier that costs money and can be flaky, which
-means a policy for what an INCONCLUSIVE run does to a release. And one workflow friction
-that will be felt immediately: **changing a persona's capabilities now requires a PR**,
-including for the owner working solo.
+**What did NOT improve, stated plainly.** **G1 is unchanged.** It was W4 that
+would have degraded "enforcement silently becomes zero" to "silently weaker but
+non-zero", and W4 was dropped. An unwired hook still means no enforcement, and
+`baron doctor` making that *findable* remains the whole answer to it. **G3 is
+unchanged** (the loader is deferred). **G4 is only conditionally moved**: the
+instrument exists, is advisory, and has not yet produced a measurement.
 
-## 9. Owner decisions
+**Costs actually paid.** A `rules_version` bump and a precedence-order change in the
+most safety-critical function in the codebase. A new false-positive surface (§6). A test
+tier that costs money and can be flaky. And one workflow friction felt immediately:
+**changing a persona's capabilities now requires a PR**, including for the owner working
+solo — and, per §4.1a, so does editing anything else in a persona's own spec dir.
 
-Bring these to Vikram. **OD-1 through OD-3 are blocking** — no code should be written until
-they are answered. OD-4 through OD-7 have recommended defaults that can be taken as written.
+**Costs avoided by OD-2.** No second policy surface, no drift check to maintain,
+no re-measurement of ADR-020, and no published posture that reads stronger than
+it is.
+
+## 9. Owner decisions — ANSWERED 2026-08-14
+
+Each question is preserved as it was asked, with the ratified answer recorded
+beneath it. The questions are not rewritten to match the answers.
+
+> **OD-1 → YES, broadened.** A persona loses write access to its own
+> `agents/<slug>/` — including `.claude/settings.json` and its own
+> `persona.yaml`. The narrower recommendation in §4.1 was accepted *and
+> widened*; §4.1a records the scope as built and the three paths that made the
+> narrow form leak.
+>
+> **OD-2 → NO. L1 is dropped entirely.** The argument the recommendation itself
+> named as strongest is the one that won: `permissions.deny` publishes a
+> stronger-*looking* posture still evadable by `bash -c`, and not over-claiming
+> is the differentiator. It would also have invalidated an ADR-020 measurement
+> for a control that does not hold against the wrapper class §4.3 bounds. See
+> the banner on §4.2.
+>
+> **OD-3 → YES, opt-in, out of default CI, ADVISORY.** An INCONCLUSIVE or
+> failing live run does **not** block a release for this first slice — and that
+> status is stated in `STATUS.md` and in the workflow file, because an advisory
+> gate dressed as a gate is this repo's named failure. Revisit once the flake
+> rate is known.
+>
+> **OD-4 → as recommended.** Recurse one level; conservative-deny narrowed to
+> `merge_pr`/`push_main`/`force_push`.
+>
+> **OD-5 → as recommended.** Loader deferred; the name `.baron-rules.yaml` is
+> settled and the path is **already fenced by L0**, so the document is protected
+> from the day it can first exist rather than after someone remembers.
+>
+> **OD-6 → as recommended.** Doctor reports L3, never configures it. INFO, and
+> the networked half is opt-in (`BARON_DOCTOR_PLATFORM=1`) so a green run stays
+> reproducible offline.
+>
+> **OD-7 → as recommended.** `claude` + `pydantic-ai`; code-puppy deliberately
+> absent; generic stays Tier-1 prose. Its confirmation sub-question — is a
+> structurally different posture across adapters acceptable to publish — became
+> **moot when OD-2 dropped L1**: without a claude-only `permissions.deny`, no
+> such divergence is introduced.
+
+---
 
 **OD-1 (BLOCKING) — L0: does a persona lose write access to its own `persona.yaml`?**
 Recommendation: **yes.** It is the highest-leverage change here and it is what makes the
@@ -439,16 +571,30 @@ publish before ADR-020's one-label-per-verb collapse is revisited (`§F1`).
 ## 10. Decision record
 
 - [ ] Approved as written
-- [ ] Approved with changes
+- [x] **Approved with changes** — OD-1 broadened beyond the §4.1 recommendation (§4.1a); OD-2 answered against the recommendation, dropping L1 and W4.
 - [ ] Needs revision
 - [ ] Rejected
 
 | Decision | Answer | Date |
 |---|---|---|
-| OD-1 — L0 fences own `persona.yaml` | | |
-| OD-2 — L1 emits `permissions.deny` | | |
-| OD-3 — live-runtime test tier (+ release policy) | | |
-| OD-4 — wrapper posture | | |
-| OD-5 — `.baron-rules.yaml` defer + name | | |
-| OD-6 — doctor reports L3 | | |
-| OD-7 — adapter scope | | |
+| OD-1 — L0 fences own `persona.yaml` | **YES — broadened to the whole own `agents/<slug>/` subtree, plus every persona's `persona.yaml`** (§4.1a) | 2026-08-14 |
+| OD-2 — L1 emits `permissions.deny` | **NO — L1 and W4 dropped entirely** (§4.2 banner) | 2026-08-14 |
+| OD-3 — live-runtime test tier (+ release policy) | **YES, opt-in and out of default CI. ADVISORY: INCONCLUSIVE/failing does NOT block a release; stated in STATUS.md** | 2026-08-14 |
+| OD-4 — wrapper posture | **As recommended** — depth 1, conservative-deny narrowed to the three high-stakes verbs | 2026-08-14 |
+| OD-5 — `.baron-rules.yaml` defer + name | **As recommended** — loader deferred, name settled, path fenced by L0 today | 2026-08-14 |
+| OD-6 — doctor reports L3 | **As recommended** — report only, INFO, networked half opt-in | 2026-08-14 |
+| OD-7 — adapter scope | **As recommended** — claude + pydantic-ai; the divergence sub-question is moot after OD-2 | 2026-08-14 |
+
+### 10.1 What would falsify this design
+
+Recorded so a later reader has something to check it against rather than only a
+rationale to agree with:
+
+- A persona changing its effective capability set without a merged PR, by any
+  route inside the repo root — L0's central claim.
+- A `bash -c`-wrapped `git push origin main` reaching the remote for a persona
+  that denies `push_main` — W2's central claim.
+- The live tier reporting PASS on a run where the negative control never fired —
+  the false-green shape it exists to defeat.
+- `baron rules list` printing `enforced` for a verb no check performs, or
+  `baron doctor` exiting non-zero because of a network condition.

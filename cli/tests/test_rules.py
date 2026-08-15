@@ -22,9 +22,9 @@ from baron.schemas import CAPABILITY_VERBS
 def test_artifact_is_packaged_and_versioned() -> None:
     resource = files("baron").joinpath(rules.RULES_RESOURCE)
     raw = yaml.safe_load(resource.read_text(encoding="utf-8"))
-    assert raw["rules_version"] == rules.SUPPORTED_RULES_VERSION == 1
+    assert raw["rules_version"] == rules.SUPPORTED_RULES_VERSION == 2
     loaded = rules.load_rules()
-    assert loaded.rules_version == 1
+    assert loaded.rules_version == 2
     assert loaded.ambiguity_policy == "conservative-deny"
 
 
@@ -36,7 +36,9 @@ def test_open_pr_and_run_tests_stay_unparsed_deferred() -> None:
     instruction-only until there is OBSERVED NEED (capability vocabulary design
     rule 4). Re-checked 2026-08-09 during the 2026-08-08 evaluation close-out —
     no observed-need evidence exists in the repo or in that evaluation, so the
-    deferral holds and `rules_version` stays 1.
+    deferral holds. (rules_version moved to 2 for ADR-034's L0 fences and the
+    wrapper recursion — neither touches these two verbs, and the deferral is a
+    statement about DETECTION, not about the version integer.)
 
     This test is the tripwire: adding detection for either verb must be a
     deliberate act that bumps `rules_version` (so every consumer notices) rather
@@ -51,7 +53,7 @@ def test_open_pr_and_run_tests_stay_unparsed_deferred() -> None:
             "docs/BACKLOG.md, and record the observed need that triggered it"
         )
         assert "NOT parsed" in entry["notes"]
-    assert loaded.rules_version == rules.SUPPORTED_RULES_VERSION == 1
+    assert loaded.rules_version == rules.SUPPORTED_RULES_VERSION == 2
 
 
 def test_rules_verb_set_matches_frozen_vocabulary() -> None:
@@ -215,7 +217,22 @@ def test_rule_list_covers_every_builtin_rule_with_a_known_matcher() -> None:
         rules.RULE_GH_PR_MERGE,
         rules.RULE_UNIVERSAL_WRITE,
         rules.RULE_SPEC_DIR,
+        # L0 (ADR-034). PROTECTED_RULE_IDS is asserted to be exactly these
+        # below, so a fence dropped from the tuple cannot pass unnoticed.
+        rules.RULE_PROTECTED_CONFIG,
+        rules.RULE_PROTECTED_SPEC_FILE,
+        rules.RULE_OWN_SPEC_DIR,
     }
+    assert set(rules.PROTECTED_RULE_IDS) == {
+        rules.RULE_PROTECTED_CONFIG,
+        rules.RULE_PROTECTED_SPEC_FILE,
+        rules.RULE_OWN_SPEC_DIR,
+    }
+    # Every L0 rule is verbless BY CONSTRUCTION — that emptiness is what makes
+    # it structural rather than adjudicated (ADR-018 §2) and what keeps it out
+    # of the detection-consistency ledger.
+    for rule_id in rules.PROTECTED_RULE_IDS:
+        assert loaded.rule(rule_id).verb == ""
     for rule in loaded.command_rules:
         assert rule.matcher in rules.COMMAND_MATCHERS
         assert rule.verb in loaded.verbs
@@ -413,9 +430,30 @@ REFUSED_DOCUMENTS: dict[str, tuple[str, str, str]] = {
         "guard implements",
     ),
     "unknown top-level key": (
-        "rules_version: 1",
-        "rules_version: 1\nsneaky: true",
+        "rules_version: 2",
+        "rules_version: 2\nsneaky: true",
         "'sneaky'",
+    ),
+    # --- ADR-034 rules_version 2: the L0 fences and the wrapper block --------
+    "unknown wrapper key": (
+        "    max_depth: 1",
+        "    max_depth: 1\n    recurse_into_python: true",
+        "'recurse_into_python'",
+    ),
+    "negative wrapper depth": (
+        "    max_depth: 1",
+        "    max_depth: -1",
+        "non-negative integer",
+    ),
+    "wrapper conservative-deny on a verb outside the vocabulary": (
+        '    unparsed_conservative_verbs: ["merge_pr", "push_main", "force_push"]',
+        '    unparsed_conservative_verbs: ["merge_pr", "rm_minus_rf"]',
+        "denies every persona unconditionally",
+    ),
+    "non-boolean own-spec-dir fence": (
+        "  protect_own_spec_dir: true",
+        '  protect_own_spec_dir: "yes please"',
+        "must be a boolean",
     ),
     "unknown verb-entry key": (
         "    class: whole-tool",

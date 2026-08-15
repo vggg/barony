@@ -16,6 +16,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   before every Pages deploy. The site index becomes a nav over all five pages. Docs only —
   no CLI, skill or version change.
 
+### Changed — P2.2 deterministic enforcement: denial becomes structural (plugin 1.20.0 / CLI 0.18.0, `rules_version` 1 → **2**, [ADR-034](docs/adr/ADR-034-deterministic-capability-enforcement.md))
+
+**BREAKING for personas, deliberately.** A persona can no longer write its own
+`agents/<slug>/` directory — including its `persona.yaml` — nor any persona's capability
+document, nor `.claude/settings.json`. **Changing a capability set is now a PR a human
+merges, for everyone, always, including a solo owner.**
+
+The finding that forced it (**G5**, in merged code): the guard hook re-reads
+`--persona-file` on *every* invocation, `evaluate_write` made a persona's own spec dir
+always writable, and `.claude/settings.json` was an ordinary path. So a persona holding
+`write_code` could **grant itself a denied verb, or unwire the hook, in one edit** — and the
+next tool call was adjudicated against the document it had just written. Layering
+enforcement on a policy the enforced party can rewrite is theatre; every other layer was
+conditional on this one.
+
+- **L0 — structural config-path refusal.** New `file_ops.protected_config` /
+  `.protected_spec_file` / `.own_spec_dir` rules in `capability-rules.v1.yaml`, applied at
+  `evaluate_write` **step 0.5** — above the universal-write allow, because `_handoff`
+  matches as a component anywhere in a path. Modelled on the step-0 path escape: **no verb
+  unlocks it**, including `edit_other_personas`, so `adjudicated=False` and the event reads
+  `unevaluated` (ADR-018 §2). Fenced paths: every `agents/*/persona.yaml`, the acting
+  persona's `agents/<slug>/**`, `.claude/settings.json{,.local}`, `.baron-waivers.yaml`,
+  `.baron-rules.yaml`, `.barony/allowed_signers` — matched on **trailing** components, so
+  the copy inside an emitted runtime kit is covered too.
+- **L2 — the `bash -c` class narrowed.** New `commands.wrappers` block: one level of
+  recursion into `bash`/`sh`/`zsh`/`dash`/`ksh -c '<payload>'` (optionally behind `env`),
+  re-run through **the same evaluators** rather than a second parser. An untokenisable
+  payload, or one nested past the cap, is ambiguous and gets conservative-deny **narrowed to
+  `merge_pr`/`push_main`/`force_push`** — a persona holding those three sees no change.
+- **L3 — the platform layer, reported and never configured.** `baron doctor` gains a tenth
+  check, `platform-layer` (**INFO**, never FAIL): branch protection and whether each persona
+  has its own push credential. Baron does not create tokens or configure a forge (ADR-007);
+  reporting an absent wall is governance, building it is somebody else's layer. The
+  branch-protection half is doctor's only networked check and is **opt-in** behind
+  `BARON_DOCTOR_PLATFORM=1` so a green run stays reproducible offline. It states, rather
+  than blurs, ADR-033 §5: per-persona *signing* keys are not per-persona *push authority*.
+- **Proof by invocation — a new opt-in test tier.** `cli/tests/test_live_runtime.py` drives
+  a real `claude -p` in a scaffolded temp repo behind a `PATH`-shimmed `git`/`gh` sentinel
+  and asserts the denied operation **did not run** — evidence about the world, not about a
+  hook being configured. Its **negative control is load-bearing**: the same prompt runs first
+  against a persona that *grants* the verb and the sentinel must appear, or the run reports
+  **INCONCLUSIVE**, never PASS. Marked `live_runtime`, gated on `BARON_LIVE_RUNTIME=1`,
+  excluded from the default job via `addopts`, and run from a manual
+  `.github/workflows/live-runtime.yml`.
+
+**Honest status (OD-3):** that tier is **advisory** — an INCONCLUSIVE or failing run does
+**not** block a release, and as of this entry it **has not been run**. Its harness *is*
+covered in the default job (`test_live_harness.py`), because a silently-broken shim would
+make the live test report a false green.
+
+**Deliberately NOT built — `baron init` does not emit `permissions.deny` (OD-2 = NO).** It
+would publish a stronger-*looking* posture that `bash -c` still evades, and not
+over-claiming is the differentiator. Consequently **G1 is unchanged** (an unwired hook is
+still zero enforcement) and the ADR-020 read-verb measurement for `claude` **stands**:
+`test_adapter_omission.py` is untouched.
+
+**Bounds that survive, pinned by tests rather than only documented:**
+`~/.claude/settings.json` is outside the repo root and invisible to L0 and doctor; a shell
+redirect is neither a write-tool call nor a capability verb; `python -c`, `eval`,
+base64/`printf` indirection, script files and `xargs` remain uninspected. Credentials are
+not revoked. Positioning unchanged: **a policy guard at the agent-tool interface for
+cooperating agents, not a security boundary.**
+
+Migration: `rules_version` is negotiated by exact match, so a consumer pinned to an older
+`barony` refuses the new artifact rather than mis-enforcing it — upgrade both together. The
+artifact filename stays `capability-rules.v1.yaml` (`.v1` names the still-frozen
+*vocabulary*, not the table).
+
 ## [1.19.0] — 2026-08-14
 
 **The governance release.** Eight plugin versions and eight CLI versions accumulated since

@@ -46,7 +46,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [031](ADR-031-governed-memory-eval-harness.md) | The governed-memory evaluation harness — measure first, then choose a backend | **Proposed** (2026-08-14) | `baron memeval` over labeled fixtures; P3.3, the gate on P3.4. Consumes ADR-015's walker. §4 states the honest bound (fixtures, not a live audit); §5 lists what it does NOT authorise. Renumbered 028 → 031 at integration: 028 landed as the merge gate. |
 | [032](ADR-032-export-reach-monorepo-and-widened-corpus.md) | `baron export` reaches the whole estate — the monorepo walk, and the widened corpus | Accepted 2026-08-14 | Owner decision #5. Fixes the root-level silent zero (same class as ADR-025 §6.8) and widens the corpus to six kinds — `status` + `note` — **supersedes ADR-015 §7**'s "curated status is not exported" deferral. Acts on ADR-031's measured finding that the miss was coverage, not ranking. |
 | [033](ADR-033-signed-review-verdicts.md) | Signed review verdicts — the merge gate proves WHO approved | Accepted 2026-08-14 | **Supersedes ADR-028 §7 Q4** (route 2: the in-repo signed artifact). Builds entirely on ADR-027 §2.3 — same registry, same trust root, no new key. Closes the EVIDENCE half of the autonomous merger; the authority half (acting under the owner's token) is untouched — see §5. |
-| [034](ADR-034-deterministic-capability-enforcement.md) | Deterministic capability enforcement — denial becomes structural, and is proved by invocation | **Proposed** (2026-08-14) | The P2.2 design record, driven by FM4. Extends ADR-004 with a four-layer model; answers ADR-016 §5–§6's doors with a **defer**; sets out to upgrade ADR-017 §3.1's wiring-not-invocation caveat and `../DECISIONS-FOR-REVIEW.md` §E item 1. Deliberately invalidates one ADR-020 measurement if §9 OD-2 passes. Names a new finding (**G5**) with no prior art in either corpus: a persona's own `persona.yaml` and `.claude/settings.json` are writable by the persona they govern. No code — owner gates. |
+| [034](ADR-034-deterministic-capability-enforcement.md) | Deterministic capability enforcement — denial becomes structural, and is proved by invocation | **Accepted** (2026-08-14) | The P2.2 design record, driven by FM4. Extends ADR-004. Names a new finding (**G5**) with no prior art in either corpus: a persona's own `persona.yaml` and `.claude/settings.json` were writable by the persona they govern, so any denial could be undone in one edit. Ratified with **three** layers, not four: L0 makes the config paths a structural refusal (broadened past §4.1 — see §4.1a), L2 recurses one level into `bash -c`, L3 is reported and never configured. **L1 (`permissions.deny`) was declined (OD-2)** — it would publish a stronger-looking posture `bash -c` still evades — so the ADR-020 measurement **stands** and **G1 is unchanged**. The proof-by-invocation tier is opt-in and **advisory**. `rules_version` 1 → 2. |
 
 ## Where the owner decisions landed
 
@@ -73,7 +73,7 @@ ADR numbers are never reused. Two are absent from this directory on purpose:
   reused. **This is the exact failure ADR-029 exists to catch**, and it is recorded here
   rather than quietly dropped.
 - Anyone opening a new ADR should start at **035** (034 is claimed by the P2.2 enforcement
-  proposal) — and **check the branches, not just this
+  record, now accepted) — and **check the branches, not just this
   directory**: a number free here may already be taken in flight. The 011/027 re-derivation
   is the reason that sentence is in this file. `baron adr check` gates the *records*; it
   cannot see a number claimed on a branch.
@@ -84,7 +84,7 @@ ADR numbers are never reused. Two are absent from this directory on purpose:
   **[033](ADR-033-signed-review-verdicts.md)** at integration; `baron export`'s widened reach,
   written on a third branch, had already taken **032**. Recorded here rather than silently
   renamed — same failure mode as 011/027 and 028, caught at integration and costing only two
-  renames. The next free number is **034**.
+  renames. The next free number is **035**.
 - **028** was claimed twice in flight. It landed as the mechanized merge gate; the
   governed-memory eval harness, written against 028 on a parallel branch, renumbered to
   **031** at integration. Same failure mode as 011/027, caught earlier and costing only a

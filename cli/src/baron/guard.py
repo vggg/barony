@@ -48,18 +48,40 @@ parsing. Parsing is CONSERVATIVE: when the target of a git operation cannot be
 determined, guard assumes the enforcement-relevant verb and denies personas
 that lack it, with stderr naming the inference.
 
-KNOWN BYPASS — command-string wrappers. The static parser inspects the tokens
-of each top-level subcommand; it does NOT recurse into a shell/interpreter
-invoked with an inline program string. So ``bash -c '...'``, ``sh -c "..."``,
-and ``python3 -c '...'`` (and ``env``/``xargs``-style indirection) run their
-payload UNINSPECTED — a ``git push origin main`` hidden inside ``bash -c`` is
-NOT caught. ``bash -c`` / ``sh -c`` are common enough to hit by honest accident,
-not just adversarially. This is an accepted limitation of static enforcement of
-the honest-mistake class, not a guarantee. Where the boundary must actually hold
-against a wrapper, use OS-level isolation (a container/sandbox) — the guard is a
-nudge against forgetting, not a wall. (The pydantic-ai adapter's in-process
+WRAPPERS — NARROWED, NOT CLOSED (ADR-034 §4.3a). The static parser inspects the
+tokens of each top-level subcommand and, since rules_version 2, ALSO recurses
+**one level** into the inline program string of the shell forms named by the
+artifact's ``commands.wrappers`` block (``bash -c``, ``sh -c``, ``zsh -c``,
+``dash -c``, ``ksh -c``, optionally behind an ``env`` prefix). A
+``git push origin main`` hidden inside ``bash -c`` IS now caught, because that
+is the wrapper people reach by honest accident. Where a payload cannot be
+tokenised, or nests past the depth cap, it is ambiguous and the artifact's
+conservative-deny applies — NARROWED to ``merge_pr``/``push_main``/
+``force_push``, so the false-positive cost lands only on personas that deny
+those verbs anyway (ADR-017 §3.6: the first unjustified shout spends the
+credibility the mechanism runs on).
+
+The bound is exact and deliberately not chased any further. STILL UNINSPECTED:
+``python -c`` and every other non-shell interpreter, ``eval``, base64/``printf``
+indirection, a script file, ``xargs``, a raw forge API call, a different git
+client, the forge web UI. Those are the adversarial half, and ADR-004 §2.2
+scopes this mechanism to the honest-mistake class. Where the boundary must hold
+against an adversary, use OS-level isolation (a container/sandbox) — the guard
+is a nudge against forgetting, not a wall. (The pydantic-ai adapter's in-process
 Shell additionally denies redirect/pipe operators and, for test-only personas,
 allowlists the shell — narrowing but not closing this class.)
+
+L0 — THE POLICY IS OUT OF THE GOVERNED PARTY'S REACH (ADR-034 §4.1). The hook
+re-reads ``--persona-file`` on every invocation, so until rules_version 2 a
+persona holding ``write_code`` could grant itself a denied verb, or unwire the
+hook, in ONE edit. :func:`evaluate_write` now refuses writes to the enforcement
+configuration — every persona's ``persona.yaml``, the acting persona's own
+``agents/<slug>/`` subtree, ``.claude/settings.json``, ``.baron-waivers.yaml``,
+``.baron-rules.yaml``, ``.barony/allowed_signers`` — STRUCTURALLY, before any
+capability is consulted. No verb unlocks it, so those denials are
+``adjudicated=False``. What it does NOT reach: ``~/.claude/settings.json``,
+which is outside the repo root and invisible to guard's cwd-anchored comparison.
+An agent with a shell can still unwire itself there. Stated, not fixed.
 
 Escape hatch (fail-closed but not brick): ``BARON_GUARD_OVERRIDE=<reason>``
 allows the call BUT appends a line to ``.baron/guard-override.log`` — a
@@ -575,20 +597,101 @@ def _analyze_merge(repo: Path, rules: CapabilityRules) -> tuple[set[str], list[s
     return set(), []
 
 
-def evaluate_bash(command: str, cwd: Path, persona: GuardPersona) -> Decision:
-    """Map a Bash command to capability verbs and check them against the persona.
+def _tokens_strict(segment: str) -> list[str] | None:
+    """Tokens, or ``None`` when the segment cannot be tokenised at all.
 
-    Non-git/gh commands pass — guard governs capability verbs, not general
-    shell (an allowlist is the Tier-3 adapter's job, not this hook's).
+    :func:`_tokens` deliberately falls back to a naive whitespace split so a
+    top-level segment is still inspected on a best-effort basis. Inside a
+    wrapper payload that fallback is not good enough: an unbalanced quote is
+    exactly the shape a hidden command takes, so the caller needs to know that
+    parsing FAILED rather than receive a plausible-looking guess.
     """
-    rules = _rules()
-    required: dict[str, list[str]] = {}
-    for segment in _split_shell(command):
-        tokens = _tokens(segment)
+    try:
+        return shlex.split(segment, posix=True)
+    except ValueError:
+        return None
+
+
+def _strip_env_prefix(tokens: list[str], rules: CapabilityRules) -> list[str]:
+    """Drop ``VAR=value`` assignments and a recognised ``env`` prefix.
+
+    ``env FOO=1 bash -c '...'`` is the same wrapper as ``bash -c '...'`` with a
+    step in front. Only the small, documented surface of ``env`` is handled
+    (``-i``/``--ignore-environment``, ``-u NAME``/``--unset NAME``); anything
+    else leaves the tokens alone rather than guessing past it.
+    """
+    while True:
         while tokens and _ENV_ASSIGN_RE.match(tokens[0]):
             tokens = tokens[1:]
+        if not tokens or PurePosixPath(tokens[0]).name not in rules.wrapper_policy.env_prefixes:
+            return tokens
+        tokens = tokens[1:]
+        while tokens and tokens[0].startswith("-"):
+            if tokens[0] in ("-u", "--unset") and len(tokens) > 1:
+                tokens = tokens[2:]
+            else:
+                tokens = tokens[1:]
+
+
+def _inline_payload(tokens: list[str], rules: CapabilityRules) -> str | None:
+    """The program string of ``bash -c '<payload>'``, or ``None``.
+
+    ``None`` means "not a recognised inline-program wrapper" — including a
+    wrapper with no payload token after its flag, which runs nothing.
+    """
+    policy = rules.wrapper_policy
+    if not policy.enabled or not tokens:
+        return None
+    if PurePosixPath(tokens[0]).name not in policy.programs:
+        return None
+    for i, tok in enumerate(tokens[1:], start=1):
+        if tok in policy.inline_flags:
+            return tokens[i + 1] if i + 1 < len(tokens) else None
+    return None
+
+
+def _analyze_segments(
+    command: str,
+    cwd: Path,
+    rules: CapabilityRules,
+    required: dict[str, list[str]],
+    depth: int = 0,
+) -> None:
+    """Accumulate required verbs for every top-level subcommand of ``command``.
+
+    Recurses ONE level into inline program strings (ADR-034 §4.3a) — the same
+    evaluators, never a second parser, which is the property that keeps this
+    from becoming an arms race (ADR-016 §4.2).
+    """
+    policy = rules.wrapper_policy
+    for segment in _split_shell(command):
+        tokens = _strip_env_prefix(_tokens(segment), rules)
         if not tokens:
             continue
+
+        payload = _inline_payload(tokens, rules)
+        if payload is not None:
+            if depth < policy.max_depth and _tokens_strict(payload) is not None:
+                _analyze_segments(payload, cwd, rules, required, depth + 1)
+            else:
+                # Either the payload is untokenisable (unbalanced quoting,
+                # substitution) or it is a wrapper nested past max_depth. Both
+                # are AMBIGUOUS, and ambiguity_policy is conservative-deny —
+                # narrowed to the high-stakes verbs so a persona that holds them
+                # is unaffected and the false positives land only where the
+                # denial already existed.
+                why = (
+                    f"nested shell wrapper past depth {policy.max_depth}"
+                    if _tokens_strict(payload) is not None
+                    else "shell wrapper payload that cannot be tokenised"
+                )
+                for verb in policy.unparsed_conservative_verbs:
+                    required.setdefault(verb, []).append(
+                        f"{why} — its contents are uninspectable, so "
+                        f"`{verb}` is conservatively assumed"
+                    )
+            continue
+
         prog = PurePosixPath(tokens[0]).name
         if prog == "git":
             repo = cwd
@@ -615,6 +718,10 @@ def evaluate_bash(command: str, cwd: Path, persona: GuardPersona) -> Decision:
                 verbs, notes = _analyze_merge(repo, rules)
             else:
                 verbs, notes = set(), []
+            if depth:
+                notes = [f"{n} (inside a shell wrapper)" for n in notes] or [
+                    "inside a shell wrapper"
+                ]
             for verb in verbs:
                 required.setdefault(verb, []).extend(notes)
         elif prog == "gh":
@@ -624,9 +731,26 @@ def evaluate_bash(command: str, cwd: Path, persona: GuardPersona) -> Decision:
             if any(
                 rest[i : i + n] == sub_path for i in range(len(rest) - n + 1)
             ):  # tolerate global flags with values before the subcommand
+                note = f"`gh {' '.join(sub_path)}`"
                 required.setdefault(rules.gh_pr_merge_verb, []).append(
-                    f"`gh {' '.join(sub_path)}`"
+                    f"{note} (inside a shell wrapper)" if depth else note
                 )
+
+
+def evaluate_bash(command: str, cwd: Path, persona: GuardPersona) -> Decision:
+    """Map a Bash command to capability verbs and check them against the persona.
+
+    Non-git/gh commands pass — guard governs capability verbs, not general
+    shell (an allowlist is the Tier-3 adapter's job, not this hook's).
+
+    Since ADR-034 this also looks ONE level inside ``bash -c '<payload>'`` and
+    the other shell forms named by the artifact's ``commands.wrappers`` block.
+    The bound is exact and stated in the module docstring: deeper nesting and
+    every non-shell interpreter remain uninspected.
+    """
+    rules = _rules()
+    required: dict[str, list[str]] = {}
+    _analyze_segments(command, cwd, rules, required)
 
     missing = [v for v in sorted(required) if not persona.grants(v)]
     if not missing:
@@ -654,6 +778,85 @@ def _scope_matches(scope: str, parts: tuple[str, ...]) -> bool:
         return False
     n = len(scope_parts)
     return any(parts[i : i + n] == scope_parts for i in range(len(parts) - n + 1))
+
+
+def _trailing_match(parts: tuple[str, ...], candidate: str) -> bool:
+    """True if ``candidate`` (a slash path) is the tail of ``parts``.
+
+    Trailing rather than anchored-at-root on purpose: ``.claude/settings.json``
+    must match both the project's own copy and the one inside an emitted runtime
+    kit (``agents/<slug>/runtime/.claude/settings.json``). Anchoring at the repo
+    root would fence the first and leave the second — the actual hook wiring a
+    persona reads — writable.
+    """
+    needle = tuple(p for p in PurePosixPath(candidate).parts if p != ".")
+    if not needle or len(parts) < len(needle):
+        return False
+    return parts[-len(needle) :] == needle
+
+
+def _protected_config_refusal(
+    parts: tuple[str, ...], persona: GuardPersona, rules: CapabilityRules
+) -> str | None:
+    """L0 (ADR-034 §4.1, OD-1) — is this path part of the enforcement config?
+
+    Returns the refusal reason, or ``None`` when the path is not fenced.
+
+    **Structural, not adjudicated.** Every persona is refused identically and no
+    capability verb unlocks any of these — including ``edit_other_personas``,
+    which since rules_version 2 no longer reaches a capability document. Callers
+    must therefore return ``adjudicated=False`` (ADR-018 §2), exactly as the
+    step-0 path escape does.
+
+    The hole this closes (G5) was that the hook re-reads ``--persona-file`` on
+    EVERY invocation and ``.claude/settings.json`` was an ordinary path: a
+    persona holding ``write_code`` could grant itself a denied verb, or unwire
+    the hook, in one edit, and the next tool call was adjudicated against the
+    document it had just written.
+    """
+    # 1. The runtime's / baron's own config documents, anywhere in the tree.
+    for candidate in rules.protected_config_paths:
+        if _trailing_match(parts, candidate):
+            return (
+                f"`{candidate}` is enforcement configuration — refused for every "
+                "persona, whatever its capabilities (ADR-034 L0). Editing it "
+                "would let the governed party rewrite or unwire the policy that "
+                "governs it. Change it in a PR a human merges."
+            )
+
+    spec = rules.spec_dir_component
+    if not spec or spec not in parts:
+        return None
+    idx = parts.index(spec)
+    below = parts[idx + 1 :]
+    if len(below) < 2:  # need <slug>/<something> to be inside a persona's dir
+        return None
+    slug, tail = below[0], below[1:]
+
+    # 2. ANY persona's capability document — including this persona's own, and
+    #    including for a holder of edit_other_personas. A capability change is a
+    #    PR, always: that is the whole of OD-1.
+    if len(tail) == 1 and tail[0] in rules.protected_spec_files:
+        return (
+            f"`{spec}/{slug}/{tail[0]}` is a capability document — refused for "
+            "every persona, including the one it belongs to and including a "
+            "holder of `edit_other_personas` (ADR-034 L0). A capability change "
+            "is a PR a human merges, never a self-service edit."
+        )
+
+    # 3. The ACTING persona's own spec dir, entirely: `runtime/` carries the
+    #    emitted kit and its hook wiring, `sidecar.sh` is the launcher, and
+    #    AGENT.md is a generated mirror of persona.yaml. Another persona's
+    #    non-capability files stay governed by `edit_other_personas` at step 2.
+    if rules.protects_own_spec_dir and persona.slug and slug == persona.slug:
+        return (
+            f"`{spec}/{slug}/` is this persona's own spec dir — refused (ADR-034 "
+            "L0). It holds the runtime kit that wires the guard, the sidecar "
+            "that launches it, and the generated mirror of the capability "
+            "document, so a persona editing it is a persona rewriting the "
+            "policy that governs it. Route the change through a PR."
+        )
+    return None
 
 
 def evaluate_write(
@@ -702,6 +905,22 @@ def evaluate_write(
 
     parts = normalized.parts
 
+    # 0.5 L0 (ADR-034) — the enforcement configuration is out of reach of the
+    #     party it governs. Placed ABOVE the universal-write allow, not merely
+    #     above the spec-dir rule as ADR-034 §4.1 first drafted: step 1 matches
+    #     `_handoff` as a COMPONENT anywhere in the path, so a protected file
+    #     underneath one would otherwise be unlocked by it.
+    #
+    #     Structural, so `adjudicated` stays False and the event reads
+    #     `unevaluated` — guard really did block (the `deny` outcome records
+    #     that), but no capability decided it and a differently-capable persona
+    #     would have received the same answer. Same ADR-018 §5 caveat as step 0:
+    #     the verb tuple is non-empty on a non-adjudicated deny, deliberately,
+    #     because this IS a path-scoping refusal.
+    protected = _protected_config_refusal(parts, persona, rules)
+    if protected is not None:
+        return Decision(False, ("write_path",), protected)
+
     # 1. Universally writable zones (rules artifact): _handoff/ is how
     #    personas report and coordinate — gating it would brick the substrate.
     #    Persona-independent, so NOT an adjudication: no capability decided it.
@@ -709,17 +928,14 @@ def evaluate_write(
         return ALLOW
 
     # 2. Another persona's spec dir (agents/<other-slug>/...) needs
-    #    edit_other_personas; a persona's OWN agents/<slug>/ dir is its own
-    #    surface (COORDINATION.md Owner row) and always writable.
+    #    edit_other_personas. The persona's OWN spec dir no longer reaches this
+    #    step at all — step 0.5 refuses it structurally (ADR-034 L0 replaced the
+    #    former "own dir is always writable" allow, which was exactly the
+    #    self-amendment surface G5 named).
     if rules.spec_dir_component in parts:
         idx = parts.index(rules.spec_dir_component)
         if idx + 2 <= len(parts) - 1:  # there is a slug dir AND a file below it
             owner = parts[idx + 1]
-            if owner == persona.slug:
-                # The edit_other_personas rule matched and resolved in this
-                # persona's favour BECAUSE of who it is — another persona would
-                # have been denied. Adjudicated, with no verb required.
-                return ALLOW_ADJUDICATED
             if not persona.grants("edit_other_personas"):
                 return Decision(
                     False,

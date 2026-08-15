@@ -20,11 +20,81 @@ Every ADR, its status and its supersession relationships are indexed at
 > [`docs/DECISIONS-FOR-REVIEW.md`](docs/DECISIONS-FOR-REVIEW.md); what remains open is §E
 > (what is NOT verified) and §F1/F2/F4.
 >
-> **What §E still says, because a green 424-test suite invites the wrong inference.** No test
-> drives a real Claude Code process — enforcement is proven by wiring, not invocation. The
-> `bash -c '...'` guard bypass stands and is documented on purpose. `.baron/rules.yaml` is
-> parsed but never activated. `baron doctor` reads project-level settings only. Runtime
-> neutrality is measured with **two** producers, not three.
+> **What §E still says, because a green test suite invites the wrong inference.**
+> Updated 2026-08-14 by [ADR-034](docs/adr/ADR-034-deterministic-capability-enforcement.md):
+> the `bash -c '...'` bypass is **narrowed, not closed** — one level of recursion,
+> with `python -c`/`eval`/base64/script files deliberately still open. A test that
+> drives a real Claude Code process now **exists** but is opt-in, advisory and
+> **has not yet been run**, so "enforcement is proven by wiring, not invocation"
+> still stands as the published claim. `.baron-rules.yaml` is still parsed-but-never-
+> activated (the loader is deferred; the path is now fenced). `baron doctor` reads
+> project-level settings only. Runtime neutrality is measured with **two** producers,
+> not three. **G1 is unchanged**: an unwired hook is still zero enforcement — the
+> layer that would have softened that (`permissions.deny`) was deliberately **not**
+> built (OD-2).
+
+## Shipped (unreleased) — P2.2 deterministic enforcement: denial becomes structural (plugin 1.20.0 / CLI 0.18.0, `rules_version` 1 → **2**, [ADR-034](docs/adr/ADR-034-deterministic-capability-enforcement.md))
+
+The backlog's P2.2. **G5**, found by the ADR-034 sweep in merged code: the enforcement
+configuration was inside the agent's own blast radius. `evaluate_write` made a persona's own
+`agents/<slug>/` always writable and `.claude/settings.json` was an ordinary path, while the
+hook re-reads `--persona-file` on *every* invocation — so a persona could **grant itself a
+denied verb, or unwire the hook, in one edit**, and the next tool call was adjudicated
+against the document it had just written. Every other layer was conditional on that.
+
+**Three layers, not the four the ADR proposed** — see the honest accounting below.
+
+- **L0 — the policy is out of the governed party's reach** (`file_ops.protected_config`,
+  `.protected_spec_file`, `.own_spec_dir`). A **structural** refusal at `evaluate_write`
+  step 0.5, modelled on the step-0 path escape: no verb unlocks it, so `adjudicated=False`
+  and the event reads `unevaluated` ([ADR-018](docs/adr/ADR-018-adjudicated-enforcement-on-the-event.md) §2).
+  Fenced: every persona's `persona.yaml` (own included, and including for a holder of
+  `edit_other_personas`), the acting persona's own `agents/<slug>/**` entirely,
+  `.claude/settings.json{,.local}`, `.baron-waivers.yaml`, `.baron-rules.yaml`,
+  `.barony/allowed_signers`. **A capability change is now a PR a human merges — for
+  everyone, always, including the owner working solo.** That friction is the point.
+- **L2 — the wrapper class narrowed** (`commands.wrappers`). One level of recursion into
+  `bash -c '<payload>'` and the other shell forms, through the **same evaluators** — not a
+  second parser. Uninspectable payloads get the artifact's conservative-deny **narrowed to
+  `merge_pr`/`push_main`/`force_push`**, so the false-positive cost lands only on personas
+  that deny those anyway.
+- **L3 — the platform layer, reported and never configured** (`baron doctor` check 10,
+  INFO). Branch protection and per-persona push credentials are what could actually make an
+  irreversible action impossible, and they are **not baron's** ([ADR-007](docs/adr/ADR-007-session-boundary.md)).
+  The networked half is opt-in (`BARON_DOCTOR_PLATFORM=1`) so doctor's exit code stays
+  reproducible offline. It also states the ADR-033 §5 distinction rather than blurring it:
+  per-persona *signing* keys are not per-persona *push authority*.
+- **Proof by invocation — the opt-in tier.** A `PATH`-shimmed `git`/`gh` sentinel drives a
+  real `claude -p` in a scaffolded temp repo and asserts the denied operation **did not
+  run**. Its negative control is load-bearing: the same prompt runs first against a persona
+  that *grants* the verb and the sentinel must appear, or the run reports **INCONCLUSIVE**,
+  never PASS — a model that simply declines is FM4's exact shape.
+
+**Honest status of that tier, stated because an advisory gate presented as a gate is this
+repo's named failure (OD-3):** it is **opt-in, excluded from default CI, and ADVISORY**. An
+INCONCLUSIVE or failing run **does not block a release**. As of this writing it **has not
+been run** — the instrument landed, the measurement is still owed. Its harness (shims,
+scaffold, kit install) *is* covered in the default job by `test_live_harness.py`, precisely
+because a silently-broken shim would make the live test report a false green.
+
+**What did NOT improve.** **G1 is unchanged** — an unwired hook is still zero enforcement.
+The layer that would have degraded that to "weaker but non-zero" was `baron init` emitting
+`permissions.deny`, and the owner **declined it** (OD-2 = NO): it publishes a
+stronger-*looking* posture still evadable by `bash -c`, and not over-claiming is the
+differentiator. `test_adapter_omission.py` and the ADR-020 measurement are therefore
+untouched. **G3 unchanged** (loader still deferred). **G4 conditionally moved** (instrument
+exists; measurement owed).
+
+**Bounds that survive all of it.** A hostile workspace still wins: `~/.claude/settings.json`
+is outside the repo root and invisible to L0 and to doctor, and a shell redirect is neither
+a write-tool call nor a capability verb — both pinned by tests rather than only written
+down. `python -c`/`eval`/base64/script files remain uninspected. Credentials are not
+revoked. Positioning is unchanged: **a deterministic policy guard at the agent-tool
+interface for cooperating agents, not a security boundary.**
+
+Tests: `cli/tests/test_guard_l0.py` (16), `test_guard_wrappers.py` (31 — half of them
+pinning what still gets through), `test_live_harness.py` (5), plus doctor/rules/pydantic-ai
+updates. 806 pass, live tier deselected.
 
 > **Reading the "Shipped (unreleased)" sections below (2026-08-14).** Every one of them is
 > merged on `main` and none of them was tagged — they accumulated between v1.10.0 and now.
@@ -395,8 +465,10 @@ was recording that honestly rather than re-deriving them (the note's own CORRECT
   `test_doctor.py::test_fail_closed_policy_is_pinned_adr_004_s2_3`.
 - **`open_pr` / `run_tests` denial parsing** — remains DEFERRED as of 2026-08-09 with no
   observed-need evidence anywhere in the repo or the evaluation (vocabulary design rule 4;
-  ADR-004 §2.2). `capability-rules.v1.yaml` unchanged, `rules_version` still **1**, pinned by
-  `test_rules.py::test_open_pr_and_run_tests_stay_unparsed_deferred`.
+  ADR-004 §2.2). Still deferred, still pinned by
+  `test_rules.py::test_open_pr_and_run_tests_stay_unparsed_deferred`. (`rules_version` moved
+  to **2** on 2026-08-14 for ADR-034's L0 fences and wrapper recursion — neither touches
+  these two verbs; the deferral is a statement about DETECTION, not about the integer.)
 - **Lock soft-timeout sweep** — still open and correctly so: folding locks into `baron status`
   crosses the recorded "status reads local git state only, never the forge" deferral, so it
   needs its own ADR first. Shape recorded in `docs/BACKLOG.md`.
