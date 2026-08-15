@@ -3,119 +3,134 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Barony — Fleet Dashboard</title>
-<meta name="description" content="Three visual treatments of the same live fleet snapshot: git-native governance for teams of AI coding agents.">
+<title>Barony — git-native governance for teams of AI coding agents</title>
+<meta name="description" content="Barony proves that agent-written code was reviewed by something other than the thing that wrote it — as signed artifacts in your own repo, checkable offline, on any forge.">
+<meta property="og:title" content="Barony — git-native governance for teams of AI coding agents">
+<meta property="og:description" content="Product overview, the capability → value → metric map, and three treatments of the live fleet dashboard.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9819;</text></svg>">
-<style>
-  :root {
-    --bg:#0a0c10; --panel:#0e1117; --line:#232836; --text:#e6e8ee;
-    --dim:#9aa3b8; --mute:#6b7488; --accent:#a78bfa;
-    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-    --sans: ui-sans-serif, -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
-  }
-  * { box-sizing:border-box; }
-  body {
-    margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
-    line-height:1.6; -webkit-font-smoothing:antialiased;
-    background-image: radial-gradient(900px 500px at 15% -10%, rgba(167,139,250,.08), transparent 70%);
-    background-attachment: fixed;
-  }
-  .wrap { max-width:1000px; margin:0 auto; padding:72px 28px 90px; }
-  h1 { font-size:34px; font-weight:640; letter-spacing:-.025em; margin:0 0 14px; }
-  .lede { color:var(--dim); font-size:16px; max-width:66ch; margin:0 0 10px; }
-  .lede strong { color:var(--text); font-weight:560; }
-  .meta { color:var(--mute); font-size:12.5px; font-family:var(--mono); margin-bottom:44px; }
-
-  .cards { display:grid; gap:16px; grid-template-columns:repeat(3,1fr); }
-  @media (max-width:860px){ .cards{ grid-template-columns:1fr; } }
-  a.card {
-    display:block; text-decoration:none; color:inherit; border:1px solid var(--line);
-    border-radius:12px; background:var(--panel); overflow:hidden;
-    transition: border-color .18s ease, transform .18s ease;
-  }
-  a.card:hover { border-color:var(--accent); transform:translateY(-2px); }
-  .swatch { height:96px; display:block; }
-  .s1 { background:linear-gradient(135deg,#0a0c10 0%,#151226 55%,#a78bfa 190%); border-bottom:1px solid var(--line); }
-  .s2 { background:linear-gradient(135deg,#fbfaf7 0%,#f3f1ec 60%,#b3251f 230%); }
-  .s3 { background:
-          repeating-linear-gradient(90deg,#0c1015 0 14px,#11161d 14px 15px),
-          linear-gradient(135deg,#06080b,#22d3ee 260%); border-bottom:1px solid var(--line); }
-  .card-b { padding:16px 18px 18px; }
-  .card-b .k { font-family:var(--mono); font-size:11px; letter-spacing:.09em; color:var(--accent); text-transform:uppercase; }
-  .card-b h2 { margin:6px 0 6px; font-size:17px; font-weight:600; letter-spacing:-.012em; }
-  .card-b p { margin:0; color:var(--dim); font-size:13.5px; line-height:1.5; }
-
-  .note { margin-top:44px; border:1px solid var(--line); border-radius:12px; background:var(--panel); padding:22px 24px; }
-  .note h3 { margin:0 0 10px; font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim); font-weight:600; }
-  .note p { margin:0 0 10px; color:var(--dim); font-size:13.5px; }
-  .note p:last-child { margin-bottom:0; }
-  .note code { font-family:var(--mono); font-size:12.5px; color:var(--text); background:#12161f; padding:1px 6px; border-radius:4px; }
-  .foot { margin-top:34px; color:var(--mute); font-size:12.5px; }
-  .foot a { color:var(--dim); }
-</style>
+<link rel="stylesheet" href="assets/site.css">
 </head>
 <body>
+<!-- The site index. Unlike /overview/ and /value-map/ this page has no markdown
+     source — it is the map of the site, so it is hand-written and hand-edited. -->
+<nav class="nav"><div class="nav-in">
+  <a class="nav-brand" href="./"><span class="glyph">&#9819;</span> Barony</a>
+  <div class="nav-links">
+    <a href="./" class="on">Fleet dashboard</a>
+    <a href="overview/">Product overview</a>
+    <a href="value-map/">Capability map</a>
+    <a class="ext" href="https://github.com/vggg/barony">GitHub&nbsp;↗</a>
+  </div>
+</div></nav>
+
 <div class="wrap">
-  <h1>Barony — Fleet Dashboard</h1>
-  <p class="lede">
-    <strong>Git-native governance for teams of AI coding agents.</strong>
-    Three visual treatments of the <em>same</em> live snapshot — projects, agents and their
-    capabilities, fleet-health metrics, the merge queue, and the owner action queue.
-  </p>
-  <p class="lede">
-    Every number is read from the coordination repository by <code>baron</code> and committed
-    as a curated, showcase-safe JSON file. No server, no database, no hand-entered figures —
-    git is the source of truth and the whole page rebuilds from a clone.
-  </p>
-  <p class="meta" id="meta">loading snapshot…</p>
-
-  <div class="cards">
-    <a class="card" href="v1/">
-      <span class="swatch s1"></span>
-      <span class="card-b">
-        <span class="k">v1 · primary</span>
-        <h2>Calm control</h2>
-        <p>Dark, quiet, one violet accent. Hierarchy from type and spacing. The Linear / Vercel / Grafana school.</p>
-      </span>
-    </a>
-    <a class="card" href="v2/">
-      <span class="swatch s2"></span>
-      <span class="card-b">
-        <span class="k">v2 · editorial</span>
-        <h2>Analyst report</h2>
-        <p>Bright paper, serif masthead, generous whitespace. The fleet as a well-set printed briefing.</p>
-      </span>
-    </a>
-    <a class="card" href="v3/">
-      <span class="swatch s3"></span>
-      <span class="card-b">
-        <span class="k">v3 · ops wall</span>
-        <h2>Mission control</h2>
-        <p>Dense monospace grid with sparklines, built for an always-on monitor across the room.</p>
-      </span>
-    </a>
-  </div>
-
-  <div class="note">
-    <h3>How the data gets here</h3>
-    <p>
-      The coordination repository is <strong>private and stays private</strong>.
-      <code>dashboard/build-data.sh</code> runs the read-only <code>baron</code> reporters against it
-      and writes a one-way, sanitised projection to <code>dashboard/data/fleet.json</code> — the only
-      thing published. Absolute paths, record bodies and handoff contents never leave.
+  <header class="hero">
+    <div class="eyebrow">Barony</div>
+    <h1>Git-native governance for teams of AI coding agents</h1>
+    <p class="lede">
+      Barony proves that agent-written code was reviewed by <strong>something other than the
+      thing that wrote it</strong> — as signed artifacts in your own repo, checkable offline,
+      on any forge.
     </p>
-    <p>
-      Metrics are reported honestly: anything with an empty denominator renders as
-      <code>n/a</code> with its basis rather than a flattering 0% or 100%, and single-observation
-      figures are labelled <code>n=1</code>. Unmerged capabilities are shown as <em>not active</em>,
-      not as passing.
+    <p class="standfirst">
+      The git repo is the only source of truth; anything hosted is a rebuildable cache. A
+      control plane cannot attest to itself — so the evidence lives where you can still read
+      it after the vendor, the forge and the dashboard are all gone.
     </p>
-  </div>
+  </header>
 
-  <p class="foot">
-    Source: <a href="https://github.com/vggg/barony">github.com/vggg/barony</a> ·
-    rebuild with <code>./dashboard/build-data.sh</code>
-  </p>
+  <section class="index-sec">
+    <h2>Start here</h2>
+    <p class="hint">
+      Both pages are rendered from the markdown in <code>docs/</code> and say what is measured,
+      what is merely wired, and what has never been run.
+    </p>
+    <div class="tiles">
+      <a class="tile" href="overview/">
+        <span class="swatch s-doc"></span>
+        <span class="tile-b">
+          <span class="k">product overview</span>
+          <h3>What it is, and the bounds</h3>
+          <p>The problem from first-party incidents, the architectural thesis, fourteen capability
+             surfaces — and, in line rather than in a footnote, what each one does not do.</p>
+        </span>
+      </a>
+      <a class="tile" href="value-map/">
+        <span class="swatch s-map"></span>
+        <span class="tile-b">
+          <span class="k">capability → value → metric</span>
+          <h3>What each capability buys</h3>
+          <p>One row per capability: the value, the metric that moves, how it is obtained — and an
+             honesty column marking every claim <em>proven</em>, <em>instrumented</em> or
+             <em>aspirational</em>.</p>
+        </span>
+      </a>
+    </div>
+  </section>
+
+  <section class="index-sec" id="dashboards">
+    <h2>Fleet dashboard — three treatments</h2>
+    <p class="hint">
+      The <em>same</em> live snapshot rendered three ways: projects, agents and their capabilities,
+      fleet-health metrics, the merge queue, and the owner action queue.
+    </p>
+    <p class="snapmeta" id="meta">loading snapshot…</p>
+    <div class="tiles three">
+      <a class="tile" href="v1/">
+        <span class="swatch s1"></span>
+        <span class="tile-b">
+          <span class="k">v1 · primary</span>
+          <h3>Calm control</h3>
+          <p>Dark, quiet, one violet accent. Hierarchy from type and spacing. The Linear / Vercel / Grafana school.</p>
+        </span>
+      </a>
+      <a class="tile" href="v2/">
+        <span class="swatch s2"></span>
+        <span class="tile-b">
+          <span class="k">v2 · editorial</span>
+          <h3>Analyst report</h3>
+          <p>Bright paper, serif masthead, generous whitespace. The fleet as a well-set printed briefing.</p>
+        </span>
+      </a>
+      <a class="tile" href="v3/">
+        <span class="swatch s3"></span>
+        <span class="tile-b">
+          <span class="k">v3 · ops wall</span>
+          <h3>Mission control</h3>
+          <p>Dense monospace grid with sparklines, built for an always-on monitor across the room.</p>
+        </span>
+      </a>
+    </div>
+  </section>
+
+  <section class="index-sec">
+    <h2>How the data gets here</h2>
+    <div class="note">
+      <p>
+        The coordination repository is <strong>private and stays private</strong>.
+        <code>dashboard/build-data.sh</code> runs the read-only <code>baron</code> reporters against it
+        and writes a one-way, sanitised projection to <code>dashboard/data/fleet.json</code> — the only
+        thing published. Absolute paths, record bodies and handoff contents never leave.
+      </p>
+      <p>
+        Metrics are reported honestly: anything with an empty denominator renders as
+        <code>n/a</code> with its basis rather than a flattering 0% or 100%, and single-observation
+        figures are labelled <code>n=1</code>. Unmerged capabilities are shown as <em>not active</em>,
+        not as passing.
+      </p>
+      <p>
+        The two document pages are a different pipeline with the same rule — no hand-entered content.
+        <code>dashboard/build-docs.sh</code> renders them from <code>docs/product-overview.md</code>
+        and <code>docs/capability-value-map.md</code>, and CI fails if a page has drifted from its
+        markdown source.
+      </p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Source: <a href="https://github.com/vggg/barony">github.com/vggg/barony</a></span>
+    <span class="src">rebuild: ./dashboard/build-data.sh · ./dashboard/build-docs.sh</span>
+  </footer>
 </div>
 
 <script type="module">

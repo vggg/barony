@@ -1,12 +1,14 @@
 name: pages
 
 # Publishes dashboard/ to GitHub Pages. The site root IS dashboard/, so the
-# three versions serve at /v1/, /v2/ and /v3/ with the index at /.
+# three dashboard versions serve at /v1/, /v2/ and /v3/, the two document pages
+# at /overview/ and /value-map/, and the site index at /.
 #
 # Nothing is generated here: dashboard/data/fleet.json is a COMMITTED artifact
 # produced locally by dashboard/build-data.sh against the PRIVATE coordination
-# repo. CI has no access to that repo and must never try to reach it — this
-# workflow only uploads what is already in the tree.
+# repo, and the doc pages are committed the same way. CI has no access to the
+# coordination repo and must never try to reach it — this workflow only uploads
+# what is already in the tree, after checking it is not stale.
 #
 # ONE-TIME OWNER STEP: Settings -> Pages -> Build and deployment -> Source:
 # "GitHub Actions". Until that is set, this workflow will fail at deploy.
@@ -16,6 +18,11 @@ on:
     branches: [main]
     paths:
       - 'dashboard/**'
+      # A docs-only edit still changes the published site, and the drift guard
+      # below turns "edited the markdown, forgot to rebuild" into a failure
+      # here rather than a stale page nobody notices.
+      - 'docs/product-overview.md'
+      - 'docs/capability-value-map.md'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -40,6 +47,9 @@ jobs:
 
       - name: Verify the published snapshot is sane and leak-free
         run: python3 dashboard/check_snapshot.py
+
+      - name: Verify the doc pages match their markdown sources
+        run: python3 dashboard/build_docs.py --check
 
       - uses: actions/configure-pages@v5
 
