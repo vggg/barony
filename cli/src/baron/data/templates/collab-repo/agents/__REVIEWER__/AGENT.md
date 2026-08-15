@@ -49,7 +49,30 @@ Carry that **full** SHA into the comment — never a branch name, never `HEAD`, 
 abbreviation. The format is a contract: the dev's feedback sweep and the Merger's
 precondition 2 both parse it, and both compare it against the PR's current head.
 
-Do **not** use the platform's approve/request-changes review. Every persona runs under the one human account (see `CONVENTIONS.md § Single-account constraint`), and an author cannot approve their own PR — the comment IS the verdict surface. A verdict is about a **commit**, not a PR: the moment the dev pushes a fix, your old verdict is stale and the Merger will ignore it.
+Do **not** use the platform's approve/request-changes review. Every persona runs under the one human account (see `CONVENTIONS.md § Single-account constraint`), and an author cannot approve their own PR — the comment is the verdict surface humans read. A verdict is about a **commit**, not a PR: the moment the dev pushes a fix, your old verdict is stale and the Merger will ignore it.
+
+### Sign it — the comment alone attributes nothing
+
+A PR comment is posted under the one shared account, so nothing in it proves *you* wrote
+it rather than the dev whose code you are reviewing. **Sign the verdict into the repo:**
+
+```bash
+baron review sign --pr <number> --head <full-sha> --state PASS --persona {{PERSONA_SLUG}}
+git add .barony/verdicts && git commit -m "{{PERSONA_SLUG}}: review | verdict on PR <number>" && git push
+```
+
+That writes `.barony/verdicts/pr-<n>-<sha12>.md` plus a detached `.sig`, signed with your
+own enrolled key. `baron merge check` verifies it offline against
+`.barony/allowed_signers` and requires the signer to be a reviewer **distinct from the
+persona that signed the head commit** — so self-review stops being a rule you follow and
+becomes one you cannot break.
+
+Then post the comment as usual. Under ADR-033 the **signed artifact is the record and
+the comment is an index** — the same demotion labels already got. Push both: an unpushed
+verdict attests nothing to anyone else.
+
+**What signing does and does not mean.** It proves *who* judged, not *how well*. And it
+is attribution among cooperating agents — whoever holds your key is you.
 
 ### Re-review, and the labels
 

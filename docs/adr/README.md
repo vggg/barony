@@ -45,6 +45,7 @@ follow-ups deliberately not done. This index is a map, not a summary.
 | [030](ADR-030-observer-archetype.md) | The `observer` archetype — a strictly read-only watcher with one zone | **Proposed** (2026-08-14) | Sixth shipped archetype. Deploys per ADR-026; reads the ADR-013 plane and ADR-024 health; read-only-ness rests on the write side because ADR-020 makes the read verbs `instructed`. 027/028 are claimed by in-flight PRs #47/#46. |
 | [031](ADR-031-governed-memory-eval-harness.md) | The governed-memory evaluation harness — measure first, then choose a backend | **Proposed** (2026-08-14) | `baron memeval` over labeled fixtures; P3.3, the gate on P3.4. Consumes ADR-015's walker. §4 states the honest bound (fixtures, not a live audit); §5 lists what it does NOT authorise. Renumbered 028 → 031 at integration: 028 landed as the merge gate. |
 | [032](ADR-032-export-reach-monorepo-and-widened-corpus.md) | `baron export` reaches the whole estate — the monorepo walk, and the widened corpus | Accepted 2026-08-14 | Owner decision #5. Fixes the root-level silent zero (same class as ADR-025 §6.8) and widens the corpus to six kinds — `status` + `note` — **supersedes ADR-015 §7**'s "curated status is not exported" deferral. Acts on ADR-031's measured finding that the miss was coverage, not ranking. |
+| [033](ADR-033-signed-review-verdicts.md) | Signed review verdicts — the merge gate proves WHO approved | Accepted 2026-08-14 | **Supersedes ADR-028 §7 Q4** (route 2: the in-repo signed artifact). Builds entirely on ADR-027 §2.3 — same registry, same trust root, no new key. Closes the EVIDENCE half of the autonomous merger; the authority half (acting under the owner's token) is untouched — see §5. |
 
 ## Where the owner decisions landed
 
@@ -70,10 +71,18 @@ ADR numbers are never reused. Two are absent from this directory on purpose:
   neither citing the other. PR #32 is closed; ADR-011 was never merged and its number is not
   reused. **This is the exact failure ADR-029 exists to catch**, and it is recorded here
   rather than quietly dropped.
-- Anyone opening a new ADR should start at **033** — and **check the branches, not just this
+- Anyone opening a new ADR should start at **034** — and **check the branches, not just this
   directory**: a number free here may already be taken in flight. The 011/027 re-derivation
   is the reason that sentence is in this file. `baron adr check` gates the *records*; it
   cannot see a number claimed on a branch.
+- **031** was claimed **three** times in flight, and the collision was resolved twice. The
+  governed-memory eval harness took it first (renumbered 028 → 031, below) and **landed** as
+  [ADR-031](ADR-031-governed-memory-eval-harness.md). Signed review verdicts, written against
+  031 on a parallel branch while that one was unmerged, renumbered to
+  **[033](ADR-033-signed-review-verdicts.md)** at integration; `baron export`'s widened reach,
+  written on a third branch, had already taken **032**. Recorded here rather than silently
+  renamed — same failure mode as 011/027 and 028, caught at integration and costing only two
+  renames. The next free number is **034**.
 - **028** was claimed twice in flight. It landed as the mechanized merge gate; the
   governed-memory eval harness, written against 028 on a parallel branch, renumbered to
   **031** at integration. Same failure mode as 011/027, caught earlier and costing only a

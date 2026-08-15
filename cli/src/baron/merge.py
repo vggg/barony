@@ -27,9 +27,20 @@ that cannot be reached — each returns REFUSE with its own reason slug. There i
 path where absence of evidence is read as evidence.
 
 **baron checks; the persona decides (ADR-007).** This module evaluates. It never
-merges, and there is deliberately no ``baron merge do``: under one shared forge
-account baron cannot tell whose verdict it is reading, so autonomous merging waits
-on agent identity (ADR-027). Owner-in-the-loop until then.
+merges, and there is deliberately no ``baron merge do``.
+
+**Who signed the verdict (ADR-033).** ADR-028 §4 recorded the hole plainly: baron
+could verify that a ``REVIEW:PASS`` existed at the current head, but not *who posted
+it*, because a PR comment is forge state under one shared login. The
+``verdict_signed`` precondition closes it — the reviewer SSH-signs an in-repo verdict
+artifact, and the gate verifies that signature offline against
+``.barony/allowed_signers``, requiring the signer to be a reviewer-archetype persona
+**distinct from the persona that signed the head commit**. Reviewer≠author becomes a
+property of the repo rather than a rule in a persona file.
+
+Posture follows ADR-027 §7.3: an *invalid* signature always refuses; a *missing* one
+warns by default and refuses under ``--require-signed-verdict``, because turning
+absence into a refusal is a fleet-wide breaking change that somebody should sign.
 """
 
 from __future__ import annotations
@@ -73,9 +84,15 @@ CI_PENDING = "ci_pending"
 CI_ABSENT = "ci_absent"
 CI_UNKNOWN_STATE = "ci_unknown_state"
 UNEVALUATED = "unevaluated"
+VERDICT_UNATTESTED = "verdict_unattested"
 
 #: Precondition names, in evaluation order. The first failing one is *the* refusal.
-PRECONDITIONS = ("pr_open", "verdict_at_head", "no_changes_requested", "ci_green")
+#: ``verdict_signed`` sits immediately after ``verdict_at_head`` because they judge the
+#: same object: one asks whether a verdict exists for this commit, the next asks who
+#: signed it (ADR-033).
+PRECONDITIONS = (
+    "pr_open", "verdict_at_head", "verdict_signed", "no_changes_requested", "ci_green",
+)
 
 # --- check-run state buckets ----------------------------------------------------------
 
@@ -126,6 +143,10 @@ class GateResult:
     verdicts: tuple[Verdict, ...] = ()
     repo: str = ""
     url: str = ""
+    #: The ADR-033 :class:`signed_verdict.Attestation`, or None when not evaluated.
+    #: Carried on the result so a reader of `--json` gets the WHOLE attribution story —
+    #: signer, archetype, commit author — not just the pass/fail of the precondition.
+    attestation: object = None
 
     @property
     def allowed(self) -> bool:
@@ -153,6 +174,9 @@ class GateResult:
             "preconditions": [p.to_dict() for p in self.preconditions],
             "ignored_signals": list(self.ignored_signals),
             "verdicts_seen": [v.to_dict() for v in self.verdicts],
+            "attestation": (
+                self.attestation.to_dict() if self.attestation is not None else None
+            ),
         }
 
 
@@ -292,6 +316,54 @@ def _check_verdict_at_head(
     )
 
 
+def _check_verdict_signed(attestation, head: str, *, required: bool) -> Precondition:
+    """Who signed the verdict at this head (ADR-033) — the ADR-028 §7 Q4 hole.
+
+    Posture follows the ADR-027 §7.3 precedent exactly, and for the same reason:
+
+    - **A signature that is PRESENT and does not verify is ALWAYS a refusal.** Every
+      failure mode — bad signature, unenrolled signer, a non-reviewer persona, the
+      reviewer *being* the author, a verdict replayed from another PR — is red
+      regardless of posture. Broken evidence is worse than none.
+    - **A MISSING signed verdict warns by default and refuses under
+      ``--require-signed-verdict``.** Turning absence into a refusal is a fleet-wide
+      breaking change: every project on the unsigned comment path would stop merging on
+      upgrade. That is a change somebody should sign, not one that arrives as a default
+      (ADR-013 §7.1: a default nobody signed and a default somebody signed look
+      identical in a diff).
+
+    When it passes unattested, it says so in its own detail line rather than rendering
+    as a clean PASS — an unattested verdict is a *known* gap, not an absence.
+    """
+    if attestation is None:
+        if required:
+            return Precondition(
+                "verdict_signed", False, VERDICT_UNATTESTED,
+                "--require-signed-verdict was set but no attestation was evaluated — "
+                "fail-closed",
+            )
+        return Precondition(
+            "verdict_signed", True,
+            detail="NOT CHECKED — no signed-verdict evaluation was performed; the "
+                   "verdict at this head is UNATTRIBUTED (ADR-028 §4)",
+        )
+    if attestation.ok:
+        return Precondition("verdict_signed", True, detail=attestation.detail)
+    # Absent evidence is the only case posture can soften; broken evidence never is.
+    from .signed_verdict import UNSIGNED
+
+    if attestation.reason == UNSIGNED and not required:
+        return Precondition(
+            "verdict_signed", True,
+            detail=(
+                f"UNATTRIBUTED — {attestation.detail}. Not scored (default posture); "
+                f"baron cannot tell WHO approved {head[:12]}. Pass "
+                f"--require-signed-verdict to make this a refusal."
+            ),
+        )
+    return Precondition("verdict_signed", False, attestation.reason, attestation.detail)
+
+
 def _check_no_changes_requested(pr: dict, verdicts: list[Verdict], head: str) -> Precondition:
     """A block at the current head is decisive, even when a PASS sits beside it.
 
@@ -360,7 +432,13 @@ def _check_ci_green(checks: list[dict], head: str) -> Precondition:
     return Precondition("ci_green", True, detail=f"{len(checks)} check(s) green on {head[:12]}")
 
 
-def evaluate(pr: dict, *, verdict_author: str | None = None) -> GateResult:
+def evaluate(
+    pr: dict,
+    *,
+    verdict_author: str | None = None,
+    attestation=None,
+    require_signed_verdict: bool = False,
+) -> GateResult:
     """Evaluate the merge gate against one PR snapshot. Pure — no I/O.
 
     ``pr`` is the normalized snapshot a forge returns (see
@@ -368,6 +446,12 @@ def evaluate(pr: dict, *, verdict_author: str | None = None) -> GateResult:
     reviewDecision, checks, url. Taking ONE snapshot rather than querying per
     precondition is what makes the head-sha comparison meaningful: verdict, labels
     and checks are all read against the same observed head.
+
+    ``attestation`` is a pre-computed :class:`signed_verdict.Attestation` (ADR-033),
+    passed in rather than derived here so this function stays **pure**: verifying a
+    signature means running ``ssh-keygen`` and reading git, and the whole reason every
+    refusal path in this gate is cheap to test is that scoring never touches the disk.
+    ``check()`` computes it; ``None`` means the signed-verdict leg was not evaluated.
     """
     number = int(pr.get("number") or 0)
     head = str(pr.get("headRefOid") or "").lower()
@@ -381,6 +465,7 @@ def evaluate(pr: dict, *, verdict_author: str | None = None) -> GateResult:
         checks = [
             open_check,
             _check_verdict_at_head(verdicts, head, verdict_author=verdict_author),
+            _check_verdict_signed(attestation, head, required=require_signed_verdict),
             _check_no_changes_requested(pr, verdicts, head),
             _check_ci_green(list(pr.get("checks") or []), head),
         ]
@@ -392,6 +477,7 @@ def evaluate(pr: dict, *, verdict_author: str | None = None) -> GateResult:
         verdicts=tuple(verdicts),
         repo=str(pr.get("repo") or ""),
         url=str(pr.get("url") or ""),
+        attestation=attestation,
     )
 
 
@@ -441,11 +527,19 @@ def check(
     *,
     target_repo: str | None = None,
     verdict_author: str | None = None,
+    require_signed_verdict: bool = False,
+    code_repo: Path | None = None,
 ) -> GateResult:
     """Fetch one PR snapshot through ``forge`` and evaluate the gate against it.
 
     A forge that cannot answer — not installed, no ``get_pr`` extension, an API
     error — is a REFUSE, never an exception the caller might swallow into a merge.
+
+    The ADR-033 attestation is computed here, from the **repo** — the forge supplies
+    the head sha and the PR state, and the signed verdict for that head is read out of
+    ``.barony/verdicts/`` and verified offline against ``.barony/allowed_signers``.
+    Deliberately two sources: the thing being attested (who approved) must not come
+    from the surface an unauthenticated persona can write to.
     """
     from .forge.base import ForgeError, supports
 
@@ -471,17 +565,42 @@ def check(
     snapshot.setdefault("number", number)
     if target_repo:
         snapshot.setdefault("repo", target_repo)
-    return evaluate(snapshot, verdict_author=verdict_author)
+
+    from .signed_verdict import verify as verify_verdict
+
+    head = str(snapshot.get("headRefOid") or "").lower()
+    attestation = None
+    if FULL_SHA_RE.match(head):
+        attestation = verify_verdict(
+            repo_dir, pr=number, head=head, repo=target_repo or "", code_repo=code_repo,
+        )
+    return evaluate(
+        snapshot,
+        verdict_author=verdict_author,
+        attestation=attestation,
+        require_signed_verdict=require_signed_verdict,
+    )
 
 
 # --- rendering -----------------------------------------------------------------------------
 
-#: Printed on every run, pass or refuse. baron evaluated preconditions; it did not merge,
-#: and it cannot tell WHOSE verdict it read while every persona shares one forge account.
+#: Printed on every run, pass or refuse. baron evaluated preconditions; it did not merge.
+#: Which of the two follow-on sentences it prints depends on whether the verdict at this
+#: head was actually attested — the note must not keep claiming an unattributable verdict
+#: once ADR-033 has attributed it, nor claim attribution on a project that never signed.
 IDENTITY_NOTE = (
-    "note: `baron merge check` verifies and reports — it never merges. Under one shared "
-    "forge account baron cannot attest WHO posted a verdict, so merging stays "
-    "owner-in-the-loop until agent identity (ADR-027) is deployed."
+    "note: `baron merge check` verifies and reports — it never merges. The verdict at "
+    "this head is UNATTRIBUTED: it is a PR comment under one shared forge account, so "
+    "baron cannot tell who posted it (ADR-028 §4). Sign verdicts with `baron review "
+    "sign` and enforce with --require-signed-verdict (ADR-033)."
+)
+
+ATTESTED_NOTE = (
+    "note: `baron merge check` verifies and reports — it never merges. The verdict at "
+    "this head IS attributed: signed by {signer}@barony (archetype {archetype}), "
+    "verified offline against .barony/allowed_signers, and distinct from the commit "
+    "author {author}@barony (ADR-033). Bound: attribution among cooperating agents — "
+    "a hostile workspace holding the reviewer's key can still sign anything."
 )
 
 
@@ -502,5 +621,13 @@ def render(result: GateResult) -> list[str]:
         ref = result.refusal
         assert ref is not None
         lines.append(f"VERDICT: REFUSE — {ref.name} [{ref.reason}]: {ref.detail}")
-    lines.append(IDENTITY_NOTE)
+    att = result.attestation
+    if att is not None and att.ok:
+        lines.append(
+            ATTESTED_NOTE.format(
+                signer=att.signer, archetype=att.archetype, author=att.author
+            )
+        )
+    else:
+        lines.append(IDENTITY_NOTE)
     return lines

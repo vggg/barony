@@ -115,7 +115,10 @@ def test_later_preconditions_are_failed_not_skipped_when_the_pr_is_unreadable():
     """Fail-closed: an unreachable check is red, never absent."""
     result = merge.evaluate(pr(state="CLOSED"))
     later = [p for p in result.preconditions if p.name != "pr_open"]
-    assert len(later) == 3
+    # Every precondition after the failing one, whatever the list currently is — asserting
+    # the count against PRECONDITIONS rather than a literal means adding a precondition
+    # (ADR-033 added `verdict_signed`) cannot leave one silently unevaluated.
+    assert len(later) == len(merge.PRECONDITIONS) - 1
     assert all(not p.ok and p.reason == merge.UNEVALUATED for p in later)
 
 
@@ -333,8 +336,16 @@ def test_cli_exits_0_on_pass_and_1_on_refuse(monkeypatch, tmp_path):
 
 
 def test_cli_always_prints_the_identity_bound(monkeypatch, tmp_path):
+    """With no signed verdict in the repo, the note must say the verdict is UNATTRIBUTED.
+
+    Updated for ADR-033: the note used to claim attribution was impossible full stop.
+    It now describes the state this PR is actually in, and points at the mechanism that
+    changes it — a standing note that cannot become true is one readers stop reading.
+    """
     res = _invoke(monkeypatch, pr(), "--collab", str(tmp_path), "--repo", "ex/gardenkit")
-    assert "never merges" in res.output and "ADR-027" in res.output
+    assert "never merges" in res.output
+    assert "UNATTRIBUTED" in res.output
+    assert "ADR-033" in res.output
 
 
 def test_cli_json_names_the_failing_precondition(monkeypatch, tmp_path):

@@ -523,7 +523,7 @@ def verify_file(
     if not allowlist.is_file():
         return FileVerdict(file=path, ok=False, signed=True,
                            reason=f"{ALLOWED_SIGNERS} is missing — nothing to verify against")
-    who = principal(expect_slug) if expect_slug else _sig_principal(repo, sig)
+    who = principal(expect_slug) if expect_slug else sig_principal(repo, sig)
     if not who:
         return FileVerdict(file=path, ok=False, signed=True,
                            reason="no enrolled principal matches this signature")
@@ -542,7 +542,7 @@ def verify_file(
     return FileVerdict(file=path, ok=True, signed=True, signer=who)
 
 
-def _sig_principal(repo: Path, sig: Path) -> str:
+def sig_principal(repo: Path, sig: Path) -> str:
     """Which enrolled principal does this signature's key belong to?
 
     ``ssh-keygen -Y verify`` demands the identity up front, so when the caller has

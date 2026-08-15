@@ -36,6 +36,7 @@ from . import (
     scaffold as scaffold_mod,
     session as session_mod,
     sidecar as sidecar_mod,
+    signed_verdict as signed_verdict_mod,
     status as status_mod,
     validate as validate_mod,
     verdict as verdict_mod,
@@ -2976,6 +2977,129 @@ def health_cmd(
 
 # --- the merge gate (ADR-027) ---------------------------------------------------------
 
+# --- ADR-031: the review verdict as a signed, in-repo artifact ---------------------------
+
+review_app = typer.Typer(
+    help=(
+        "Signed review verdicts (ADR-031): the reviewer SSH-signs its verdict into the "
+        "repo, and `baron merge check` verifies WHO approved — offline, from a clone."
+    ),
+    no_args_is_help=True,
+)
+app.add_typer(review_app, name="review")
+
+
+@review_app.command("sign")
+def review_sign(
+    pr: int = typer.Option(..., "--pr", help="Pull request number the verdict judges."),
+    head: str = typer.Option(..., "--head", help="FULL 40-hex head sha reviewed."),
+    state: str = typer.Option(..., "--state", help="PASS | FAIL."),
+    persona: str = typer.Option(..., "--persona", help="Signing reviewer's persona slug."),
+    repo: Optional[str] = typer.Option(
+        None, "--repo", help="Code repo as owner/name (default: the manifest's `code` repo)."
+    ),
+    collab: Path = _COLLAB_OPT,
+    findings_file: Optional[Path] = typer.Option(
+        None, "--findings-file", help="File whose contents become the verdict body."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Publish a SIGNED verdict into `.barony/verdicts/` — the record the gate scores.
+
+    Writes `pr-<n>-<sha12>.md` and a detached `.sig` (`ssh-keygen -Y sign`, namespace
+    `barony-verdict`), signed with the reviewer's own enrolled key. Commit and push it:
+    the artifact IS the verdict, and it lives in git rather than on the forge because
+    the repo is the record and a hosted surface is a cache (invariant #1).
+
+    The PR comment stays worth posting — humans read PRs — but under ADR-031 it is an
+    INDEX, the same demotion ADR-008 §1 applied to labels. Only the signed artifact
+    attributes.
+
+    A reviewer can only ever sign as itself, so this is not a place to be careful: the
+    key is the claim.
+    """
+    root = collab.resolve()
+    if state.upper() not in ("PASS", "FAIL"):
+        typer.echo(f"error: --state must be PASS or FAIL, not {state!r}", err=True)
+        raise typer.Exit(2)
+    target = repo
+    if target is None:
+        try:
+            target = merge_mod.code_repo_slug(status_mod.load_manifest(root)) or ""
+        except Exception:
+            target = ""
+    findings = ""
+    if findings_file is not None:
+        if not findings_file.is_file():
+            typer.echo(f"error: no such file: {findings_file}", err=True)
+            raise typer.Exit(2)
+        findings = findings_file.read_text(encoding="utf-8")
+    try:
+        path, sig = signed_verdict_mod.sign(
+            root, pr=pr, head=head.lower().strip(), state=state.upper(),
+            reviewer=persona, repo=target or "",
+            reviewed_at=clock.now().isoformat(), findings=findings,
+        )
+    except signed_verdict_mod.VerdictError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1)
+    if json_out:
+        _echo_json({
+            "verdict": path.as_posix(), "signature": sig.as_posix(),
+            "pr": pr, "head": head.lower(), "state": state.upper(),
+            "reviewer": persona, "bound": identity_mod.BOUND,
+        })
+        return
+    typer.echo(path.as_posix())
+    typer.echo(sig.as_posix())
+    typer.echo(
+        f"note: commit and push both files — an unpushed verdict attests nothing to "
+        f"anyone else. Then post `REVIEW:{state.upper()} {head.lower()}` as a PR "
+        f"comment for the humans; the signed artifact is what the gate scores."
+    )
+    typer.echo(f"bound: {identity_mod.BOUND}")
+
+
+@review_app.command("verify")
+def review_verify(
+    pr: int = typer.Option(..., "--pr", help="Pull request number."),
+    head: str = typer.Option(..., "--head", help="FULL 40-hex head sha."),
+    repo: Optional[str] = typer.Option(None, "--repo", help="Expected code repo, owner/name."),
+    collab: Path = _COLLAB_OPT,
+    code_repo: Optional[Path] = typer.Option(
+        None, "--code-repo", help="Checkout containing the head commit (default: --collab)."
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Verify the signed verdict for (PR, head) — the merge gate's attribution leg, alone.
+
+    Four legs, all fail-closed: the signature verifies against
+    `.barony/allowed_signers`; the SIGNED CONTENT binds itself to this repo, PR and sha
+    (so a valid signature cannot be replayed onto another PR by copying the file); the
+    signer is a `reviewer`-archetype persona; and the signer is NOT the persona that
+    signed the head commit.
+
+    Needs no network. Exit 0 = attested, 1 = not.
+    """
+    root = collab.resolve()
+    att = signed_verdict_mod.verify(
+        root, pr=pr, head=head.lower().strip(), repo=repo or "",
+        code_repo=code_repo.resolve() if code_repo else None,
+    )
+    if json_out:
+        payload = att.to_dict()
+        payload["bound"] = identity_mod.BOUND
+        _echo_json(payload)
+    else:
+        if att.ok:
+            typer.echo(f"ok       {att.detail}")
+        else:
+            typer.echo(f"REFUSED  [{att.reason}] {att.detail}")
+        typer.echo(f"bound: {identity_mod.BOUND}")
+    if not att.ok:
+        raise typer.Exit(1)
+
+
 merge_app = typer.Typer(
     help="The merger's preconditions, mechanized — a fail-closed gate (ADR-028).",
     no_args_is_help=True,
@@ -2994,9 +3118,20 @@ def merge_check(
     collab: Path = _COLLAB_OPT,
     verdict_author: Optional[str] = typer.Option(
         None, "--verdict-author",
-        help="Only count verdicts from this forge login. Useless under the single-account "
-             "constraint (every persona is the same login) — it becomes meaningful when "
-             "agent identity (ADR-027) is deployed.",
+        help="Only count COMMENT verdicts from this forge login. Useless under the "
+             "single-account constraint (every persona is the same login) — prefer the "
+             "signed verdict (ADR-031), which attributes to a persona, not a login.",
+    ),
+    require_signed_verdict: bool = typer.Option(
+        False, "--require-signed-verdict",
+        help="Refuse when no SIGNED verdict attests this head (ADR-031). Default off: an "
+             "invalid signature always refuses, but turning ABSENCE into a refusal is a "
+             "fleet-wide breaking change and should be signed, not defaulted.",
+    ),
+    code_repo: Optional[Path] = typer.Option(
+        None, "--code-repo",
+        help="Checkout containing the PR's head commit, used to resolve WHO signed it "
+             "(default: the collab dir — correct when collab and code are one repo).",
     ),
     json_out: bool = typer.Option(False, "--json", help="Machine-readable output."),
 ) -> None:
@@ -3007,6 +3142,12 @@ def merge_check(
     is a refusal naming the precondition that failed. Review-state LABELS are reported
     as ignored and never scored (ADR-008 §1: labels are an index, the SHA-bound verdict
     comment is the record).
+
+    WHO approved (ADR-031): the `verdict_signed` precondition verifies the reviewer's
+    SSH signature over an in-repo verdict artifact, offline, against
+    `.barony/allowed_signers` — and requires the signer to be a reviewer-archetype
+    persona DISTINCT from the persona that signed the head commit. That is
+    reviewer-is-not-author proved from the repo, not asserted in a persona file.
 
     This command does not merge, and there is no `baron merge do` (ADR-007: baron
     provides the governed check; the runtime decides to invoke it).
@@ -3025,6 +3166,8 @@ def merge_check(
         result = merge_mod.check(
             forge, collab_root, number,
             target_repo=target, verdict_author=verdict_author,
+            require_signed_verdict=require_signed_verdict,
+            code_repo=code_repo.resolve() if code_repo else None,
         )
     except (ForgeError, ForgeUnavailable) as exc:
         result = merge_mod.refused(
