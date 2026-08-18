@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The fleet snapshot is measured against origin, not against one laptop's clone.**
+  `dashboard/build_data.py` now refreshes every working copy the projects' manifests
+  name — `git fetch origin --prune`, plus a fast-forward-only merge where the copy is
+  clean and on its default branch — *before* `baron status` / `baron health` read it.
+  `baron` reads local git only, so a shared clone that is never pulled keeps
+  remote-tracking refs for branches merged and deleted on origin and reports them as
+  live `unmerged-branch` reds; one published snapshot carried ~21 of these phantoms.
+  The refresh never checks out, rebases, or creates a merge commit. Outcomes are
+  recorded per target in `generator.refresh` (labels only — no paths, and remote URLs
+  in git errors are redacted) and summarised in `honesty`; a fetch that cannot reach
+  origin is declared rather than passed off as fresh, raising a `freshness` owner
+  action. `dashboard/check_snapshot.py` gains the matching gate: a snapshot that was
+  not fully refreshed must carry both the caveat and the owner action, and one built
+  before this change (no `generator.refresh`) fails outright. `--no-refresh` reads the
+  clones as-is and says so. Dashboard only — no CLI, skill or version change.
+
 ### Added
 
 - **Published doc pages** — `docs/product-overview.md` and `docs/capability-value-map.md`

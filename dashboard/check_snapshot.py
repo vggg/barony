@@ -106,7 +106,28 @@ def main() -> int:
         fail("verdict coverage is sparse but no coverage note is stated")
         errors += 1
 
-    # ---- 4. inactive capabilities must be labelled, not silently empty
+    # ---- 4. freshness: a snapshot read from unrefreshed clones must say so.
+    # This is the guard on the failure that produced ~21 phantom reds once
+    # already: branches merged and deleted on origin, still red locally.
+    fresh = d.get("generator", {}).get("refresh")
+    if fresh is None:
+        fail("generator.refresh is absent — snapshot predates the fetch-first build")
+        errors += 1
+    else:
+        stale = (not fresh.get("attempted")) or fresh.get("fetch_failures")
+        if stale and not fresh.get("note"):
+            fail("working copies were not fully refreshed but no caveat is recorded")
+            errors += 1
+        if stale and not any(
+            a.get("kind") == "freshness" for a in d.get("owner_actions", [])
+        ):
+            fail("refresh was incomplete but no owner action surfaces it")
+            errors += 1
+        if not errors:
+            state = "refreshed" if not stale else "STALE (declared)"
+            print(f"  ok    freshness recorded — {state}")
+
+    # ---- 5. inactive capabilities must be labelled, not silently empty
     obs = d.get("observer", {})
     if not obs.get("active") and not obs.get("note"):
         fail("observer is inactive but the snapshot gives no explanation")
