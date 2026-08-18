@@ -71,12 +71,30 @@ def _shorten_path(match: re.Match[str]) -> str:
     return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[-1] if parts else "")
 
 
+_PRIVATE_ROOT: str | None = None
+
+
+def set_private_root(name: str) -> None:
+    """Name the private coordination repo so `scrub()` can redact it.
+
+    `_shorten_path` keeps a path's last two components, which for a working copy
+    inside the coordination repo is `<private-root>/<project>` — the one name
+    this projection exists to withhold. Shortening alone therefore reintroduces
+    it; naming the root here lets `scrub()` take it back out.
+    """
+    global _PRIVATE_ROOT
+    _PRIVATE_ROOT = name or None
+
+
 def scrub(value):
     """Recursively strip absolute local paths out of any JSON-ish structure."""
     if isinstance(value, str):
         cleaned = _ABS_PATH.sub(_shorten_path, value)
         home = os.path.expanduser("~")
-        return cleaned.replace(home, "~")
+        cleaned = cleaned.replace(home, "~")
+        if _PRIVATE_ROOT:
+            cleaned = re.sub(rf"\b{re.escape(_PRIVATE_ROOT)}\b", "collab", cleaned)
+        return cleaned
     if isinstance(value, list):
         return [scrub(v) for v in value]
     if isinstance(value, dict):
@@ -791,6 +809,8 @@ def main() -> int:
             "Pass --collab <path> or set BARONY_COLLAB. This is the PRIVATE coordination\n"
             "repo; without it there is nothing to project from."
         )
+
+    set_private_root(collab.name)
 
     baron = args.baron.split() if args.baron else ["uv", "run", "--project", str(REPO_ROOT / "cli"), "baron"]
 
