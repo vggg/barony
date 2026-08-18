@@ -17,9 +17,20 @@ What is deliberately NOT emitted:
 What is emitted is either already public (PR numbers, branch names, titles on
 `vggg/barony`) or synthetic (the `*@barony.local` persona git identities).
 
+Before reading anything, the build REFRESHES every working copy the fleet
+describes (`git fetch origin --prune`, plus a fast-forward pull of the default
+branch when that is safe). `baron status` reads LOCAL git only, so a clone that
+was never pulled reports branches deleted on origin as live stalls — the
+snapshot then publishes stale reds as if they were current. Refreshing first
+makes the snapshot a statement about ORIGIN, not about whatever this laptop
+happened to have on disk. When a fetch fails (offline, no credentials), that is
+recorded in `generator.refresh` and surfaced in `honesty` rather than silently
+passed off as fresh.
+
 Usage:
     dashboard/build-data.sh                    # the normal path
     python3 dashboard/build_data.py --collab ~/Workspace/fleet-coordination
+    dashboard/build-data.sh --no-refresh       # read the clones exactly as-is
 
 Stdlib only, matching `tests/` — no dependency install to reproduce a snapshot.
 """
@@ -145,6 +156,221 @@ def days_since(iso: str) -> int | None:
     return (datetime.now(timezone.utc) - then).days
 
 
+# ---------------------------------------------------- freshness (fetch first)
+
+# `baron status` reads LOCAL git only: unmerged-branch and behind findings are
+# computed against whatever remote-tracking refs this clone last saw. A shared
+# clone that is never pulled (every session working in its own worktree) will
+# therefore report branches long since merged AND DELETED on origin as live
+# stalls, and the published snapshot turns that into a wall of red that has
+# nothing to do with the fleet. Refreshing before reading is what makes the
+# snapshot a statement about origin.
+#
+# Deliberately conservative: fetch --prune always, and a fast-forward-only merge
+# ONLY when the working copy is clean and sitting on its default branch. Never a
+# rebase, never a merge commit, never a checkout — a snapshot build must not be
+# able to lose work.
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+
+
+def _redact_remote(message: str) -> str:
+    """Strip remote URLs out of a git error before it can reach the snapshot.
+
+    A fetch failure quotes the remote it could not reach, and for the private
+    coordination repo that URL is itself the thing this projection exists to
+    keep out of the public file. `scrub()` handles paths, not URLs.
+    """
+    message = re.sub(r"\b[\w.+-]+@[\w.-]+:[^\s'\"]+", "<remote>", message)
+    message = re.sub(r"\bhttps?://[^\s'\"]+", "<remote>", message)
+    message = re.sub(r"(?i)\b(host):\s*\S+", r"\1: <remote>", message)
+    return re.sub(r"'\s*<remote>\s*'", "<remote>", message)
+
+
+def _yaml_block(text: str, key: str) -> str:
+    """The indented body of a top-level `key:` block, or ''."""
+    m = re.search(rf"^{key}:\s*$\n((?:[ \t]+.*\n|\n)*)", text, re.M)
+    return m.group(1) if m else ""
+
+
+def _yaml_scalar(block: str, key: str) -> str | None:
+    m = re.search(rf"^\s+{key}:\s*(.+?)\s*$", block, re.M)
+    if not m:
+        return None
+    value = m.group(1).strip().strip("\"'")
+    return value.split(" #", 1)[0].strip() or None
+
+
+def _yaml_items(block: str) -> list[dict]:
+    """Split an indented sequence body into per-item key/value dicts."""
+    items: list[dict] = []
+    for line in block.splitlines():
+        if re.match(r"^\s*#", line) or not line.strip():
+            continue
+        start = re.match(r"^\s*-\s*(.*)$", line)
+        if start:
+            items.append({})
+            line = start.group(1)
+            if not line.strip():
+                continue
+        if not items:
+            continue
+        kv = re.match(r"^\s*([\w_]+):\s*(.*?)\s*$", line)
+        if kv:
+            items[-1][kv.group(1)] = kv.group(2).strip().strip("\"'")
+    return items
+
+
+def manifest_targets(collab: Path, projects: list[dict]) -> list[tuple[str, str, Path]]:
+    """(project, label, path) for every working copy the manifests describe.
+
+    Mirrors `baron status`'s own target resolution — repos[].path, the optional
+    workspace.clones[] and workspace.worktrees_root — with a small hand reader,
+    for the same reason `parse_yaml_persona` exists: this script is stdlib only
+    and must run from a bare clone with nothing installed.
+    """
+    targets: list[tuple[str, str, Path]] = []
+    for proj in projects:
+        manifest = collab / proj["dir"] / "manifest.yaml"
+        if not manifest.is_file():
+            continue
+        text = manifest.read_text(encoding="utf-8")
+        root = (collab / proj["dir"] / (_yaml_scalar(_yaml_block(text, "paths"), "root") or ".")).resolve()
+
+        for repo in _yaml_items(_yaml_block(text, "repos")):
+            if repo.get("path"):
+                label = f"repo:{repo.get('id', '?')}"
+                targets.append((proj["name"], label, (root / repo["path"]).resolve()))
+
+        workspace = _yaml_block(text, "workspace")
+        clones_block = re.search(r"^\s+clones:\s*$\n((?:\s+-.*\n|\s{4,}.*\n)*)", workspace, re.M)
+        if clones_block:
+            for clone in _yaml_items(clones_block.group(1)):
+                if clone.get("path"):
+                    label = f"clone:{clone.get('persona', '?')}"
+                    targets.append((proj["name"], label, (root / clone["path"]).resolve()))
+
+        worktrees_root = _yaml_scalar(workspace, "worktrees_root")
+        if worktrees_root:
+            wt_root = (root / worktrees_root).resolve()
+            if wt_root.is_dir():
+                for child in sorted(wt_root.iterdir()):
+                    if (child / ".git").exists():
+                        targets.append((proj["name"], f"worktree:{child.name}", child))
+    return targets
+
+
+def discover_projects(collab: Path) -> list[dict]:
+    """The registered projects, read WITHOUT running baron.
+
+    The refresh has to happen before `baron status`, so it cannot learn the
+    topology from status's own output. It reads the ADR-025 monorepo marker
+    directly, and falls back to the single-project layout.
+    """
+    marker = collab / ".baron-monorepo.yaml"
+    if marker.is_file():
+        dirs = re.findall(r"^\s+-\s+dir:\s*(.+?)\s*$", marker.read_text(encoding="utf-8"), re.M)
+        if dirs:
+            return [{"dir": d.strip().strip("\"'"), "name": d.strip().strip("\"'")} for d in dirs]
+    return [{"dir": ".", "name": collab.name}]
+
+
+def refresh_working_copies(collab: Path, projects: list[dict], *, enabled: bool) -> dict:
+    """Fetch --prune (and fast-forward where safe) every working copy, first.
+
+    Returns a report that goes into the snapshot verbatim: a build that could
+    not reach origin says so, rather than publishing yesterday's refs as today's
+    truth. NOTE: only labels are recorded — never paths, which would leak the
+    private layout past the sanitiser.
+    """
+    report: dict = {"attempted": enabled, "targets": [], "fetch_failures": 0, "note": None}
+    if not enabled:
+        report["note"] = (
+            "--no-refresh: working copies were read exactly as found on disk, so "
+            "branch and behind findings may reflect stale remote-tracking refs."
+        )
+        print("→ refresh SKIPPED (--no-refresh) — findings may be stale")
+        return report
+
+    targets = manifest_targets(collab, projects)
+    print(f"→ refreshing {len(targets)} working copy/copies against origin (fetch --prune)")
+
+    fetched_stores: dict[str, bool] = {}
+    for project, label, path in targets:
+        entry = {
+            "project": project,
+            "target": label,
+            "fetched": False,
+            "pulled": None,
+            "note": None,
+        }
+        report["targets"].append(entry)
+
+        if not path.is_dir() or _git(path, "rev-parse", "--is-inside-work-tree").returncode != 0:
+            entry["note"] = "not a git working copy — nothing to refresh"
+            continue
+        if "origin" not in _git(path, "remote").stdout.split():
+            entry["note"] = "no origin remote — local-only working copy"
+            continue
+
+        # Worktrees share one object store with their main clone: fetch it once.
+        store = _git(path, "rev-parse", "--git-common-dir").stdout.strip() or str(path)
+        store = str((path / store).resolve()) if not store.startswith("/") else store
+        if store in fetched_stores:
+            entry["fetched"] = fetched_stores[store]
+            entry["note"] = "object store already fetched via another working copy"
+        else:
+            proc = _git(path, "fetch", "origin", "--prune", "--prune-tags", "--tags")
+            ok = proc.returncode == 0
+            fetched_stores[store] = ok
+            entry["fetched"] = ok
+            if not ok:
+                report["fetch_failures"] += 1
+                first = (proc.stderr.strip().splitlines() or ["unknown error"])[-1]
+                entry["note"] = (
+                    "fetch failed — findings for this copy may be stale: "
+                    + _redact_remote(first)
+                )
+                print(f"  ! fetch failed for {project}/{label}", file=sys.stderr)
+                continue
+
+        # Fast-forward only, and only where it cannot lose anything.
+        head = _git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        ref = _git(path, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD").stdout.strip()
+        default = ref.rsplit("/", 1)[-1] if ref else ("main" if _git(
+            path, "show-ref", "--verify", "--quiet", "refs/remotes/origin/main"
+        ).returncode == 0 else None)
+
+        if default is None:
+            entry["pulled"] = "skipped — origin default branch undeterminable"
+        elif head != default:
+            entry["pulled"] = f"skipped — on {head}, not {default} (a build never checks out)"
+        elif _git(path, "status", "--porcelain").stdout.strip():
+            entry["pulled"] = "skipped — uncommitted changes present"
+        else:
+            merge = _git(path, "merge", "--ff-only", f"origin/{default}")
+            if merge.returncode != 0:
+                entry["pulled"] = "skipped — not a fast-forward (local commits diverge)"
+            else:
+                entry["pulled"] = (
+                    "already current" if "Already up to date" in merge.stdout
+                    else f"fast-forwarded to origin/{default}"
+                )
+
+    moved = [t for t in report["targets"] if t["pulled"] and t["pulled"].startswith("fast-forwarded")]
+    ok_stores = sum(1 for v in fetched_stores.values() if v)
+    print(f"  {ok_stores}/{len(fetched_stores)} object store(s) fetched · {len(moved)} fast-forwarded · "
+          f"{report['fetch_failures']} failure(s)")
+    if report["fetch_failures"]:
+        report["note"] = (
+            f"{report['fetch_failures']} working copy/copies could not reach origin; their "
+            "branch and behind findings below are computed from stale remote-tracking refs."
+        )
+    return report
+
+
 # -------------------------------------------------------------- collectors
 
 
@@ -249,8 +475,12 @@ def count_open_handoffs(collab: Path, projects: list[dict]) -> dict:
 # ------------------------------------------------------------------- build
 
 
-def build(collab: Path, repo: str, baron: list[str]) -> dict:
+def build(collab: Path, repo: str, baron: list[str], *, refresh: bool = True) -> dict:
     print(f"→ reading portfolio at {collab.name}/ (private, never published)")
+
+    # Fetch BEFORE reading. `baron status` reads local git; without this the
+    # snapshot republishes whatever refs this clone last happened to see.
+    freshness = refresh_working_copies(collab, discover_projects(collab), enabled=refresh)
 
     status = run_json(baron + ["status", "--collab", str(collab), "--json"])
     health = run_json(baron + ["health", "--collab", str(collab), "--json"])
@@ -417,6 +647,16 @@ def build(collab: Path, repo: str, baron: list[str]) -> dict:
                 "url": None,
             }
         )
+    if not freshness.get("attempted") or freshness.get("fetch_failures"):
+        owner_actions.append(
+            {
+                "severity": "warn",
+                "kind": "freshness",
+                "summary": "Snapshot was not fully refreshed against origin",
+                "detail": freshness.get("note") or "Working copies were not fetched before reading.",
+                "url": None,
+            }
+        )
     if not plane_measured:
         owner_actions.append(
             {
@@ -435,6 +675,7 @@ def build(collab: Path, repo: str, baron: list[str]) -> dict:
             "tool": "dashboard/build-data.sh",
             "baron_version": baron_version(baron),
             "source": "private coordination monorepo — curated projection, not a mirror",
+            "refresh": freshness,
         },
         "portfolio": {
             "layout": layout,
@@ -495,11 +736,28 @@ def build(collab: Path, repo: str, baron: list[str]) -> dict:
         "owner_actions": owner_actions,
         "honesty": [
             "Every number here is read from the live coordination repo by `baron`; none is hand-entered.",
+            freshness_note(freshness),
             "Metrics with an empty denominator render as `n/a` with their basis, never as 0% or 100%.",
             coverage_note,
             "Observer flags and commit signing are shown as NOT ACTIVE because neither is deployed in this fleet; both ADRs (027, 030) are now on main.",
         ],
     }
+
+
+def freshness_note(freshness: dict) -> str:
+    """One line stating, plainly, how current the underlying git data is."""
+    if not freshness.get("attempted"):
+        return (
+            "Working copies were NOT fetched before this snapshot was taken — branch and "
+            "behind findings may name branches that no longer exist on origin."
+        )
+    if freshness.get("fetch_failures"):
+        return "Refresh was incomplete: " + str(freshness.get("note"))
+    n = len(freshness.get("targets", []))
+    return (
+        f"Every working copy ({n}) was fetched with --prune before reading, so branch and "
+        "behind findings are measured against origin as of the generation time above."
+    )
 
 
 def baron_version(baron: list[str]) -> str:
@@ -518,6 +776,12 @@ def main() -> int:
     ap.add_argument("--repo", default=os.environ.get("BARONY_REPO", "vggg/barony"), help="Public repo for the merge queue.")
     ap.add_argument("--out", default=str(REPO_ROOT / "dashboard" / "data" / "fleet.json"))
     ap.add_argument("--baron", default=os.environ.get("BARON_CMD", ""), help="Override the baron command.")
+    ap.add_argument(
+        "--no-refresh",
+        action="store_true",
+        help="Do NOT fetch/fast-forward the working copies first. The snapshot then records "
+             "that it may be stale — use only when deliberately reading the clones as-is.",
+    )
     args = ap.parse_args()
 
     collab = Path(os.path.expanduser(args.collab)).resolve()
@@ -530,7 +794,7 @@ def main() -> int:
 
     baron = args.baron.split() if args.baron else ["uv", "run", "--project", str(REPO_ROOT / "cli"), "baron"]
 
-    snapshot = build(collab, args.repo, baron)
+    snapshot = build(collab, args.repo, baron, refresh=not args.no_refresh)
 
     # Belt and braces: no absolute path may survive into the published file.
     snapshot = scrub(snapshot)
