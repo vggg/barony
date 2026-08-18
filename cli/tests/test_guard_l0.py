@@ -177,6 +177,44 @@ def test_every_fenced_path_is_refused_for_the_most_capable_persona(
     assert decision.adjudicated is False, relative
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [
+        # A NON-acting slug on purpose. `omni`'s own copies of these are refused
+        # twice over — once by the trailing match, once by the own-spec-dir rule
+        # — so a regression in `_trailing_match` alone stays invisible there.
+        # Under someone else's slug the trailing match is the ONLY thing left:
+        # the own-spec-dir rule does not apply, and step 2 would hand these to a
+        # holder of `edit_other_personas` as ordinary files.
+        "agents/someone-else/runtime/.claude/settings.json",
+        "agents/someone-else/runtime/.claude/settings.local.json",
+        "agents/someone-else/runtime/.baron-waivers.yaml",
+        "agents/someone-else/runtime/.baron-rules.yaml",
+        "agents/someone-else/runtime/.barony/allowed_signers",
+    ],
+)
+def test_trailing_match_fences_another_personas_emitted_kit(
+    relative: str, tmp_path: Path
+) -> None:
+    """Pin the trailing match on its own, unmasked by the own-spec-dir rule.
+
+    An emitted runtime kit under ANOTHER persona's dir is the case that only
+    `_trailing_match` catches — and it is the one that matters, because that
+    copy is live hook wiring, and the acting persona here holds
+    `edit_other_personas`, which reaches everything else under that dir.
+    """
+    decision = _write(tmp_path / relative, tmp_path)
+    assert not decision.allowed, f"{relative} was writable by an all-verbs persona"
+    assert decision.adjudicated is False, relative
+    assert "ADR-034 L0" in decision.reason
+    # Not the own-spec-dir refusal wearing a different hat.
+    assert "own spec dir" not in decision.reason, relative
+    # Control: the same dir, an ordinary file, IS reachable with the verb — so
+    # the assertions above are about the trailing match and nothing broader.
+    sibling = _write(tmp_path / "agents/someone-else/runtime/README.md", tmp_path)
+    assert sibling.allowed, sibling.reason
+
+
 def test_the_fence_does_not_depend_on_the_persona(tmp_path: Path) -> None:
     """Same path, opposite personas, identical verdict — that is 'structural'."""
     target = tmp_path / "agents" / "dara" / "persona.yaml"

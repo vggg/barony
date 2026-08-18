@@ -39,7 +39,7 @@ conditional on this one.
   `unevaluated` (ADR-018 §2). Fenced paths: every `agents/*/persona.yaml`, the acting
   persona's `agents/<slug>/**`, `.claude/settings.json{,.local}`, `.baron-waivers.yaml`,
   `.baron-rules.yaml`, `.barony/allowed_signers` — matched on **trailing** components, so
-  the copy inside an emitted runtime kit is covered too.
+  the copy inside an emitted runtime kit is covered too. (Those three are `baron rules` **rule ids**, not YAML keys — the corresponding `file_ops:` keys in the artifact are `protected_config_paths`, `protected_spec_files` and `protect_own_spec_dir`.)
 - **L2 — the `bash -c` class narrowed.** New `commands.wrappers` block: one level of
   recursion into `bash`/`sh`/`zsh`/`dash`/`ksh -c '<payload>'` (optionally behind `env`),
   re-run through **the same evaluators** rather than a second parser. An untokenisable
@@ -78,6 +78,14 @@ redirect is neither a write-tool call nor a capability verb; `python -c`, `eval`
 base64/`printf` indirection, script files and `xargs` remain uninspected. Credentials are
 not revoked. Positioning unchanged: **a policy guard at the agent-tool interface for
 cooperating agents, not a security boundary.**
+
+**Product docs land with the code** (release-gate item): `docs/product-overview.md` now
+describes L0 under `baron guard` — including that the override reaches it — and corrects
+doctor to ten checks and the "no test drives a real runtime" bullet;
+`docs/capability-value-map.md` gains a **structural policy immutability** row (metric:
+self-amendment rate) and states the two things out of the capability-bypass-rate
+denominator by construction — an uninspected `bash -c` payload, and a logged override.
+Both render to the Pages site via `./dashboard/build-docs.sh`.
 
 Migration: `rules_version` is negotiated by exact match, so a consumer pinned to an older
 `barony` refuses the new artifact rather than mis-enforcing it — upgrade both together. The

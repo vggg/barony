@@ -51,7 +51,7 @@ against the document it had just written. Every other layer was conditional on t
   Fenced: every persona's `persona.yaml` (own included, and including for a holder of
   `edit_other_personas`), the acting persona's own `agents/<slug>/**` entirely,
   `.claude/settings.json{,.local}`, `.baron-waivers.yaml`, `.baron-rules.yaml`,
-  `.barony/allowed_signers`. **A capability change is now a PR a human merges — for
+  `.barony/allowed_signers`. (Those three are `baron rules` **rule ids**, not YAML keys — the corresponding `file_ops:` keys in the artifact are `protected_config_paths`, `protected_spec_files` and `protect_own_spec_dir`.) **A capability change is now a PR a human merges — for
   everyone, always, including the owner working solo.** That friction is the point.
 - **L2 — the wrapper class narrowed** (`commands.wrappers`). One level of recursion into
   `bash -c '<payload>'` and the other shell forms, through the **same evaluators** — not a

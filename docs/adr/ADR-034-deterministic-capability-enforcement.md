@@ -388,7 +388,7 @@ absent wall is governance; building the wall is somebody else's layer.
 
 | # | Item | Layer | Call | Landed as |
 |---|---|---|---|---|
-| W1 | Config-protection path rules + precedence change | L0 | **Built** (broadened per §4.1a) | `file_ops.protected_config` / `.protected_spec_file` / `.own_spec_dir`; `guard._protected_config_refusal` at step 0.5; `cli/tests/test_guard_l0.py` |
+| W1 | Config-protection path rules + precedence change | L0 | **Built** (broadened per §4.1a) | `file_ops.protected_config` / `.protected_spec_file` / `.own_spec_dir` — `baron rules` **rule ids**, whose `file_ops:` YAML keys are `protected_config_paths` / `protected_spec_files` / `protect_own_spec_dir`; `guard._protected_config_refusal` at step 0.5; `cli/tests/test_guard_l0.py` |
 | W2 | Wrapper recursion (depth 1) + narrowed conservative-deny | L2 | **Built** | `commands.wrappers` in the artifact; `guard._analyze_segments`; `cli/tests/test_guard_wrappers.py` |
 | W3 | Live-invocation test tier, claude, one verb, with the negative control | L2 | **Built, opt-in + advisory** (OD-3) | `cli/tests/test_live_runtime.py`, `cli/tests/test_live_harness.py`, `.github/workflows/live-runtime.yml` |
 | W4 | `permissions.deny` emission + the ADR-020 re-measurement + the doctor drift check | L1 | **NOT BUILT — OD-2 = NO** (§4.2) | — |
@@ -434,6 +434,14 @@ Stated plainly, because a four-layer diagram invites the wrong inference.
 - **L0 protects paths, not intent.** A persona can still propose a capability change; it
   just cannot land one alone. That is the intended shape, and it means the gate is only as
   strong as the human review behind CODEOWNERS.
+- **`BARON_GUARD_OVERRIDE` reaches L0 too, and that is the one caveat on "no verb
+  unlocks it".** The override is applied *after* the decision, so it allows a structural
+  L0 refusal exactly as it allows an ordinary capability denial: **no verb unlocks L0; the
+  tracked, logged `BARON_GUARD_OVERRIDE` still does — reaching it requires a shell (not a
+  governed tool call) and every use is recorded as evidence** in the tracked
+  `.baron/guard-override.log`. The §4.1 prose reads "no verb unlocks it" because that is
+  the claim about *capabilities*; it is not a claim that L0 is unbypassable by a party who
+  already has a shell, and nothing in this ADR makes it one.
 - **L0 governs the guard's own seams, not the filesystem.** It refuses `Write`/
   `Edit`/`NotebookEdit` at those paths. A shell redirect (`echo ... > .claude/settings.json`)
   is not a write-tool call and not a capability verb, so guard does not see it —

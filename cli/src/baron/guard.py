@@ -808,6 +808,13 @@ def _protected_config_refusal(
     must therefore return ``adjudicated=False`` (ADR-018 §2), exactly as the
     step-0 path escape does.
 
+    **The one thing that does get through.** No verb unlocks L0; the tracked,
+    logged ``BARON_GUARD_OVERRIDE`` still does — it is applied AFTER the decision
+    and so waves through a structural refusal too. That is deliberate and not a
+    hole in the claim: reaching it requires a shell (not a governed tool call),
+    and every use appends a line to the tracked ``.baron/guard-override.log``,
+    so the bypass is recorded as evidence rather than silent.
+
     The hole this closes (G5) was that the hook re-reads ``--persona-file`` on
     EVERY invocation and ``.claude/settings.json`` was an ordinary path: a
     persona holding ``write_code`` could grant itself a denied verb, or unwire
