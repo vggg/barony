@@ -76,3 +76,12 @@ packages = ["src/baron"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The proof-by-invocation tier (ADR-034 §4.3b, OD-3) is OPT-IN and OUT of the
+# default job: it needs a model, credentials, network and money, and it is
+# nondeterministic. `-m "not live_runtime"` is the exclusion; a later `-m` on
+# the command line overrides it, which is how the tier is actually run:
+#   BARON_LIVE_RUNTIME=1 uv run --project cli pytest cli/tests -m live_runtime
+addopts = '-m "not live_runtime"'
+markers = [
+  "live_runtime: drives a REAL runtime process (paid, networked, nondeterministic). Advisory, never a release gate — see STATUS.md.",
+]

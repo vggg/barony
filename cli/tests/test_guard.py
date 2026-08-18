@@ -381,13 +381,17 @@ def test_out_of_root_write_is_denied_even_with_write_code(
 
 
 def test_edit_other_personas_gate(personas: dict[str, Path], tmp_path: Path) -> None:
-    other = tmp_path / "agents" / "mona" / "persona.yaml"
-    own = tmp_path / "agents" / "dara" / "persona.yaml"
+    """Another persona's NON-capability files are what the verb still governs.
+
+    Both `agents/<other>/persona.yaml` and `agents/<own>/persona.yaml` are now
+    refused ahead of this rule by L0 (ADR-034) — see test_guard_l0.py. What is
+    left for `edit_other_personas` is another persona's ordinary files, which is
+    why the target here is a note rather than the spec.
+    """
+    other = tmp_path / "agents" / "mona" / "NOTES.md"
     proc = run_guard(personas["dev"], hook("Edit", {"file_path": str(other)}, tmp_path))
     assert proc.returncode == 2
     assert "edit_other_personas" in proc.stderr
-    proc = run_guard(personas["dev"], hook("Edit", {"file_path": str(own)}, tmp_path))
-    assert proc.returncode == 0, proc.stderr
 
 
 # --- unknown tools, override, fail-closed ---------------------------------------------

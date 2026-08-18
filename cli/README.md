@@ -605,18 +605,43 @@ What it decides:
   verb and denied for personas lacking it, with stderr naming the inference;
   personas holding the verb always pass. Non-git/gh commands pass — guard
   governs capability verbs, not general shell.
-- **Edit / Write / NotebookEdit** — `_handoff/` is universally writable;
-  `agents/<other-slug>/` needs `edit_other_personas` (a persona's own
-  `agents/<slug>/` dir is its own surface); denied `write_path` scopes always
-  block; otherwise `write_code` grants the write, and without it only the
-  persona's declared `write_path` scopes remain.
+  **Shell wrappers (ADR-034):** guard recurses **one level** into
+  `bash -c '<payload>'` (also `sh`/`zsh`/`dash`/`ksh`, optionally behind `env`)
+  and re-runs the same evaluators over the payload, so a wrapped `git push
+  origin main` is adjudicated. A payload that cannot be tokenised, or one nested
+  past the cap, is ambiguous → conservative-deny **narrowed to `merge_pr`,
+  `push_main`, `force_push`**. Still uninspected, on purpose: `python -c` and
+  other interpreters, `eval`, base64/`printf` indirection, script files,
+  `xargs`, raw forge API calls. See the bound below.
+- **Edit / Write / NotebookEdit** — **the enforcement configuration is refused
+  first, structurally (L0, ADR-034)**: no verb unlocks it and every persona gets
+  the same answer. Fenced are every `agents/*/persona.yaml` (own included, and
+  including for a holder of `edit_other_personas`), the acting persona's own
+  `agents/<slug>/**`, and `.claude/settings.json{,.local}`,
+  `.baron-waivers.yaml`, `.baron-rules.yaml`, `.barony/allowed_signers` (matched
+  on trailing path components, so the copy inside an emitted runtime kit counts
+  too). **Changing a capability set is a PR a human merges — always, including
+  solo.** After that: `_handoff/` is universally writable;
+  `agents/<other-slug>/` needs `edit_other_personas` for its *non-capability*
+  files; denied `write_path` scopes always block; otherwise `write_code` grants
+  the write, and without it only the persona's declared `write_path` scopes
+  remain.
 - **Unknown tools** — pass (a capability gate, not an allowlist).
+
+> **The honest bound, unchanged by any of the above.** L0 governs guard's own
+> write-tool seams, not the filesystem: `~/.claude/settings.json` is outside the
+> repo root and invisible to guard and to doctor, and a shell redirect
+> (`echo … > .claude/settings.json`) is neither a write-tool call nor a
+> capability verb. Both are pinned by tests rather than only written down. This
+> is **a deterministic policy guard at the agent-tool interface for cooperating
+> agents, not a security boundary.** Where the boundary must hold against an
+> adversary, use OS-level isolation.
 
 **Policy source (since v0.3.0):** guard's rule table — the command patterns and
 file-op scoping semantics above, plus the conservative-deny ambiguity policy —
 is NOT hardcoded: it lives in the versioned artifact
 `src/baron/data/capability-rules.v1.yaml` (package data, loaded by
-`src/baron/rules.py`; `rules_version: 1`). It is THE single source for
+`src/baron/rules.py`; `rules_version: 2`). It is THE single source for
 enforcement rules; the pydantic-ai adapter below consumes the same table, so
 decisions are identical across runtimes. A missing/unsupported artifact fails
 CLOSED. Prose contract:
@@ -708,7 +733,7 @@ incident, where 15 PRs were merged by a persona denied `merge_pr` because the
 hook had never been installed. Nothing failed; enforcement had degraded to
 persona text, silently. Doctor breaks that silence and **exits 1 on any FAIL**.
 
-Nine checks, each with a remedy line when it fails:
+Ten checks, each with a remedy line when it fails:
 
 | id | proves |
 |---|---|
@@ -721,6 +746,7 @@ Nine checks, each with a remedy line when it fails:
 | `fail-closed` | malformed hook stdin also returns exit 2 (ADR-004 §2.3), same executable |
 | `override-env` | `BARON_GUARD_OVERRIDE` is not sitting exported (if it is, every denial is allowed) |
 | `override-log` | the evidence sink is writable and not gitignored — **INFO only, never FAIL** |
+| `platform-layer` | (ADR-034 §4.5) whether branch protection is on and whether each persona has its own push credential — the layer that could actually make an irreversible action impossible, and **not baron's**. **INFO only**, reported and never configured (ADR-007). The branch-protection half is doctor's only networked check and is opt-in behind `BARON_DOCTOR_PLATFORM=1`, so a green run stays reproducible offline |
 
 ```
 $ baron doctor
