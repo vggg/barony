@@ -38,7 +38,7 @@ The `CONVENTIONS.md` and `COORDINATION.md` files you'll see under `skills/barony
 
 This repo's *why*-record is local (`STATUS.md`, `docs/adr/`, `CHANGELOG.md`). But **project-level
 decisions, milestones, and direction changes must also reach the owner's vault** — Irisidian / Brain at
-`/Users/vikram/Obsidian/Brain` — so the vault librarian (**Iris**) can reconcile them into the
+`~/Workspace/Vault/Irisidian` (layout: the vault's `_meta/WORKSPACE.md`) — so the vault librarian (**Iris**) can reconcile them into the
 cross-project wiki, log, roadmap, and the `AgentBootstrapNasikoMix` project area. There is no automatic
 sync. You drop a handoff.
 
@@ -50,8 +50,8 @@ sync. You drop a handoff.
 Do **not** propagate routine commits, refactors, WIP, or internal-only mechanics.
 
 **How** — write a handoff into the vault, then commit + push it there:
-- Needs Vikram's input/awareness (decision, direction) → `/Users/vikram/Obsidian/Brain/_handoff/decisions/YYYY-MM-DD-barony-<topic>.md`
-- FYI milestone / release / completion → `/Users/vikram/Obsidian/Brain/_handoff/tasks/YYYY-MM-DD-HHMM-barony-<slug>.md`
+- Needs Vikram's input/awareness (decision, direction) → `~/Workspace/Vault/Irisidian/_handoff/decisions/YYYY-MM-DD-barony-<topic>.md`
+- FYI milestone / release / completion → `~/Workspace/Vault/Irisidian/_handoff/tasks/YYYY-MM-DD-HHMM-barony-<slug>.md`
 - Frontmatter (vault schema — `_meta/CONVENTIONS.md § Handoff protocol`):
   ```yaml
   ---
