@@ -150,10 +150,13 @@ waivers:
     assert "still parked" in result.output
 
 
-def test_add_quotes_yaml_special_characters(tmp_path):
+def test_add_quotes_yaml_special_characters(
+    tmp_path: Path, fixed_clock: object
+) -> None:
     """Regression: first live waiver had "Routed to Terrence: rebase over #98"
     — a mapping colon and a comment marker — and the hand-rolled writer
-    produced unparseable YAML (found 2026-07-23 during the pilot migration)."""
+    produced unparseable YAML (found 2026-07-23 during the pilot migration).
+    Clock pinned: the fixture expiry dates must stay in the future."""
     from baron import waivers as W
 
     W.add(
