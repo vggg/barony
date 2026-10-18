@@ -30,7 +30,7 @@
 ## Prerequisites
 
 1. Both repos cloned (code + collab) at the paths in the project manifest.
-2. Python ≥ 3.10 with the extra installed: `pip install 'barony[pydantic-ai]'`
+2. Python ≥ 3.11 with the extra installed: `pip install 'barony[pydantic-ai]'`
    (pins `pydantic-ai-harness>=0.10,<0.11` + `pydantic-ai-slim>=2.14.1,<3`).
 3. A model key for the model you pass to `build_agent` — or none: the built-in `'test'`
    model (`TestModel`) runs fully offline for smoke checks.

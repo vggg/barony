@@ -126,7 +126,7 @@ shipped adapters and finding nothing.
 
 ## 3. Install
 
-Requirements: **Python ≥ 3.10** and **git**. `gh` is needed only for
+Requirements: **Python ≥ 3.11** and **git**. `gh` is needed only for
 `baron lock`; nothing else in this guide uses it.
 
 The distribution is `barony`; the console script is `baron`.

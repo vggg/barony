@@ -24,6 +24,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   before this change (no `generator.refresh`) fails outright. `--no-refresh` reads the
   clones as-is and says so. Dashboard only — no CLI, skill or version change.
 
+### Changed
+
+- **Minimum Python is now 3.11** (`requires-python = ">=3.11"`; was 3.10). The
+  package itself still imported on 3.10, but the test suite did not pass there:
+  `test_live_harness.py` uses `tomllib` (3.11+), so the declared floor was never
+  exercised. CI gains a `baron-floor` job running the CLI suite on 3.11 so the
+  floor cannot drift again. `test_sinks.py` reads the Protocol members through a
+  helper that works on 3.11 (`__protocol_attrs__` only exists from 3.12).
+
 ### Added
 
 - **Published doc pages** — `docs/product-overview.md` and `docs/capability-value-map.md`

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import typing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,12 +36,20 @@ def _clear_repo_root_cache() -> None:
 # --- the Protocol surface -------------------------------------------------------------
 
 
+def _protocol_members(proto: type) -> set[str]:
+    """``__protocol_attrs__`` is 3.12+; 3.11 (the floor) only has the private helper."""
+    attrs = getattr(proto, "__protocol_attrs__", None)
+    if attrs is None:
+        attrs = typing._get_protocol_attrs(proto)  # type: ignore[attr-defined]
+    return set(attrs)
+
+
 def test_sink_protocol_surface_is_exactly_three_members() -> None:
     """FINAL AT THREE. A fourth member retroactively breaks every third-party
     sink, because @runtime_checkable makes isinstance test method PRESENCE.
     If this test fails you are about to invalidate other people's plugins;
     add a duck-typed hasattr extension instead (ADR-013 §3)."""
-    assert set(Sink.__protocol_attrs__) == {"name", "emit", "close"}
+    assert _protocol_members(Sink) == {"name", "emit", "close"}
 
 
 def test_protocol_warning_is_present_in_the_source() -> None:
@@ -51,7 +60,7 @@ def test_protocol_warning_is_present_in_the_source() -> None:
 
 
 def test_bind_is_a_duck_typed_extension_not_a_protocol_member() -> None:
-    assert "bind" not in set(Sink.__protocol_attrs__)
+    assert "bind" not in _protocol_members(Sink)
     assert hasattr(DiskSink(), "bind")
     assert not hasattr(NullSink(), "bind")
 
