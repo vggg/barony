@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from baron import doctor as doctor_mod, guard as guard_mod
+from baron import doctor as doctor_mod, guard as guard_mod, identity as identity_mod
 from baron.cli import app
 
 runner = CliRunner()
@@ -84,9 +84,14 @@ def test_wired_project_is_green(tmp_path: Path) -> None:
     result = _run(dest)
     assert result.exit_code == 0, result.output
     checks = _by_id(dest)
-    # Everything is PASS except the deliberately-INFO evidence check.
+    # Everything is PASS except the deliberately-INFO checks: the evidence sink
+    # (fail-open by design) and the platform layer (not baron's to fix).
     for cid, check in checks.items():
-        expected = doctor_mod.INFO if cid == "override-log" else doctor_mod.PASS
+        expected = (
+            doctor_mod.INFO
+            if cid in ("override-log", "platform-layer")
+            else doctor_mod.PASS
+        )
         assert check["status"] == expected, (cid, check)
 
 
@@ -120,6 +125,7 @@ def test_json_is_machine_readable(tmp_path: Path) -> None:
         "fail-closed",
         "override-env",
         "override-log",
+        "platform-layer",
     ]
 
 
@@ -622,9 +628,81 @@ def test_rules_artifact_reported_with_its_version(tmp_path: Path) -> None:
     dest = _scaffold(tmp_path)
     check = _by_id(dest)["rules-artifact"]
     assert check["status"] == doctor_mod.PASS
-    assert "capability-rules v1" in check["detail"]
+    assert "capability-rules v2" in check["detail"]
 
 
 def test_bad_dir_is_a_usage_error(tmp_path: Path) -> None:
     result = runner.invoke(app, ["doctor", "--dir", str(tmp_path / "nope")])
     assert result.exit_code == 2
+
+
+# --- L3: the platform layer is REPORTED, never configured (ADR-034 §4.5) -----------------
+
+
+def test_platform_layer_is_info_and_never_fails_the_run(tmp_path: Path) -> None:
+    """An absent platform layer is not a baron misconfiguration.
+
+    It is INFO for two independent reasons: doctor's exit code must stay
+    reproducible offline, and there is no remedy baron could offer — building
+    the wall crosses ADR-007.
+    """
+    dest = _scaffold(tmp_path)
+    check = _by_id(dest)["platform-layer"]
+    assert check["status"] == doctor_mod.INFO
+    assert check["remedy"] == ""
+    assert "never configures it" in check["detail"]
+    result = runner.invoke(app, ["doctor", "--dir", str(dest), "--json"])
+    assert json.loads(result.stdout)["ok"] is True
+
+
+def test_platform_layer_does_not_touch_the_network_by_default(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The one networked check is opt-in, and says so rather than guessing.
+
+    Asserted by making any subprocess call explode: a default doctor run must
+    not reach the forge at all.
+    """
+    import subprocess
+
+    monkeypatch.delenv(doctor_mod.PLATFORM_NETWORK_ENV, raising=False)
+    dest = _scaffold(tmp_path)
+    # A real repo on a real branch, so the check reaches the point where it
+    # WOULD query the forge — otherwise this would pass for the wrong reason.
+    for argv in (["init", "-b", "main"], ["add", "-A"]):
+        subprocess.run(["git", *argv], cwd=dest, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@t.invalid", "-c", "user.name=T", "commit", "-m", "x"],
+        cwd=dest,
+        check=True,
+        capture_output=True,
+    )
+
+    def explode(*a, **k):  # pragma: no cover - fires only on a regression
+        raise AssertionError("doctor made a network/subprocess call for branch protection")
+
+    monkeypatch.setattr(doctor_mod, "_branch_protection", explode)
+    check = doctor_mod._check_platform_layer(dest)
+    assert check.status == doctor_mod.INFO
+    assert doctor_mod.PLATFORM_NETWORK_ENV in check.detail
+    assert "not measured" in check.detail
+
+    # ... and with the opt-in set, it DOES consult the forge probe.
+    monkeypatch.setenv(doctor_mod.PLATFORM_NETWORK_ENV, "1")
+    monkeypatch.setattr(doctor_mod, "_branch_protection", lambda *a: "ABSENT on 'main'")
+    assert "ABSENT on 'main'" in doctor_mod._check_platform_layer(dest).detail
+
+
+def test_platform_layer_reports_signing_is_not_push_authority(tmp_path: Path) -> None:
+    """ADR-033 §5: per-persona SIGNING keys are not per-persona AUTHORITY.
+
+    Reporting "identities enrolled" without that sentence is exactly the
+    over-claim the check exists to prevent.
+    """
+    dest = _scaffold(tmp_path)
+    signers = dest / identity_mod.ALLOWED_SIGNERS
+    signers.parent.mkdir(parents=True, exist_ok=True)
+    signers.write_text("dara@barony ssh-ed25519 AAAA fake\n", encoding="utf-8")
+    detail = doctor_mod._check_platform_layer(dest).detail
+    assert "signing identity is NOT push authority" in detail
+    assert "owner's forge credential" in detail

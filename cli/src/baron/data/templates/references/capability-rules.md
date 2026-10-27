@@ -25,8 +25,49 @@ unchanged by this artifact):
 - **Per-rule notes** — the honest scope of each rule, including which verbs are deliberately
   NOT parsed (`open_pr`, `run_tests` — instruction-only by design).
 
-`rules_version: 1` is the schema version; a consumer must refuse a version it does not
+`rules_version: 2` is the schema version; a consumer must refuse a version it does not
 understand rather than silently mis-enforce.
+
+## Structural refusals — L0 (ADR-034, `rules_version` 2)
+
+`file_ops` additionally carries three **structural** path fences. They are unlike every
+other rule in this artifact in one decisive way: **no capability verb unlocks them.** A
+consumer applies them *before* any capability is consulted (before the universal-write zone,
+not merely before the spec-dir rule — `_handoff` matches as a component anywhere in a path),
+and reports the resulting denial as **not adjudicated** (ADR-018 §2), exactly as it reports
+a path escaping the project root.
+
+| Key | Fences |
+|---|---|
+| `protected_config_paths` | The runtime's and baron's own config documents, matched against the target's **trailing** path components — so both `<root>/.claude/settings.json` and the copy inside an emitted runtime kit are covered. |
+| `protected_spec_files` | Files directly under `<spec_dir_component>/<any-slug>/` that carry the capability grant itself (`persona.yaml`). Fenced for **every** persona, including the one whose dir it is and including a holder of `edit_other_personas`. |
+| `protect_own_spec_dir` | When true, the **acting** persona's entire `<spec_dir_component>/<slug>/` subtree. That directory holds the emitted runtime kit and its hook wiring, the sidecar launcher, and the generated mirror of the capability document, so a persona editing it is a persona rewriting the policy that governs it. |
+
+The property these buy: **a capability change requires a PR a human merges.** Before this,
+the hook re-read the persona file on every invocation while that file was writable by the
+persona it governed, so a denial could be undone in one edit.
+
+Honest bound a consumer must not overstate: this fences *paths reachable through the
+enforced write tools*. A file outside the project root (`~/.claude/settings.json`) and a
+write performed by other means (a shell redirect) are both outside it.
+
+## Inline-program wrappers — `commands.wrappers` (ADR-034, `rules_version` 2)
+
+A consumer extracts the program string of a recognised shell wrapper
+(`bash -c '<payload>'`, and the other `programs`/`inline_flags` combinations, optionally
+behind an `env_prefixes` prefix) and re-runs **the same evaluators** over it, capped at
+`max_depth`. This must not become a second parser — that is the property that keeps it from
+being an arms race.
+
+Where a payload cannot be tokenised, or nests past `max_depth`, it is ambiguous, so
+`ambiguity_policy` applies — narrowed to `unparsed_conservative_verbs`, so the
+false-positive cost falls only on personas that deny those verbs anyway.
+
+Deliberately out of scope, and a consumer should say so rather than imply coverage:
+`python -c` and other non-shell interpreters, `eval`, base64/`printf` indirection, script
+files, `xargs`, raw forge API calls, a different git client, the forge web UI. The block is
+optional: a `rules_version: 2` document that omits `commands.wrappers` gets the pre-ADR-034
+posture, because silence in an add-only block means "not configured".
 
 ## Known consumers
 
@@ -98,7 +139,8 @@ each affected verb), not only in the table footer.
 **Refuse, don't ignore — values as well as keys.** The parser enumerates what a document
 actually carries and refuses anything it does not implement:
 
-- an unrecognised **key** (top level, `verbs.<verb>`, `commands.*`, `file_ops`);
+- an unrecognised **key** (top level, `verbs.<verb>`, `commands.*`, `commands.wrappers`,
+  `file_ops`);
 - a **rule** this baron does not implement, a missing built-in rule, or a rule missing a
   required parameter;
 - an unknown **`matcher`**, or one other than the matcher guard implements for that rule.
@@ -139,7 +181,8 @@ once it becomes path-dependent, and the `.baron/` (machine state) vs root-level
   *existing* verbs need no vocabulary change and are the 90% case.
 - The **matcher set is closed**: `flag_present`, `refspec_prefix`,
   `refspec_default_branch`, `current_branch_is_default`, `subcommand_present`,
-  `universal_write`, `spec_dir`. A rule naming anything else is refused at parse time,
+  `universal_write`, `spec_dir`, and (ADR-034) `protected_config`, `protected_spec_file`,
+  `own_spec_dir`. A rule naming anything else is refused at parse time,
   because it is a rule no consumer can honestly enforce. Adding a matcher (file size, time
   windows, rate limits, anything semantic) is new detection code in `guard.py`, gated on
   observed need.

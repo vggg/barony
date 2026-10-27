@@ -61,6 +61,18 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - name: baron test suite (schemas drift guard, stranding topology, ledger race)
         run: uv run --project cli pytest cli/tests
+
+  # The same suite on the declared floor (cli/pyproject.toml requires-python).
+  # Without it requires-python is a claim nothing checks — it said 3.10 for months
+  # while the suite needed 3.11. A separate job, not a matrix on `baron`, so the
+  # required `baron` check keeps its name.
+  baron-floor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: baron test suite on the minimum supported Python
+        run: uv run --python 3.11 --project cli pytest cli/tests
       # ADR-029: the prior-art gate, run on this repo's OWN corpus. The rule is
       # dogfooded or it is decoration — an accepted ADR here must carry the sweep
       # it rests on, and this step is what makes that refusal unavoidable in the

@@ -89,7 +89,7 @@ with the measurements attached.
 
 ## Quickstart
 
-Requires Python ≥ 3.10 and git. Verified end to end from a clean virtualenv —
+Requires Python ≥ 3.11 and git. Verified end to end from a clean virtualenv —
 2.4 seconds of machine time, install included.
 
 ```bash

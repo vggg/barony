@@ -107,17 +107,50 @@ allows the call and appends to a **tracked** log, so every override shows up in 
 Why it matters: this is the difference between a rule and a control. Barony labels every
 denial **enforced** or **instructed** and refuses to round up — six of the ten verbs
 enforce, four are instructions, and CI fails an adapter claiming enforcement it cannot
-deliver. **Bound:** the parser does not recurse into interpreter command strings, so
-`bash -c 'git push origin main'` is not caught. This is documented on purpose. Where the
-boundary must hold against a wrapper, use OS-level isolation.
+deliver.
+
+**L0 — the policy is not writable by the party it governs**
+([ADR-034](adr/ADR-034-deterministic-capability-enforcement.md)). Enforcement layered on a
+document the enforced agent can rewrite is theatre, and until v1.20.0 it was: the hook
+re-reads the persona file on *every* call, a persona's own spec dir was always writable,
+and `.claude/settings.json` was an ordinary path — so a persona holding `write_code` could
+**grant itself a denied verb, or unwire the hook, in one edit**. L0 closes that seam
+**structurally**: `agents/*/persona.yaml` (any persona's), the acting persona's whole
+`agents/<slug>/` dir, `.claude/settings.json{,.local}`, `.baron-waivers.yaml`,
+`.baron-rules.yaml` and `.barony/allowed_signers` are refused for **every** persona,
+whatever its capabilities. This is not a capability check — **no verb unlocks it**,
+including `edit_other_personas`, and the refusal is booked `unevaluated` rather than
+`enforced` precisely because no capability decided it. Paths match on **trailing**
+components, so the copy inside an emitted runtime kit — the live hook wiring — is fenced
+too. The consequence, stated as the feature it is: **changing a capability set is now a PR
+a human merges, for everyone, always, including a solo owner.**
+
+**Bounds, in line.** The parser does not recurse arbitrarily into interpreter command
+strings: v1.20.0 narrows the class by re-running one level of `bash -c '<payload>'` through
+the same evaluators, but a payload past that cap, or one that is untokenisable, is
+conservative-denied only for `merge_pr`/`push_main`/`force_push` — everything else in a
+wrapper still passes uninspected, as do `python -c`, `eval`, base64 indirection and script
+files. L0 governs the **write tools**, not the filesystem: a shell redirect
+(`echo … > .claude/settings.json`) is not a tool call and guard never sees it, and
+`~/.claude/settings.json` is outside the repo root and invisible to L0 entirely. And the
+one caveat on "no verb unlocks it": `BARON_GUARD_OVERRIDE` is applied *after* the decision,
+so it waves through an L0 refusal too — deliberately. It never bricks a workspace, reaching
+it requires a shell rather than a governed tool call, and every use appends to a **tracked**
+`.baron/guard-override.log`, so the bypass lands in a diff as evidence. Where the boundary
+must hold against a wrapper or a hostile workspace, use OS-level isolation.
 
 ### Enforcement wiring self-test — `baron doctor`
 
 FM4's real lesson was not a bypass; it was **absence**. `baron doctor`
-([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)) runs nine read-only checks —
+([ADR-017](adr/ADR-017-baron-doctor-wiring-selftest.md)) runs ten read-only checks —
 executable resolves, hook present, matcher covers every governed tool, persona and rules
 load, malformed stdin fails closed, no exported override, and a synthetic denial fed to
 *the executable the hook names* really exits 2 — exiting 1 with a remedy line per failure.
+The tenth, `platform-layer` ([ADR-034](adr/ADR-034-deterministic-capability-enforcement.md)
+L3), is **INFO and never FAIL**: it reports whether branch protection is on and whether each
+persona has its own push credential. Baron *reports* that wall and never builds it — and it
+is doctor's only networked check, so it is opt-in behind `BARON_DOCTOR_PLATFORM=1` and a
+green run stays reproducible offline.
 Spawning the hook's own command rather than importing the module is load-bearing: a
 project wired to a stale `baron` is the same drift as a missing hook. **Bound, printed on
 every run:** doctor verifies **wiring, not invocation**. Green means "correctly wired",
@@ -315,8 +348,10 @@ Stated plainly, because the fastest way to lose a technical evaluator is to let 
 discover a bound themselves.
 
 - **Not a sandbox, and not adversarial defence.** Barony stops a *cooperating* agent from
-  doing the wrong thing. It does not stop a hostile one with shell access, and the `bash -c`
-  bypass stands and is documented. Never read "enforcement" here as "security".
+  doing the wrong thing. It does not stop a hostile one with shell access: the `bash -c` class
+  is **narrowed** in v1.20.0, not closed, and L0 fences the guard's own config against the
+  *write tools* while a shell redirect still reaches those files. Never read "enforcement"
+  here as "security".
 - **Not a runtime, control plane, or agent framework.** No scheduler, no message bus, no
   agent-to-agent RPC. Coordination happens at git tempo, which is the point: every
   coordination event leaves a reviewable record.
@@ -330,8 +365,11 @@ discover a bound themselves.
 - **Attribution among cooperating agents, not a hostile-workspace defence.** Private keys sit
   unencrypted in each agent's workspace. Whoever holds one *is* that reviewer.
 - **`baron health` measures what was emitted.** Silence is not health.
-- **`baron doctor` verifies wiring, not invocation.** No test drives a real runtime process
-  against a scaffolded repo; enforcement is proven by wiring.
+- **`baron doctor` verifies wiring, not invocation.** v1.20.0 adds a tier that *does* drive a
+  real runtime process against a scaffolded repo and asserts the denied operation did not run
+  ([ADR-034](adr/ADR-034-deterministic-capability-enforcement.md)) — but it is **opt-in,
+  advisory, gates nothing, and as of this writing has not been run**. Until it has, enforcement
+  is still proven by wiring. Read that tier as owed measurement, not as a receipt.
 - **Zero external adopters.** Every receipt on this page is first-party — Barony's own pilots
   and audits. The most honest number in the corpus is a first-party audit that scored the
   author's own project at **0.53 operational fidelity** and published it rather than rounding

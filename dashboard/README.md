@@ -98,6 +98,31 @@ The script builds `baron` from this repo's own `cli/` source via
 `uv run --project cli`, so it is never behind an installed copy. Override with
 `BARON_CMD` if you want a different binary.
 
+### The build fetches first
+
+`baron status` reads **local git only**. A shared clone that nobody pulls — every
+session working in its own worktree — keeps remote-tracking refs for branches that
+were merged and deleted on origin weeks ago, and reports each one as a live
+`unmerged-branch` red. Published, that is a wall of red about this laptop rather
+than about the fleet. It happened: one snapshot carried ~21 phantom reds.
+
+So before reading anything, the build refreshes every working copy the projects'
+manifests name (`repos[]`, `workspace.clones[]`, `workspace.worktrees_root` — the
+same targets `baron status` evaluates):
+
+- `git fetch origin --prune --prune-tags --tags` on each distinct object store
+  (worktrees share one with their main clone, so it runs once);
+- `git merge --ff-only origin/<default>` **only** where the copy is clean and
+  already sitting on its default branch. Never a checkout, never a rebase, never a
+  merge commit — a snapshot build must not be able to lose work.
+
+Every outcome lands in `generator.refresh` (labels only, never paths), and the
+`honesty` block states plainly how current the git data is. A fetch that cannot
+reach origin is **recorded, not swallowed**: the snapshot says which copies are
+stale, `owner_actions` gains a `freshness` warning, and `check_snapshot.py` fails
+the build if a stale snapshot carries no caveat. `--no-refresh` reads the clones
+exactly as found and declares itself stale.
+
 > `baron export` is single-project: run at a monorepo **root** it walks no
 > subdirs and reports zero records. The builder therefore loops the registered
 > projects itself and sums the per-project exports.

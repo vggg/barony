@@ -133,7 +133,7 @@ def test_rules_list_json_emits_exactly_the_frozen_verbs() -> None:
     result = runner.invoke(app, ["rules", "list", "--json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
-    assert payload["rules_version"] == 1
+    assert payload["rules_version"] == 2
     assert payload["vocabulary"] == "capability-vocab.v1"
     printed = [row["verb"] for row in payload["verbs"]]
     assert printed == list(CAPABILITY_VERBS)
@@ -214,7 +214,7 @@ def test_rules_validate_refuses_an_unsupported_rules_version(tmp_path: Path) -> 
     rules it does not understand rather than silently mis-enforce them."""
     fixture = tmp_path / "rules-v99.yaml"
     fixture.write_text(
-        _packaged_artifact_text().replace("rules_version: 1", "rules_version: 99"),
+        _packaged_artifact_text().replace("rules_version: 2", "rules_version: 99"),
         encoding="utf-8",
     )
     result = runner.invoke(app, ["rules", "validate", "--file", str(fixture)])
@@ -504,7 +504,9 @@ def test_rules_explain_write_mode_matches_guard_evaluate_write(tmp_path: Path) -
     from baron import guard as guard_mod
 
     persona_file = _rules_persona(tmp_path)
-    target = str(tmp_path / "agents" / "other" / "persona.yaml")
+    # NOT persona.yaml: since ADR-034 L0 that is a structural refusal ahead
+    # of the spec-dir rule, so it would no longer exercise the verb path.
+    target = str(tmp_path / "agents" / "other" / "NOTES.md")
     result = runner.invoke(
         app,
         [

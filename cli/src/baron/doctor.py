@@ -29,6 +29,14 @@ comfortable nothing:
 9. ``override-log``      — INFO only: the evidence sink is writable. Evidence is
                            fail-OPEN by design, so a broken sink must never be
                            reported as broken enforcement.
+10. ``platform-layer``   — INFO only (ADR-034 §4.5): is branch protection on,
+                           and does each persona have its own push credential?
+                           This is the layer that could actually make an
+                           irreversible action impossible, and it is **not
+                           baron's**. Reported, never configured (ADR-007). The
+                           branch-protection half is doctor's only networked
+                           check and is opt-in behind ``BARON_DOCTOR_PLATFORM=1``
+                           so a green run stays reproducible offline.
 
 **Honesty boundary — read this before trusting a green run.** Doctor verifies
 WIRING, not invocation. It proves this installation *can* enforce. It cannot
@@ -75,7 +83,7 @@ import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
 
-from . import gitutil, guard, rules as rules_mod
+from . import gitutil, guard, identity, rules as rules_mod
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -886,6 +894,111 @@ def _check_override_log(project_dir: Path) -> Check:
     return Check("override-log", INFO, " ".join(bits))
 
 
+# --- L3: the platform layer (ADR-034 §4.5, OD-6) ------------------------------------------
+
+#: Opt-in for the ONE check whose answer depends on the network. Default OFF:
+#: doctor's verdict must be reproducible on a laptop and in CI, and a check that
+#: silently reaches the forge breaks that (ADR-017's contract, ADR-034 §4.5).
+PLATFORM_NETWORK_ENV = "BARON_DOCTOR_PLATFORM"
+
+
+def _branch_protection(project_dir: Path, branch: str) -> str:
+    """One read-only forge query. Returns a human phrase, never raises."""
+    gh = shutil.which("gh")
+    if gh is None:
+        return "not measured (gh is not on PATH)"
+    proc = subprocess.run(  # noqa: S603 - fixed argv, read-only endpoint
+        [gh, "api", f"repos/{{owner}}/{{repo}}/branches/{branch}/protection"],
+        cwd=project_dir,
+        capture_output=True,
+        text=True,
+        timeout=PROBE_TIMEOUT_S,
+    )
+    if proc.returncode == 0:
+        return f"ENABLED on '{branch}'"
+    err = (proc.stderr or "").strip().splitlines()
+    detail = err[-1][:120] if err else f"exit {proc.returncode}"
+    if "404" in detail or "Not Found" in detail:
+        return (
+            f"ABSENT on '{branch}' — the forge would accept a direct push or a "
+            "self-merge from any credential that can reach it"
+        )
+    return f"not measured ({detail})"
+
+
+def _check_platform_layer(project_dir: Path) -> Check:
+    """INFO always. Reports whether the layer that could actually stop an
+    irreversible action exists — and never configures it (ADR-007, ADR-034 §4.5).
+
+    Why this is a report and not a mechanism: everything L0-L2 owns is
+    **client-side configuration**, and client-side configuration is flippable.
+    The hard gate on the one irreversible action is per-persona credentials plus
+    branch protection, because the forge says no in a way a settings edit cannot
+    undo. Baron does not create tokens, mint credentials or configure a forge —
+    putting forge-configuration authority inside a tool that agents run is
+    precisely the thing ADR-007 rules out. Reporting an absent wall is
+    governance; building it is somebody else's layer.
+
+    INFO, never FAIL, for two independent reasons: the answer depends on the
+    network (so a FAIL would make doctor's exit code non-reproducible offline),
+    and an absent platform layer is not a *baron* misconfiguration — there is no
+    remedy baron can offer beyond naming it.
+    """
+    bits: list[str] = []
+
+    branch = None
+    if gitutil.is_git_repo(project_dir):
+        # The remote's default branch when there is a remote; otherwise the
+        # local current branch, so a not-yet-pushed project still gets a useful
+        # sentence instead of "undeterminable".
+        branch = gitutil.default_branch(project_dir)
+        if branch is None:
+            proc = gitutil.git(
+                project_dir, "rev-parse", "--abbrev-ref", "HEAD", check=False
+            )
+            name = proc.stdout.strip()
+            branch = name if proc.returncode == 0 and name and name != "HEAD" else None
+    if branch is None:
+        bits.append("branch protection: not measured (no git repo / no branch)")
+    elif not os.environ.get(PLATFORM_NETWORK_ENV):
+        bits.append(
+            f"branch protection on '{branch}': not measured — this is doctor's "
+            f"only networked check, so it is opt-in ({PLATFORM_NETWORK_ENV}=1)"
+        )
+    else:
+        try:
+            bits.append(f"branch protection: {_branch_protection(project_dir, branch)}")
+        except Exception as exc:  # never let a forge query fail a wiring self-test
+            bits.append(f"branch protection: not measured ({type(exc).__name__})")
+
+    # The authority half. ADR-027/ADR-033 gave every persona its own SIGNING
+    # key, and ADR-033 §5 is explicit that this is NOT the same as its own push
+    # authority — agents still act under the owner's forge identity. Saying
+    # "signing identity present" where a reader might hear "separate credential"
+    # is the exact over-claim this check exists to avoid, so it says both.
+    signers = project_dir / Path(identity.ALLOWED_SIGNERS)
+    if signers.is_file():
+        bits.append(
+            f"push credential: per-persona SIGNING keys are enrolled "
+            f"({identity.ALLOWED_SIGNERS}), but signing identity is NOT push "
+            "authority — agents still push under the owner's forge credential "
+            "(ADR-033 §5). One revocable credential per persona is the piece "
+            "that is still missing."
+        )
+    else:
+        bits.append(
+            "push credential: no per-persona identity is enrolled "
+            f"({identity.ALLOWED_SIGNERS} absent) — every agent acts under one "
+            "shared forge credential"
+        )
+
+    bits.append(
+        "baron REPORTS this layer and never configures it (ADR-007): it does "
+        "not create tokens, mint credentials, or change forge settings."
+    )
+    return Check("platform-layer", INFO, " | ".join(bits))
+
+
 # --- entry point --------------------------------------------------------------------------
 
 
@@ -907,6 +1020,7 @@ def run(project_dir: Path, *, persona_file: Path | None = None) -> Report:
             _check_fail_closed(hook_exe, project_dir),
             _check_override_env(),
             _check_override_log(project_dir),
+            _check_platform_layer(project_dir),
         ],
         probe_mode="subprocess" if probe_argv else "in-process",
         probe_argv=probe_argv or (),

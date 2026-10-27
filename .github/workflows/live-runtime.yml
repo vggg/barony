@@ -1,0 +1,35 @@
+# Proof by invocation — the opt-in tier (ADR-034 §4.3b, OD-3).
+#
+# DELIBERATELY NOT part of `ci.yml`. This job drives a REAL runtime process: it
+# needs a model, credentials, network access and money, and it is
+# nondeterministic. Wiring it into the push/PR job would put a paid, flaky check
+# behind the same exit code as the deterministic suite, which is the trade
+# ADR-017 refused for `baron doctor` and the same reasoning applies here.
+#
+# STATUS: ADVISORY for this first slice (OD-3). A failing or INCONCLUSIVE run
+# does NOT block a release. That is recorded in STATUS.md too — an advisory gate
+# presented as a gate is the failure this repo names. Revisit once its flake
+# rate is known.
+#
+# INCONCLUSIVE (reported as a SKIP, never a pass) means the negative control did
+# not fire: a persona that GRANTS the verb never invoked it, so the run cannot
+# tell enforcement from a model that simply declined. Read a skip here as "no
+# measurement", not as "fine".
+name: live-runtime (advisory)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  proof-by-invocation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install the runtime under test
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Proof by invocation (advisory — does not gate a release)
+        env:
+          BARON_LIVE_RUNTIME: "1"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --project cli pytest cli/tests -m live_runtime -v

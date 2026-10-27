@@ -336,11 +336,18 @@ def test_interceptor_write_scoping_follows_verbs(tmp_path: Path) -> None:
     assert denied is not None and "write_path" in denied
     denied = g.check("edit_file", {"path": "wiki/status.md"})
     assert denied is not None
-    # another persona's spec dir needs edit_other_personas
-    denied = g.check("write_file", {"path": "agents/mona/persona.yaml"})
+    # another persona's ordinary files need edit_other_personas
+    denied = g.check("write_file", {"path": "agents/mona/NOTES.md"})
     assert denied is not None and "edit_other_personas" in denied
-    # its own spec dir is its own surface
-    assert g.check("write_file", {"path": "agents/rex/persona.yaml"}) is None
+    # L0 (ADR-034) reaches the in-process seam too, because it is the SAME
+    # evaluator: no capability document is writable, own or other, and the
+    # persona's own spec dir is fenced entirely.
+    denied = g.check("write_file", {"path": "agents/mona/persona.yaml"})
+    assert denied is not None and "capability document" in denied
+    denied = g.check("write_file", {"path": "agents/rex/persona.yaml"})
+    assert denied is not None and "capability document" in denied
+    denied = g.check("write_file", {"path": "agents/rex/runtime/settings.json"})
+    assert denied is not None and "own spec dir" in denied
 
 
 @needs_extra

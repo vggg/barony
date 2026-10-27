@@ -68,7 +68,7 @@ RULES_RESOURCE = "data/capability-rules.v1.yaml"
 #: does not understand rather than silently mis-enforce them. Negotiation is
 #: EXACT-match, deliberately: widening it to a supported range is a
 #: compatibility contract that cannot be tightened later (ADR-016 §5.3).
-SUPPORTED_RULES_VERSION = 1
+SUPPORTED_RULES_VERSION = 2
 #: The capability vocabulary the rules are written against. Rules mapping a
 #: different vocabulary are refused for the same reason as an unknown version.
 SUPPORTED_VOCABULARY = "capability-vocab.v1"
@@ -103,10 +103,32 @@ COMMAND_MATCHERS = frozenset(
 
 #: Path components that are always writable (gating them bricks the substrate).
 MATCHER_UNIVERSAL_WRITE = "universal_write"
-#: The persona spec-dir rule: own slug writable, another slug needs a verb.
+#: The persona spec-dir rule: another slug needs a verb.
 MATCHER_SPEC_DIR = "spec_dir"
 
-PATH_MATCHERS = frozenset({MATCHER_UNIVERSAL_WRITE, MATCHER_SPEC_DIR})
+# --- L0 structural matchers (ADR-034, rules_version 2) ---------------------------------
+# These three name refusals NO capability verb unlocks. They are matchers rather
+# than a hardcoded list in guard for the same reason every other rule is: the
+# policy belongs to the artifact, and `baron rules list/explain` must be able to
+# print what is fenced. All three carry `verb: ""` — there is no verb to name,
+# and that is exactly what makes them structural.
+
+#: The target's trailing components are one of the protected config paths.
+MATCHER_PROTECTED_CONFIG = "protected_config"
+#: The target is a capability document directly under any persona's spec dir.
+MATCHER_PROTECTED_SPEC_FILE = "protected_spec_file"
+#: The target is anywhere under the ACTING persona's own spec dir.
+MATCHER_OWN_SPEC_DIR = "own_spec_dir"
+
+PATH_MATCHERS = frozenset(
+    {
+        MATCHER_UNIVERSAL_WRITE,
+        MATCHER_SPEC_DIR,
+        MATCHER_PROTECTED_CONFIG,
+        MATCHER_PROTECTED_SPEC_FILE,
+        MATCHER_OWN_SPEC_DIR,
+    }
+)
 
 # --- closed verb-entry value sets --------------------------------------------------------
 # `class` and `detection` are not free text: both ROUTE ENFORCEMENT. `class`
@@ -155,6 +177,17 @@ RULE_MERGE_ON_DEFAULT_BRANCH = "git.merge.on_default_branch"
 RULE_GH_PR_MERGE = "gh.pr_merge"
 RULE_UNIVERSAL_WRITE = "file_ops.universal_write"
 RULE_SPEC_DIR = "file_ops.spec_dir"
+RULE_PROTECTED_CONFIG = "file_ops.protected_config"
+RULE_PROTECTED_SPEC_FILE = "file_ops.protected_spec_file"
+RULE_OWN_SPEC_DIR = "file_ops.own_spec_dir"
+
+#: The L0 rule ids, in the order guard evaluates them. Pinned by test: a rule
+#: dropped from this tuple is a fence that silently stopped existing.
+PROTECTED_RULE_IDS: tuple[str, ...] = (
+    RULE_PROTECTED_CONFIG,
+    RULE_PROTECTED_SPEC_FILE,
+    RULE_OWN_SPEC_DIR,
+)
 
 #: Value-option scopes: options that consume the following token and so must be
 #: skipped while parsing. Keyed by ``<program>`` (global) or
@@ -290,6 +323,33 @@ class PathRule:
         return "path"
 
 
+@dataclass(frozen=True)
+class WrapperPolicy:
+    """How a consumer treats an inline program string (ADR-034 §4.3a).
+
+    ``bash -c '<payload>'`` is the ONE wrapper form people hit by honest
+    accident, so the payload is extracted and re-evaluated by the same
+    evaluators, capped at :attr:`max_depth`. Everything else — ``python -c``,
+    ``eval``, base64 indirection, script files — stays deliberately uninspected;
+    see the artifact's ``commands.wrappers`` comment for the full out-of-scope
+    list and ADR-034 §6 for why the bound is stated rather than chased.
+    """
+
+    programs: tuple[str, ...] = ()
+    inline_flags: tuple[str, ...] = ()
+    env_prefixes: tuple[str, ...] = ()
+    #: 1 = inspect a wrapper's payload, but not a wrapper nested inside it.
+    max_depth: int = 0
+    #: Verbs conservatively required when a payload is untokenisable or nests
+    #: past ``max_depth``. Narrow by design: the false-positive cost lands only
+    #: on personas that deny these anyway.
+    unparsed_conservative_verbs: tuple[str, ...] = ()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.programs and self.inline_flags and self.max_depth > 0)
+
+
 Rule = CommandRule | PathRule
 
 
@@ -312,6 +372,10 @@ class CapabilityRules:
     #: scope -> options that consume the following token (parsing mechanics,
     #: not policy). Keyed by SCOPE_GIT_GLOBAL / SCOPE_GIT_PUSH.
     value_options: dict[str, tuple[str, ...]]
+    #: The inline-program-wrapper posture (ADR-034 §4.3a). Defaulted to a
+    #: DISABLED policy so a hand-constructed CapabilityRules in a test cannot
+    #: accidentally assert wrapper enforcement nobody configured.
+    wrapper_policy: WrapperPolicy = field(default_factory=WrapperPolicy)
 
     _index: dict[str, Rule] = field(
         init=False, repr=False, compare=False, default_factory=dict
@@ -438,6 +502,28 @@ class CapabilityRules:
         components = self._path(RULE_SPEC_DIR).components
         return components[0] if components else ""
 
+    # --- L0 structural fences (ADR-034) --------------------------------------
+
+    @property
+    def protected_config_paths(self) -> tuple[str, ...]:
+        """Slash-separated paths matched against the target's TRAILING parts."""
+        return self._path(RULE_PROTECTED_CONFIG).components
+
+    @property
+    def protected_spec_files(self) -> tuple[str, ...]:
+        """Filenames directly under ``<spec_dir>/<slug>/`` that carry the grant.
+
+        The rule's ``components`` are ``(spec_dir_component, *filenames)`` — the
+        spec-dir component is carried so the rule is self-describing when
+        ``baron rules explain`` prints it, and stripped here.
+        """
+        return self._path(RULE_PROTECTED_SPEC_FILE).components[1:]
+
+    @property
+    def protects_own_spec_dir(self) -> bool:
+        """True when a persona may not write anywhere under its own spec dir."""
+        return bool(self._path(RULE_OWN_SPEC_DIR).components)
+
 
 def _strs(value: object, where: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -474,7 +560,25 @@ _TOP_LEVEL_KEYS = frozenset(
     {"rules_version", "vocabulary", "ambiguity_policy", "verbs", "commands", "file_ops"}
 )
 _VERB_ENTRY_KEYS = frozenset({"class", "detection", "notes"})
-_FILE_OPS_KEYS = frozenset({"universal_write_components", "spec_dir_component"})
+_FILE_OPS_KEYS = frozenset(
+    {
+        "universal_write_components",
+        "spec_dir_component",
+        # L0 (ADR-034, rules_version 2)
+        "protected_config_paths",
+        "protected_spec_files",
+        "protect_own_spec_dir",
+    }
+)
+_WRAPPER_KEYS = frozenset(
+    {
+        "programs",
+        "inline_flags",
+        "env_prefixes",
+        "max_depth",
+        "unparsed_conservative_verbs",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -606,7 +710,7 @@ def _parse_command_rules(
 ) -> tuple[CommandRule, ...]:
     """Build the command rules from the keys the DOCUMENT actually carries."""
     commands = _mapping(data.get("commands"), "commands")
-    _only(commands, frozenset({"git", "gh"}), "commands")
+    _only(commands, frozenset({"git", "gh", "wrappers"}), "commands")
     git = _mapping(commands.get("git", {}), "commands.git")
     _only(git, frozenset({"global_value_options", "push", "merge"}), "commands.git")
     _only(
@@ -650,6 +754,56 @@ def _parse_command_rules(
     # Table order is the order `baron rules` prints and `guard` documents.
     order = list(_COMMAND_SLOTS)
     return tuple(sorted(rules, key=lambda r: order.index(r.id)))
+
+
+def _parse_wrapper_policy(
+    commands: dict[str, object], verbs: dict[str, dict[str, str]]
+) -> WrapperPolicy:
+    """Parse ``commands.wrappers`` (ADR-034 §4.3a).
+
+    ABSENT is legal and means DISABLED — a rules_version-2 document that says
+    nothing about wrappers gets the pre-ADR-034 posture, which is the honest
+    reading of silence for a block that only ever *adds* denials.
+
+    Present, it is validated as strictly as everything else: unknown keys are
+    refused, ``max_depth`` must be a non-negative int, and every verb in
+    ``unparsed_conservative_verbs`` must exist in the verbs table — a
+    conservative-deny naming a verb no persona can hold would deny every persona
+    unconditionally, which is a wall, not a policy.
+    """
+    if "wrappers" not in commands:
+        return WrapperPolicy()
+    block = _mapping(commands["wrappers"], "commands.wrappers")
+    _only(block, _WRAPPER_KEYS, "commands.wrappers")
+    depth = block.get("max_depth", 0)
+    if not isinstance(depth, int) or isinstance(depth, bool) or depth < 0:
+        raise RulesError(
+            "capability-rules: commands.wrappers.max_depth must be a "
+            f"non-negative integer (got {depth!r})"
+        )
+    conservative = _strs(
+        block.get("unparsed_conservative_verbs", []),
+        "commands.wrappers.unparsed_conservative_verbs",
+    )
+    unknown = [v for v in conservative if v not in verbs]
+    if unknown:
+        raise RulesError(
+            "capability-rules: commands.wrappers.unparsed_conservative_verbs "
+            f"names verb(s) {', '.join(repr(v) for v in unknown)} that are not "
+            "in the verbs table — a conservative-deny on a verb no persona can "
+            "hold denies every persona unconditionally"
+        )
+    return WrapperPolicy(
+        programs=_strs(block.get("programs", []), "commands.wrappers.programs"),
+        inline_flags=_strs(
+            block.get("inline_flags", []), "commands.wrappers.inline_flags"
+        ),
+        env_prefixes=_strs(
+            block.get("env_prefixes", []), "commands.wrappers.env_prefixes"
+        ),
+        max_depth=depth,
+        unparsed_conservative_verbs=conservative,
+    )
 
 
 def _verb_entry(verb: str, entry: object) -> dict[str, str]:
@@ -787,6 +941,12 @@ def _parse(data: object) -> CapabilityRules:
     command_rules = _parse_command_rules(data, verbs)
 
     spec_dir_component = str(file_ops.get("spec_dir_component", ""))
+    protect_own = file_ops.get("protect_own_spec_dir", False)
+    if not isinstance(protect_own, bool):
+        raise RulesError(
+            "capability-rules: file_ops.protect_own_spec_dir must be a boolean "
+            f"(got {protect_own!r})"
+        )
     path_rules = (
         PathRule(
             id=RULE_UNIVERSAL_WRITE,
@@ -801,6 +961,41 @@ def _parse(data: object) -> CapabilityRules:
             matcher=MATCHER_SPEC_DIR,
             components=(spec_dir_component,) if spec_dir_component else (),
             verb=SPEC_DIR_VERB,
+        ),
+        # --- L0 (ADR-034). Every one of these carries verb="" — a structural
+        # refusal has no verb to name, and that emptiness is what stops
+        # `_check_detection_consistency` from reading them as enforcement of
+        # some verb and what stops guard from ever adjudicating them.
+        PathRule(
+            id=RULE_PROTECTED_CONFIG,
+            matcher=MATCHER_PROTECTED_CONFIG,
+            components=_strs(
+                file_ops.get("protected_config_paths", []),
+                "file_ops.protected_config_paths",
+            ),
+        ),
+        PathRule(
+            id=RULE_PROTECTED_SPEC_FILE,
+            matcher=MATCHER_PROTECTED_SPEC_FILE,
+            # (spec_dir_component, *filenames) — see `protected_spec_files`.
+            components=(
+                (
+                    spec_dir_component,
+                    *_strs(
+                        file_ops.get("protected_spec_files", []),
+                        "file_ops.protected_spec_files",
+                    ),
+                )
+                if spec_dir_component
+                else ()
+            ),
+        ),
+        PathRule(
+            id=RULE_OWN_SPEC_DIR,
+            matcher=MATCHER_OWN_SPEC_DIR,
+            components=(
+                (spec_dir_component,) if protect_own and spec_dir_component else ()
+            ),
         ),
     )
 
@@ -837,6 +1032,9 @@ def _parse(data: object) -> CapabilityRules:
                 push.get("value_options"), "commands.git.push.value_options"
             ),
         },
+        wrapper_policy=_parse_wrapper_policy(
+            _mapping(data.get("commands"), "commands"), verbs
+        ),
     )
 
 
