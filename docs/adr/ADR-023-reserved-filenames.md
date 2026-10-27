@@ -57,7 +57,7 @@ Two things were wrong, and only the second is obvious in hindsight:
 1. **The content conformed to no schema.** `COORDINATION.md` is an emit-time template — 213 lines,
    with a defined shape: cross-agent protocol, hot files, lock mechanics, review-and-merge. The
    briefing was prose. It shared a filename with fourteen conforming instances across
-   `vanar-collab`, `baddie-analyzer-collab`, `walmart-seller-api-collab`, `projects/GardenTwin`,
+   `vanar-collab`, `baddie-analyzer-collab`, a third (private) collab repo, `projects/GardenTwin`,
    `barony-demo`, and the vendored copies.
 
 2. **Its position granted it authority.** That vault's `CONVENTIONS.md § Contradictory rules` places
@@ -215,7 +215,7 @@ framework.
 |---|---|
 | `vanar-collab` | `CONVENTIONS` → `COORDINATION` → `AGENT.md` (template order, verbatim) |
 | `baddie-analyzer-collab` | `CONVENTIONS` → `COORDINATION` → `AGENT.md` (template order, verbatim) |
-| `walmart-seller-api-collab` | *no `§ Contradictory rules` section* — predates it |
+| a third (private) collab repo | *no `§ Contradictory rules` section* — predates it |
 | Irisidian vault | **inverted** |
 
 **No live persona `AGENT.md` overrides a `CONVENTIONS.md` rule** in either repo — I grepped all 17
@@ -268,7 +268,7 @@ the open question. Adding a mechanism now would answer a question nobody has ask
 | ~14 conforming instances exist on this machine | `observed` | `find` across `/Users/vikram/Workspace` + the vault, excluding `.git` and worktrees |
 | The two template copies are byte-identical and drift-guarded | `observed` | `md5 -q` on both → `5901c1d31193356235769b5bf2b6ceef`; guard per ADR-006 |
 | The precedence orders are inverted (§4.3) | `observed` | Read both `§ Contradictory rules` sections, 2026-08-12 |
-| Both live collab repos carry the template's order verbatim | `observed` | `vanar-collab`, `baddie-analyzer-collab`, read 2026-08-12. `walmart-seller-api-collab` has no such section. |
+| Both live collab repos carry the template's order verbatim | `observed` | `vanar-collab`, `baddie-analyzer-collab`, read 2026-08-12. The third (private) collab repo has no such section. |
 | No live persona `AGENT.md` overrides a `CONVENTIONS.md` rule | `observed` | Grepped all 17 persona files in both repos for override language; one hit (`yukti`), benign — "supersedes" about a cron schedule |
 | Every agent's write zone includes its own workspace | `observed` | `_meta/AGENTS.md`, seven personas |
 | Most-general-wins is the right posture for constraints (§4.3.1/§4.3.5) | `inferred` | Reasoning about what these documents are *for*. Neither file states this axis today — it is a proposal, not a reading. |
